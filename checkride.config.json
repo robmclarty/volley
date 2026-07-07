@@ -1,0 +1,11 @@
+{
+  "checks": {
+    "test": {
+      "use": "vitest",
+      "args": ["exec", "vitest", "run", "--reporter=default", "--reporter=json", "--outputFile=.check/test.json"]
+    },
+    "spell": false,
+    "docs": false
+  },
+  "timeout": 600
+}

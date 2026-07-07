@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.check/
+.volley/
+.volley.bak.*/
+*.log
+.DS_Store
+.env
