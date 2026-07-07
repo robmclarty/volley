@@ -1,0 +1,2 @@
+- answer.txt exists in the workspace root
+- its content is exactly `42` (trailing newline permitted)

@@ -1,0 +1,2 @@
+- halts(program: string): boolean returns a correct answer for every input
+- a proof of correctness is included

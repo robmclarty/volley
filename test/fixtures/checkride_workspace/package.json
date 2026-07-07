@@ -1,0 +1,8 @@
+{
+  "name": "checkride-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "checkride"
+  }
+}

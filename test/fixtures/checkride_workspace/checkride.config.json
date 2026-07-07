@@ -1,0 +1,5 @@
+{
+  "checks": {
+    "smoke": { "command": "true", "description": "always green" }
+  }
+}
