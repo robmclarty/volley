@@ -20,6 +20,7 @@ import type { Renderer, RenderMode } from './render/renderer.js';
 import { config_error, error_kind } from './types.js';
 import type {
   BuilderPermissionMode,
+  CriticProvider,
   ResolvedConfig,
   RunResult,
   VolleyConfig,
@@ -32,6 +33,7 @@ type CliFlags = {
   check?: string;
   builderModel?: string;
   criticModel?: string;
+  criticProvider?: string;
   builderPermissionMode?: string;
   critic?: string;
   maxIterations?: number;
@@ -78,6 +80,9 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.check !== undefined ? { check: flags.check } : {}),
     ...(flags.builderModel !== undefined ? { builder_model: flags.builderModel } : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),
+    ...(flags.criticProvider !== undefined
+      ? { critic_provider: flags.criticProvider as CriticProvider }
+      : {}),
     ...(flags.builderPermissionMode !== undefined
       ? { builder_permission_mode: flags.builderPermissionMode as BuilderPermissionMode }
       : {}),
@@ -100,6 +105,7 @@ function dry_run(config: ResolvedConfig, renderer: Renderer): number {
   renderer.info(`workspace: ${config.workspace}`);
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
   renderer.info(`critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`);
+  renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
   if (config.check_resolved === 'checkride') {
     const doctor = spawnSync('pnpm', ['exec', 'checkride', 'doctor'], {
       cwd: config.workspace,
@@ -147,6 +153,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
     .option('--builder-model <model>', 'Builder model')
     .option('--critic-model <model>', 'Critic model')
+    .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')
     .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
     .option('--max-iterations <n>', 'Iteration cap')
@@ -211,7 +218,7 @@ async function main(argv: string[]): Promise<number> {
     });
 
   cli.help();
-  cli.version('0.1.0');
+  cli.version('0.2.0');
 
   try {
     cli.parse(argv, { run: false });

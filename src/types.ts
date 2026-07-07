@@ -11,6 +11,10 @@ export type Verdict = 'approved' | 'changes_requested';
 
 export type CriticPreset = 'reviewer' | 'optimizer' | 'researcher';
 
+/** Transport for the critic role. The builder is always `claude_cli`; the
+ * critic is read-only + schema-constrained, so it can run on a local model. */
+export type CriticProvider = 'claude_cli' | 'ollama' | 'lmstudio';
+
 export type BuilderPermissionMode = 'acceptEdits' | 'bypassPermissions';
 
 /** `auto`, `none`, or any shell command (the `string & {}` keeps the literal
@@ -37,6 +41,7 @@ export type VolleyConfig = {
   check?: CheckMode;
   builder_model?: string;
   critic_model?: string;
+  critic_provider?: CriticProvider;
   builder_permission_mode?: BuilderPermissionMode;
   critic?: CriticPreset | (string & {});
   max_iterations?: number;
@@ -60,6 +65,7 @@ export type ResolvedConfig = {
   check_resolved: CheckRunnerKind;
   builder_model: string;
   critic_model: string;
+  critic_provider: CriticProvider;
   builder_permission_mode: BuilderPermissionMode;
   critic_preset: CriticPreset | 'custom';
   critic_prompt_path: string | null;

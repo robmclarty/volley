@@ -28,6 +28,7 @@ export type {
   CheckRunnerKind,
   CostSource,
   CriticPreset,
+  CriticProvider,
   HaltReason,
   LoopState,
   PhaseRecord,

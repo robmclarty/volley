@@ -41,6 +41,7 @@ export function write_resolved_config(config: ResolvedConfig): void {
     check_resolved: config.check_resolved,
     builder_model: config.builder_model,
     critic_model: config.critic_model,
+    critic_provider: config.critic_provider,
     builder_permission_mode: config.builder_permission_mode,
     critic_preset: config.critic_preset,
     critic_prompt_path: config.critic_prompt_path,

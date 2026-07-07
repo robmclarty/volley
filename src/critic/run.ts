@@ -4,12 +4,13 @@
  * `.volley/feedback.md` and `.volley/verdict`.
  */
 import { z } from 'zod';
-import type { Engine, StreamChunk } from 'fascicle';
+import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
 import { accumulate } from '../cost.js';
 import { phase_error } from '../types.js';
 import type { LoopState, ResolvedConfig } from '../types.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
+import { read_only_tools } from './tools.js';
 
 export const CRITIC_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 
@@ -38,6 +39,26 @@ export type CriticDeps = {
   on_chunk: (chunk: StreamChunk) => void;
 };
 
+/** Read-only tool wiring per provider. The claude_cli critic is confined at
+ * the CLI permission layer (allowlist + explicit disallow); a local-model
+ * critic gets volley's own workspace-scoped read-only tools and no write
+ * path at all. */
+function critic_tool_options(
+  config: ResolvedConfig,
+): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options'> {
+  if (config.critic_provider === 'claude_cli') {
+    return {
+      provider_options: {
+        claude_cli: {
+          allowed_tools: [...CRITIC_ALLOWED_TOOLS],
+          extra_args: ['--disallowedTools', CRITIC_DISALLOWED_TOOLS],
+        },
+      },
+    };
+  }
+  return { tools: read_only_tools(config.workspace) };
+}
+
 export async function run_critic(
   deps: CriticDeps,
   state: LoopState,
@@ -49,7 +70,7 @@ export async function run_critic(
   }
   try {
     const result = await engine.generate({
-      provider: 'claude_cli',
+      provider: config.critic_provider,
       model: config.critic_model,
       system: resolve_critic_prompt(config),
       prompt: compose_critic_prompt({
@@ -61,12 +82,7 @@ export async function run_critic(
       abort: ctx.abort,
       trajectory: ctx.trajectory,
       on_chunk: deps.on_chunk,
-      provider_options: {
-        claude_cli: {
-          allowed_tools: [...CRITIC_ALLOWED_TOOLS],
-          extra_args: ['--disallowedTools', CRITIC_DISALLOWED_TOOLS],
-        },
-      },
+      ...critic_tool_options(config),
     });
     return {
       ...accumulate(state, 'critic', result, config.critic_model),

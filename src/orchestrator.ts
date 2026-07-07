@@ -117,7 +117,12 @@ export async function run_volley(
     initialize_workspace(config.workspace, { preserve: true });
   }
 
-  const engine = deps.engine ?? create_volley_engine({ workspace: config.workspace });
+  const engine =
+    deps.engine ??
+    create_volley_engine({
+      workspace: config.workspace,
+      critic_provider: config.critic_provider,
+    });
 
   const build = step('build', async (s: LoopState, ctx) => {
     const next: LoopState = {

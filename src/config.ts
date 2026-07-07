@@ -11,6 +11,7 @@ import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
   CriticPreset,
+  CriticProvider,
   ResolvedConfig,
   VolleyConfig,
 } from './types.js';
@@ -20,7 +21,14 @@ export const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_CHECK = 'auto';
 export const DEFAULT_CRITIC = 'reviewer';
+export const DEFAULT_CRITIC_PROVIDER: CriticProvider = 'claude_cli';
 export const DEFAULT_PERMISSION_MODE: BuilderPermissionMode = 'acceptEdits';
+
+const CRITIC_PROVIDERS: ReadonlyArray<CriticProvider> = [
+  'claude_cli',
+  'ollama',
+  'lmstudio',
+];
 
 const CRITIC_PRESETS: ReadonlyArray<CriticPreset> = [
   'reviewer',
@@ -152,6 +160,13 @@ export function resolve_config(
     cwd,
   );
 
+  const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
+  if (!CRITIC_PROVIDERS.includes(critic_provider)) {
+    throw config_error(
+      `--critic-provider must be one of ${CRITIC_PROVIDERS.join(', ')}; got: ${String(raw.critic_provider)}`,
+    );
+  }
+
   if (raw.git_checkpoints === true && !existsSync(resolve(workspace, '.git'))) {
     throw config_error(`--git requires the workspace to be a git repository: ${workspace}`);
   }
@@ -166,6 +181,7 @@ export function resolve_config(
     check_resolved: 'none',
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
+    critic_provider,
     builder_permission_mode,
     critic_preset,
     critic_prompt_path,

@@ -16,6 +16,7 @@ import { EMPTY_USAGE } from './cost.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
+  CriticProvider,
   LoopState,
   PhaseRecord,
   ResolvedConfig,
@@ -184,6 +185,7 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     check: String(recorded['check']),
     builder_model: String(recorded['builder_model']),
     critic_model: String(recorded['critic_model']),
+    critic_provider: (recorded['critic_provider'] ?? 'claude_cli') as CriticProvider,
     builder_permission_mode: recorded['builder_permission_mode'] as BuilderPermissionMode,
     critic:
       recorded['critic_preset'] === 'custom'
