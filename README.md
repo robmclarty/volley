@@ -87,6 +87,7 @@ volley resume <run-id>
 | `--check` | `auto` | `auto` (checkride if detected, else none), `none`, or a shell command. |
 | `--builder-model` | `opus` | `opus`/`sonnet`/`haiku` or a full model id. |
 | `--critic-model` | `opus` | Model for the critic. |
+| `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local critic](#local-critic)). |
 | `--builder-permission-mode` | `acceptEdits` | Or `bypassPermissions` for fully trusted workspaces. |
 | `--critic` | `reviewer` | `reviewer`, `optimizer`, `researcher`, or a prompt file path. |
 | `--max-iterations` | `10` | Hard iteration cap. |
@@ -146,6 +147,42 @@ volley resume <run-id> --workspace ./my-project
 
 Continues from the last completed iteration with the saved feedback and cost
 totals. An iteration interrupted mid-phase is discarded and re-run.
+
+## Local critic
+
+The builder always runs on the Claude Code CLI, but the critic is read-only
+and schema-constrained — a good fit for a cheaper local model. Point it at a
+local provider with `--critic-provider`:
+
+```sh
+volley \
+  --prompt "@task.md" --workspace ./my-project --criteria "@criteria.md" \
+  --critic-provider ollama --critic-model qwen3:32b \
+  --max-cost-usd 10
+```
+
+Instead of the CLI's built-in Read/Grep/Glob, a local critic gets volley's own
+workspace-scoped read-only tools — `read_file`, `search_files`, `list_files` —
+each confined to the workspace root (no write path, no path traversal). The
+structured verdict contract is identical; fascicle validates and repairs the
+local model's output the same way.
+
+Providers and their setup:
+
+| `--critic-provider` | Server | Base-URL env (default) | Required peer dependency |
+|---|---|---|---|
+| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434/api`) | `ai-sdk-ollama` |
+| `lmstudio` | [LM Studio](https://lmstudio.ai) | `VOLLEY_LMSTUDIO_URL` (`http://localhost:1234/v1`) | `@ai-sdk/openai-compatible` |
+
+Install the peer for your provider in the project running volley (e.g.
+`pnpm add ai-sdk-ollama`); fascicle loads it lazily only when the local critic
+actually runs. Local providers are free, so the critic's cost is reported as
+`$0.000` and the run total reflects builder spend only.
+
+Note the split by design: the builder — where agentic capability matters most —
+stays on Claude, while the recurring per-iteration critic cost drops to zero.
+A local *builder* is out of scope (it would need write/execute tooling the CLI
+provides for free).
 
 ## Run artifacts
 
