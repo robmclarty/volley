@@ -30,6 +30,21 @@ describe('presets', () => {
     }
   });
 
+  it('names the local read-only tools for a non-CLI critic provider', () => {
+    const cli_prompt = resolve_critic_prompt(
+      test_config({ workspace: '/tmp', critic_preset: 'reviewer', critic_provider: 'claude_cli' }),
+    );
+    expect(cli_prompt).toContain('(Read, Grep, Glob)');
+
+    const local_prompt = resolve_critic_prompt(
+      test_config({ workspace: '/tmp', critic_preset: 'reviewer', critic_provider: 'ollama' }),
+    );
+    expect(local_prompt).toContain('read_file(path)');
+    expect(local_prompt).toContain('search_files');
+    expect(local_prompt).toContain('list_files');
+    expect(local_prompt).not.toContain('(Read, Grep, Glob)');
+  });
+
   it('uses a custom prompt file when configured', () => {
     const { workspace, cleanup } = temp_workspace();
     try {

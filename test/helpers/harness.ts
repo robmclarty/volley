@@ -40,6 +40,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     check_resolved: 'none',
     builder_model: 'opus',
     critic_model: 'opus',
+    critic_provider: 'claude_cli',
     builder_permission_mode: 'acceptEdits',
     critic_preset: 'reviewer',
     critic_prompt_path: null,

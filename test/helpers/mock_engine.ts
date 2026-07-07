@@ -66,7 +66,10 @@ export function mock_engine(
       usage: reply.usage ?? DEFAULT_USAGE,
       ...cost,
       finish_reason: 'stop',
-      model_resolved: { provider: 'claude_cli', model_id: opts.model ?? 'opus' },
+      model_resolved: {
+        provider: opts.provider ?? 'claude_cli',
+        model_id: opts.model ?? 'opus',
+      },
       provider_reported: {
         claude_cli: {
           session_id: reply.session_id ?? `mock-session-${String(index)}`,

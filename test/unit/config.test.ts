@@ -93,6 +93,32 @@ describe('resolve_config', () => {
     }
   });
 
+  it('defaults critic_provider to claude_cli and accepts local providers', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config(base(workspace)).critic_provider).toBe('claude_cli');
+      expect(
+        resolve_config({ ...base(workspace), critic_provider: 'ollama' }).critic_provider,
+      ).toBe('ollama');
+      expect(
+        resolve_config({ ...base(workspace), critic_provider: 'lmstudio' }).critic_provider,
+      ).toBe('lmstudio');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('rejects an unknown critic_provider', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config({ ...base(workspace), critic_provider: 'openai' as never }),
+      ).toThrow(/--critic-provider/);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('rejects an unknown critic that is not a file', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
