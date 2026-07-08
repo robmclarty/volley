@@ -31,8 +31,8 @@ importers:
         specifier: ^24.0.0
         version: 24.13.2
       checkride:
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.2.1
+        version: 0.2.1
       oxlint:
         specifier: ^1.72.0
         version: 1.72.0(oxlint-tsgolint@0.21.1)
@@ -776,8 +776,8 @@ packages:
     resolution: {integrity: sha512-PAJdDJusoxnwm1VwW07VWwUN1sl7smmC3OKggvndJFadxxDRyFJBX/ggnu/KE4kQAB7a3Dp8f/YXC1FlUprWmA==}
     engines: {node: '>= 16'}
 
-  checkride@0.2.0:
-    resolution: {integrity: sha512-IWoPvPL5xbv43S5N39owX5Z9ZpyJmSiAeioGMSUeDy39N+YJmAJ/xLMcGDe8LPUEah0Eo+6iDpXTKke1eS2b5g==}
+  checkride@0.2.1:
+    resolution: {integrity: sha512-VYjj/UIyv+VC/Y2vPHR7Ail8j7LMtdsPR76Xh0R4FGpNIvjtSukUh7R50inC3W4Vqvoa11kz0wCyeW6qzNLPeg==}
     engines: {node: '>=22.18.0', pnpm: '>=9.0.0'}
     hasBin: true
 
@@ -1612,7 +1612,7 @@ snapshots:
 
   check-error@2.1.3: {}
 
-  checkride@0.2.0: {}
+  checkride@0.2.1: {}
 
   chokidar@4.0.3:
     dependencies:
