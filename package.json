@@ -32,21 +32,21 @@
     "check": "checkride"
   },
   "dependencies": {
-    "ai": "^6.0.0",
-    "cac": "^6.7.14",
-    "fascicle": "^0.8.16",
-    "picocolors": "^1.1.1",
-    "zod": "^4.0.0"
+    "ai": "6.0.219",
+    "cac": "6.7.14",
+    "fascicle": "0.8.16",
+    "picocolors": "1.1.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@tsconfig/node24": "^24.0.0",
-    "@types/node": "^24.0.0",
-    "checkride": "^0.2.1",
-    "oxlint": "^1.72.0",
-    "oxlint-tsgolint": "^0.21.1",
-    "tsup": "^8.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "@tsconfig/node24": "24.0.4",
+    "@types/node": "24.13.2",
+    "checkride": "0.2.1",
+    "oxlint": "1.72.0",
+    "oxlint-tsgolint": "0.21.1",
+    "tsup": "8.5.1",
+    "tsx": "4.23.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.6"
   }
 }
