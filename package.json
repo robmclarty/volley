@@ -1,6 +1,6 @@
 {
   "name": "volley",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A CLI harness that runs a builder/critic loop until a task passes both a deterministic check pipeline and a natural-language acceptance review.",
   "type": "module",
   "license": "MIT",
