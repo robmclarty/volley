@@ -1,2 +1,8 @@
 allowBuilds:
   esbuild: true
+
+# fascicle is authored in-house and trusted; exempt it from pnpm's
+# minimumReleaseAge supply-chain quarantine (48h here) so fresh releases
+# install immediately. The bare name covers every future fascicle version.
+minimumReleaseAgeExclude:
+  - fascicle

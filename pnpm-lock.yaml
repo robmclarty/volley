@@ -15,8 +15,8 @@ importers:
         specifier: ^6.7.14
         version: 6.7.14
       fascicle:
-        specifier: ^0.8.12
-        version: 0.8.12(ai@6.0.219(zod@4.4.3))(zod@4.4.3)
+        specifier: ^0.8.13
+        version: 0.8.13(ai@6.0.219(zod@4.4.3))(zod@4.4.3)
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
@@ -833,8 +833,8 @@ packages:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
 
-  fascicle@0.8.12:
-    resolution: {integrity: sha512-bH1pB5pzl29xEr4FuJrfa8221/GGgyoNe3vPS0TAZDeBMvN3gGYN2My6QtJM7jWNyJd8xCdCjORCxI54fxNw2w==}
+  fascicle@0.8.13:
+    resolution: {integrity: sha512-QHFjuYLdVo730KnFo9iS7U8NwL8YZlmPk4pk5dI4iAvlpYmN0G53LRneERgpKM9XDAKr6BADrubaVJStamJAdQ==}
     engines: {node: '>=24.0.0', pnpm: '>=10.13.0'}
     hasBin: true
     peerDependencies:
@@ -1698,7 +1698,7 @@ snapshots:
 
   expect-type@1.4.0: {}
 
-  fascicle@0.8.12(ai@6.0.219(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.8.13(ai@6.0.219(zod@4.4.3))(zod@4.4.3):
     dependencies:
       ai: 6.0.219(zod@4.4.3)
       zod: 4.4.3
