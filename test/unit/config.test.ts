@@ -26,6 +26,7 @@ describe('resolve_config', () => {
       expect(config.max_cost_usd).toBeNull();
       expect(config.check).toBe('auto');
       expect(config.critic_preset).toBe('reviewer');
+      expect(config.builder_provider).toBe('claude_cli');
       expect(config.builder_permission_mode).toBe('acceptEdits');
       expect(config.git_checkpoints).toBe(false);
       expect(config.show_thinking).toBe(true);
@@ -88,6 +89,32 @@ describe('resolve_config', () => {
       expect(() => resolve_config({ ...base(workspace), max_cost_usd: -1 })).toThrow(
         /max-cost-usd/,
       );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('defaults builder_provider to claude_cli and accepts local providers', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config(base(workspace)).builder_provider).toBe('claude_cli');
+      expect(
+        resolve_config({ ...base(workspace), builder_provider: 'ollama' }).builder_provider,
+      ).toBe('ollama');
+      expect(
+        resolve_config({ ...base(workspace), builder_provider: 'lmstudio' }).builder_provider,
+      ).toBe('lmstudio');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('rejects an unknown builder_provider', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config({ ...base(workspace), builder_provider: 'openai' as never }),
+      ).toThrow(/--builder-provider/);
     } finally {
       cleanup();
     }

@@ -121,6 +121,7 @@ export async function run_volley(
     deps.engine ??
     create_volley_engine({
       workspace: config.workspace,
+      builder_provider: config.builder_provider,
       critic_provider: config.critic_provider,
     });
 

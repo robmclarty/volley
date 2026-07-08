@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { create_engine } from 'fascicle';
 import type { Engine, ProviderConfigMap, PricingTable } from 'fascicle';
 import { config_error } from './types.js';
-import type { CriticProvider } from './types.js';
+import type { BuilderProvider, CriticProvider } from './types.js';
 
 export type { Engine } from 'fascicle';
 
@@ -29,18 +29,31 @@ function load_pricing_overrides(path: string): PricingTable {
 
 export type EngineOptions = {
   workspace: string;
+  /** When the builder runs on a local model, its provider is configured
+   * alongside claude_cli so one engine drives both roles. */
+  builder_provider?: BuilderProvider;
   /** When the critic runs on a local model, its provider is configured
    * alongside claude_cli so one engine drives both roles. */
   critic_provider?: CriticProvider;
   env?: Record<string, string | undefined>;
 };
 
-/** Add the local critic provider (ollama/lmstudio) to the provider map, with
- * a base URL from the environment or a sensible localhost default. The
- * ai-sdk peer (`ai-sdk-ollama` / `@ai-sdk/openai-compatible`) is loaded
- * lazily by fascicle only when the provider actually runs. */
+/** The local (non-CLI) providers a role can select. `claude_cli` needs no
+ * ai-sdk wiring, so it never appears here. */
+type LocalProvider = 'ollama' | 'lmstudio';
+
+function is_local_provider(
+  provider: BuilderProvider | CriticProvider | undefined,
+): provider is LocalProvider {
+  return provider === 'ollama' || provider === 'lmstudio';
+}
+
+/** Add a local provider (ollama/lmstudio) to the provider map, with a base URL
+ * from the environment or a sensible localhost default. The ai-sdk peer
+ * (`ai-sdk-ollama` / `@ai-sdk/openai-compatible`) is loaded lazily by fascicle
+ * only when the provider actually runs. */
 function local_provider_config(
-  provider: 'ollama' | 'lmstudio',
+  provider: LocalProvider,
   env: Record<string, string | undefined>,
 ): ProviderConfigMap {
   if (provider === 'ollama') {
@@ -49,10 +62,10 @@ function local_provider_config(
   return { lmstudio: { base_url: env['VOLLEY_LMSTUDIO_URL'] ?? DEFAULT_LMSTUDIO_URL } };
 }
 
-/** Per-run engine. The builder always runs on `claude_cli` with the
- * workspace as its session cwd; when `critic_provider` is a local model,
- * that provider is wired in too. Binary, auth mode, provider URLs, and
- * pricing come from the environment (spec §12). */
+/** Per-run engine. `claude_cli` is always configured with the workspace as its
+ * session cwd; any local provider selected by the builder or critic role is
+ * wired in alongside it so one engine drives both roles. Binary, auth mode,
+ * provider URLs, and pricing come from the environment (spec §12). */
 export function create_volley_engine(options: EngineOptions): Engine {
   const env = options.env ?? process.env;
 
@@ -65,7 +78,12 @@ export function create_volley_engine(options: EngineOptions): Engine {
 
   const binary = env['VOLLEY_CLAUDE_BIN'];
   const pricing_path = env['VOLLEY_PRICING_PATH'];
-  const critic_provider = options.critic_provider ?? 'claude_cli';
+
+  // A run may select a local provider for the builder, the critic, or both
+  // (even two different ones). Wire each distinct local provider once.
+  const local_providers = new Set<LocalProvider>();
+  if (is_local_provider(options.builder_provider)) local_providers.add(options.builder_provider);
+  if (is_local_provider(options.critic_provider)) local_providers.add(options.critic_provider);
 
   const providers: ProviderConfigMap = {
     claude_cli: {
@@ -77,10 +95,10 @@ export function create_volley_engine(options: EngineOptions): Engine {
         ? { api_key: env['ANTHROPIC_API_KEY'] }
         : {}),
     },
-    ...(critic_provider === 'ollama' || critic_provider === 'lmstudio'
-      ? local_provider_config(critic_provider, env)
-      : {}),
   };
+  for (const provider of local_providers) {
+    Object.assign(providers, local_provider_config(provider, env));
+  }
 
   return create_engine({
     providers,

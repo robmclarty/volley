@@ -39,6 +39,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     check: 'none',
     check_resolved: 'none',
     builder_model: 'opus',
+    builder_provider: 'claude_cli',
     critic_model: 'opus',
     critic_provider: 'claude_cli',
     builder_permission_mode: 'acceptEdits',

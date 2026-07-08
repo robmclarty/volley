@@ -20,6 +20,7 @@ import type { Renderer, RenderMode } from './render/renderer.js';
 import { config_error, error_kind } from './types.js';
 import type {
   BuilderPermissionMode,
+  BuilderProvider,
   CriticProvider,
   ResolvedConfig,
   RunResult,
@@ -32,6 +33,7 @@ type CliFlags = {
   criteria?: string;
   check?: string;
   builderModel?: string;
+  builderProvider?: string;
   criticModel?: string;
   criticProvider?: string;
   builderPermissionMode?: string;
@@ -79,6 +81,9 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.criteria !== undefined ? { criteria: flags.criteria } : {}),
     ...(flags.check !== undefined ? { check: flags.check } : {}),
     ...(flags.builderModel !== undefined ? { builder_model: flags.builderModel } : {}),
+    ...(flags.builderProvider !== undefined
+      ? { builder_provider: flags.builderProvider as BuilderProvider }
+      : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),
     ...(flags.criticProvider !== undefined
       ? { critic_provider: flags.criticProvider as CriticProvider }
@@ -104,6 +109,7 @@ function dry_run(config: ResolvedConfig, renderer: Renderer): number {
   renderer.info(`dry run: config valid (run ${config.run_id})`);
   renderer.info(`workspace: ${config.workspace}`);
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
+  renderer.info(`builder model: ${config.builder_model} (provider: ${config.builder_provider})`);
   renderer.info(`critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`);
   renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
   if (config.check_resolved === 'checkride') {
@@ -152,6 +158,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--criteria <criteria>', 'Acceptance criteria (string or @file)')
     .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
     .option('--builder-model <model>', 'Builder model')
+    .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
     .option('--critic-model <model>', 'Critic model')
     .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')

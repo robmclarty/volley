@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
+  BuilderProvider,
   CriticPreset,
   CriticProvider,
   ResolvedConfig,
@@ -21,8 +22,15 @@ export const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_CHECK = 'auto';
 export const DEFAULT_CRITIC = 'reviewer';
+export const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
 export const DEFAULT_CRITIC_PROVIDER: CriticProvider = 'claude_cli';
 export const DEFAULT_PERMISSION_MODE: BuilderPermissionMode = 'acceptEdits';
+
+const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
+  'claude_cli',
+  'ollama',
+  'lmstudio',
+];
 
 const CRITIC_PROVIDERS: ReadonlyArray<CriticProvider> = [
   'claude_cli',
@@ -160,6 +168,13 @@ export function resolve_config(
     cwd,
   );
 
+  const builder_provider = raw.builder_provider ?? DEFAULT_BUILDER_PROVIDER;
+  if (!BUILDER_PROVIDERS.includes(builder_provider)) {
+    throw config_error(
+      `--builder-provider must be one of ${BUILDER_PROVIDERS.join(', ')}; got: ${String(raw.builder_provider)}`,
+    );
+  }
+
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
   if (!CRITIC_PROVIDERS.includes(critic_provider)) {
     throw config_error(
@@ -180,6 +195,7 @@ export function resolve_config(
     check: raw.check ?? DEFAULT_CHECK,
     check_resolved: 'none',
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
+    builder_provider,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,
     builder_permission_mode,

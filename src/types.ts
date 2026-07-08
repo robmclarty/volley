@@ -11,9 +11,16 @@ export type Verdict = 'approved' | 'changes_requested';
 
 export type CriticPreset = 'reviewer' | 'optimizer' | 'researcher';
 
-/** Transport for the critic role. The builder is always `claude_cli`; the
- * critic is read-only + schema-constrained, so it can run on a local model. */
+/** Transport for the critic role. The critic is read-only + schema-constrained,
+ * so it has always been able to run on a local model. */
 export type CriticProvider = 'claude_cli' | 'ollama' | 'lmstudio';
+
+/** Transport for the builder role. `claude_cli` is a full agentic Claude Code
+ * session; the local providers run the builder as a volley-driven tool loop
+ * (write/exec tools supplied by the harness). The execution path for the local
+ * providers lands with the builder tool/termination work; this type and its
+ * plumbing exist so that work has somewhere to attach (spec v3). */
+export type BuilderProvider = 'claude_cli' | 'ollama' | 'lmstudio';
 
 export type BuilderPermissionMode = 'acceptEdits' | 'bypassPermissions';
 
@@ -40,6 +47,7 @@ export type VolleyConfig = {
   criteria: string;
   check?: CheckMode;
   builder_model?: string;
+  builder_provider?: BuilderProvider;
   critic_model?: string;
   critic_provider?: CriticProvider;
   builder_permission_mode?: BuilderPermissionMode;
@@ -64,6 +72,7 @@ export type ResolvedConfig = {
   check: CheckMode;
   check_resolved: CheckRunnerKind;
   builder_model: string;
+  builder_provider: BuilderProvider;
   critic_model: string;
   critic_provider: CriticProvider;
   builder_permission_mode: BuilderPermissionMode;
