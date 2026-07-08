@@ -15,8 +15,8 @@ importers:
         specifier: ^6.7.14
         version: 6.7.14
       fascicle:
-        specifier: ^0.8.13
-        version: 0.8.13(ai@6.0.219(zod@4.4.3))(zod@4.4.3)
+        specifier: ^0.8.16
+        version: 0.8.16(ai@6.0.219(zod@4.4.3))(zod@4.4.3)
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
@@ -31,8 +31,8 @@ importers:
         specifier: ^24.0.0
         version: 24.13.2
       checkride:
-        specifier: ^0.1.6
-        version: 0.1.6
+        specifier: ^0.2.0
+        version: 0.2.0
       oxlint:
         specifier: ^1.72.0
         version: 1.72.0(oxlint-tsgolint@0.21.1)
@@ -776,8 +776,8 @@ packages:
     resolution: {integrity: sha512-PAJdDJusoxnwm1VwW07VWwUN1sl7smmC3OKggvndJFadxxDRyFJBX/ggnu/KE4kQAB7a3Dp8f/YXC1FlUprWmA==}
     engines: {node: '>= 16'}
 
-  checkride@0.1.6:
-    resolution: {integrity: sha512-z9plHoiEXPCFyl+E8n6yis2fMjgKyljwmAnDjzlBU2p4m+IJCSFIKfijrBCh+43p6Pr8MyS9Po59fxIhtqUJrw==}
+  checkride@0.2.0:
+    resolution: {integrity: sha512-IWoPvPL5xbv43S5N39owX5Z9ZpyJmSiAeioGMSUeDy39N+YJmAJ/xLMcGDe8LPUEah0Eo+6iDpXTKke1eS2b5g==}
     engines: {node: '>=22.18.0', pnpm: '>=9.0.0'}
     hasBin: true
 
@@ -833,8 +833,8 @@ packages:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
 
-  fascicle@0.8.13:
-    resolution: {integrity: sha512-QHFjuYLdVo730KnFo9iS7U8NwL8YZlmPk4pk5dI4iAvlpYmN0G53LRneERgpKM9XDAKr6BADrubaVJStamJAdQ==}
+  fascicle@0.8.16:
+    resolution: {integrity: sha512-g18i62FiUA/P3OVvkK7YhpOAh8MJtahiFGLa7+8Tm6zYBnh4w9kSzpNp3V8BJ2OsP5Fuz2ks5p2T4oWMRgiWXg==}
     engines: {node: '>=24.0.0', pnpm: '>=10.13.0'}
     hasBin: true
     peerDependencies:
@@ -1612,7 +1612,7 @@ snapshots:
 
   check-error@2.1.3: {}
 
-  checkride@0.1.6: {}
+  checkride@0.2.0: {}
 
   chokidar@4.0.3:
     dependencies:
@@ -1698,7 +1698,7 @@ snapshots:
 
   expect-type@1.4.0: {}
 
-  fascicle@0.8.13(ai@6.0.219(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.8.16(ai@6.0.219(zod@4.4.3))(zod@4.4.3):
     dependencies:
       ai: 6.0.219(zod@4.4.3)
       zod: 4.4.3
