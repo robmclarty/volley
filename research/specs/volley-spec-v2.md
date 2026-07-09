@@ -815,12 +815,12 @@ All integration tests inject a mock `Engine` (scripted `generate` results + chun
 
 ### Architectural validation
 
-- No class declarations in `src/`; no `this`.
-- `create_engine` appears in exactly one file (`src/engine.ts`); no other module imports it or any provider SDK.
-- No pricing table, token math, or `per_mtok`/`per_million` constants anywhere in `src/` — grep returns zero. Cost knowledge lives in fascicle.
-- The loop is fascicle's `loop`; grep for `while` / `for (` in `src/orchestrator.ts` returns zero iteration constructs.
+- No class declarations in `src/`; no `this`. _Enforced: ast-grep `no-class`, `no-this`._
+- `create_engine` appears in exactly one file (`src/engine.ts`); no other module imports it or any provider SDK. _Enforced: ast-grep `create-engine-only-in-engine`._
+- No pricing table, token math, or `per_mtok`/`per_million` constants anywhere in `src/` — grep returns zero. Cost knowledge lives in fascicle. _Enforced: ast-grep `no-pricing-constants`._
+- The loop is fascicle's `loop`; grep for `while` / `for (` in `src/orchestrator.ts` returns zero iteration constructs. _Enforced: ast-grep `orchestrator-no-loops`._
 - `src/critic/presets/` contains one markdown file per preset; presets discoverable by listing the directory.
-- `pnpm check` (checkride) passes on volley's own repo.
+- `pnpm check` (checkride) passes on volley's own repo. _Runs the ast-grep rules above via the `struct` check._
 
 ### Learning outcomes
 

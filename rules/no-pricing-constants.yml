@@ -1,0 +1,15 @@
+id: no-pricing-constants
+message: |
+  No pricing tables, token math, or `per_mtok` / `per_million` constants in
+  src/ (spec §10). Cost knowledge lives in fascicle — pass its `PricingTable`
+  through, never redefine one here.
+severity: error
+language: typescript
+files:
+  - '**/src/**/*.ts'
+rule:
+  any:
+    - kind: identifier
+      regex: '(?i)per_mtok|per_million'
+    - kind: property_identifier
+      regex: '(?i)per_mtok|per_million'

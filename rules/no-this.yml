@@ -1,0 +1,10 @@
+id: no-this
+message: |
+  No `this` in src/. volley is functional/procedural — no classes, no `this`
+  (spec §10). Use modules and closures instead.
+severity: error
+language: typescript
+files:
+  - '**/src/**/*.ts'
+rule:
+  kind: this
