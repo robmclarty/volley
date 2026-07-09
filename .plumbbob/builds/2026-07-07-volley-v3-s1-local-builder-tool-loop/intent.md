@@ -96,7 +96,7 @@ outer loop  (fascicle `loop`, unchanged from v2)
 ## Verdicts
 
 - 2026-07-07 — finish-termination mechanism → confirmed fascicle 0.8.13 has no terminal-tool affordance, so `finish` is a **soft** signal (model stops after the call → `finish_reason: 'stop'`) with `max_steps` as the hard backstop; a full `GenerateResult` is preserved either way. Folded into D6; not an open question. **Superseded 2026-07-08 (see below).**
-- 2026-07-08 — dependency upgrade → fascicle **0.8.16** / checkride **0.2.0** installed (`pnpm check` clean). fascicle 0.8.16 adds a terminal-tool affordance `ends_turn?: boolean` to `Tool`: a successful `ends_turn: true` call ends the loop deterministically (per-step `finish_reason: 'tool_calls'`, overall `finish_reason: 'stop'`; verified in `node_modules/fascicle/dist/index.js` ~L4315/L4354/L4371), and a terminal call is exempt from `max_tool_calls_per_step` clamping (~L4125). `finish` therefore becomes a **hard** deterministic stop (D6 updated) instead of the 0.8.13 soft signal — strictly better for a weak local model. The five per-call knobs (D5/C5) and `max_steps → 'max_steps'` (D7) are unchanged. checkride 0.2.0 is additive (baseline, PM-agnostic runs, opt-in `format`/`publint`/`attw`/`extends`); the existing `checkride.config.json` validates unchanged.
+- 2026-07-08 — dependency upgrade → fascicle **0.8.16** / checkride **0.2.1** installed (`pnpm check` clean). fascicle 0.8.16 adds a terminal-tool affordance `ends_turn?: boolean` to `Tool`: a successful `ends_turn: true` call ends the loop deterministically (per-step `finish_reason: 'tool_calls'`, overall `finish_reason: 'stop'`; verified in `node_modules/fascicle/dist/index.js` ~L4315/L4354/L4371), and a terminal call is exempt from `max_tool_calls_per_step` clamping (~L4125). `finish` therefore becomes a **hard** deterministic stop (D6 updated) instead of the 0.8.13 soft signal — strictly better for a weak local model. The five per-call knobs (D5/C5) and `max_steps → 'max_steps'` (D7) are unchanged. checkride 0.2.1 is additive over 0.1.x (baseline, PM-agnostic runs, opt-in `format`/`publint`/`attw`/`extends`; 0.2.1 itself is a spell-scaffold fix); the existing `checkride.config.json` validates unchanged.
 
 ## Source
 
@@ -145,7 +145,7 @@ Add `builder_max_steps` to `VolleyConfig`/`ResolvedConfig`, resolve in `src/conf
 
 ### Already landed — do NOT redo (mechanical plumbing)
 
-`builder_provider: 'claude_cli' | 'ollama' | 'lmstudio'` exists end-to-end: `VolleyConfig`/`ResolvedConfig` (`src/types.ts`), resolution + validation (`src/config.ts`, default `claude_cli`), `--builder-provider` flag (`src/cli.ts`), engine wiring for either role's local provider (`src/engine.ts`), persistence (`src/workspace.ts`), resume-restore (`src/iteration.ts`). Setting it today is inert for execution — this session makes it live. Step 0 (fascicle → 0.8.16, checkride → 0.2.0) is DONE (installed; `pnpm check` clean).
+`builder_provider: 'claude_cli' | 'ollama' | 'lmstudio'` exists end-to-end: `VolleyConfig`/`ResolvedConfig` (`src/types.ts`), resolution + validation (`src/config.ts`, default `claude_cli`), `--builder-provider` flag (`src/cli.ts`), engine wiring for either role's local provider (`src/engine.ts`), persistence (`src/workspace.ts`), resume-restore (`src/iteration.ts`). Setting it today is inert for execution — this session makes it live. Step 0 (fascicle → 0.8.16, checkride → 0.2.1) is DONE (installed; `pnpm check` clean).
 
 ### Failure modes (extends v2 §9)
 

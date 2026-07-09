@@ -1,4 +1,5 @@
 {
+  "$schema": "./node_modules/checkride/schema/checkride.config.schema.json",
   "checks": {
     "test": {
       "use": "vitest",

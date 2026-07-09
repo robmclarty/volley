@@ -1,0 +1,28 @@
+# Fallow: dead code, circular deps, duplication, complexity, architecture boundaries.
+# Docs: https://docs.fallow.tools
+
+entry = [
+  "src/index.ts",
+  "src/cli.ts",
+  "src/**/*.test.ts",
+  "test/**/*.test.ts",
+]
+
+# CLI/build tooling: invoked via package scripts or by checkride's adapters,
+# never imported from source, so fallow can't see the usage.
+ignoreDependencies = ["@ast-grep/cli"]
+
+[rules]
+unused-exports = "error"
+unused-files = "error"
+unused-dependencies = "error"
+circular-dependencies = "error"
+boundary-violation = "error"
+
+[duplicates]
+mode = "mild"
+minTokens = 50
+
+[health]
+maxCyclomatic = 15
+maxCognitive = 15

@@ -1,5 +1,7 @@
 allowBuilds:
+  '@ast-grep/cli': true
   esbuild: true
+  fallow: true
 
 # fascicle and checkride are authored in-house and trusted; exempt them from
 # pnpm's minimumReleaseAge supply-chain quarantine (48h here) so fresh releases

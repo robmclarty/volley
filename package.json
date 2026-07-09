@@ -39,9 +39,11 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@ast-grep/cli": "0.42.1",
     "@tsconfig/node24": "24.0.4",
     "@types/node": "24.13.2",
     "checkride": "0.2.1",
+    "fallow": "2.48.0",
     "oxlint": "1.72.0",
     "oxlint-tsgolint": "0.21.1",
     "tsup": "8.5.1",
