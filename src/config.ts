@@ -33,6 +33,15 @@ const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
   'lmstudio',
 ];
 
+/** Builder providers that run a local model through volley's own tool loop —
+ * a real host `bash` (write + exec) with no sandbox yet. Refused unless the
+ * operator opts out (D11); `claude_cli` has its own permission model and is
+ * exempt. */
+const LOCAL_BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
+  'ollama',
+  'lmstudio',
+];
+
 const CRITIC_PROVIDERS: ReadonlyArray<CriticProvider> = [
   'claude_cli',
   'ollama',
@@ -151,6 +160,18 @@ function validate_builder_max_steps(value: number, original: unknown): number {
   return value;
 }
 
+/** The `--allow-unsandboxed-builder` flag/config value wins; otherwise
+ * `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` (or `=true`) opts out. Any other value
+ * (incl. `0`/`false`/unset) leaves the local builder refused (D11). */
+function resolve_allow_unsandboxed_builder(
+  raw: VolleyConfig,
+  env: Record<string, string | undefined>,
+): boolean {
+  if (raw.allow_unsandboxed_builder === true) return true;
+  const env_value = env['VOLLEY_ALLOW_UNSANDBOXED_BUILDER'];
+  return env_value === '1' || env_value === 'true';
+}
+
 /** Merge, expand, and validate a raw `VolleyConfig` into a `ResolvedConfig`.
  * `check_resolved` is filled in later by check detection (workspace-relative);
  * it starts as `none` and `resolve_check_runner` overrides it. */
@@ -204,6 +225,17 @@ export function resolve_config(
     );
   }
 
+  // Safety gate (D11): a local builder gets a real host bash with no sandbox,
+  // so refuse it — before any model spend — unless the operator opts out.
+  const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, env);
+  if (LOCAL_BUILDER_PROVIDERS.includes(builder_provider) && !allow_unsandboxed_builder) {
+    throw config_error(
+      `builder-provider '${builder_provider}' runs a local model with a real host bash ` +
+        `(write + exec) and no sandbox — refused by default. Pass --allow-unsandboxed-builder ` +
+        `(or set VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1) to proceed; a container sandbox arrives in a later session.`,
+    );
+  }
+
   const builder_max_steps = resolve_builder_max_steps(raw, env);
 
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
@@ -228,6 +260,7 @@ export function resolve_config(
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
     builder_provider,
     builder_max_steps,
+    allow_unsandboxed_builder,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,
     builder_permission_mode,

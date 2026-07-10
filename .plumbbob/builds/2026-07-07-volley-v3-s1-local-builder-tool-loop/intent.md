@@ -62,7 +62,7 @@ outer loop  (fascicle `loop`, unchanged from v2)
 
 ## Steps
 
-1. [ ] Config: thread `builder_max_steps` (default 50) — **done when:** `test/unit/config.test.ts` covers the default (50), positive-integer validation, `--builder-max-steps` / `VOLLEY_BUILDER_MAX_STEPS` override (flag > env > default), and a persist→restore round-trip preserves the value; `pnpm check` clean.
+1. [x] Config: thread `builder_max_steps` (default 50) — **done when:** `test/unit/config.test.ts` covers the default (50), positive-integer validation, `--builder-max-steps` / `VOLLEY_BUILDER_MAX_STEPS` override (flag > env > default), and a persist→restore round-trip preserves the value; `pnpm check` clean.
    - seam: `src/types.ts`, `src/config.ts`, `src/cli.ts`, `src/workspace.ts`, `src/iteration.ts`, `test/unit/config.test.ts`
    - model: sonnet — mechanical threading that mirrors the already-landed `builder_provider` pattern file-for-file
 2. [ ] Safety gate: unsandboxed-builder refusal + opt-out (D11) — **done when:** a test shows a local `builder_provider` with no opt-out throws a `config_error` before any model spend (and `--dry-run` refuses it too), while `--allow-unsandboxed-builder` / `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` proceeds and emits one loud warning.

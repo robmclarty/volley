@@ -49,6 +49,7 @@ export type VolleyConfig = {
   builder_model?: string;
   builder_provider?: BuilderProvider;
   builder_max_steps?: number;
+  allow_unsandboxed_builder?: boolean;
   critic_model?: string;
   critic_provider?: CriticProvider;
   builder_permission_mode?: BuilderPermissionMode;
@@ -75,6 +76,9 @@ export type ResolvedConfig = {
   builder_model: string;
   builder_provider: BuilderProvider;
   builder_max_steps: number;
+  /** Operator opt-out permitting a local (non-`claude_cli`) builder to run
+   * without a sandbox — it gets a real host bash. Refused by default (D11). */
+  allow_unsandboxed_builder: boolean;
   critic_model: string;
   critic_provider: CriticProvider;
   builder_permission_mode: BuilderPermissionMode;

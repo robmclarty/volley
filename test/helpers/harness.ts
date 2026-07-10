@@ -41,6 +41,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     builder_model: 'opus',
     builder_provider: 'claude_cli',
     builder_max_steps: 50,
+    allow_unsandboxed_builder: false,
     critic_model: 'opus',
     critic_provider: 'claude_cli',
     builder_permission_mode: 'acceptEdits',

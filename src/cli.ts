@@ -35,6 +35,7 @@ type CliFlags = {
   builderModel?: string;
   builderProvider?: string;
   builderMaxSteps?: number;
+  allowUnsandboxedBuilder?: boolean;
   criticModel?: string;
   criticProvider?: string;
   builderPermissionMode?: string;
@@ -74,6 +75,19 @@ function warn_api_key_meter(renderer: Renderer): void {
   }
 }
 
+/** One loud warning when an unsandboxed local builder is about to run (D11).
+ * Config resolution has already refused this unless the opt-out is set, so
+ * reaching here with a local provider means the operator accepted the risk. */
+export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Renderer): void {
+  if (config.builder_provider !== 'claude_cli' && config.allow_unsandboxed_builder) {
+    renderer.warn(
+      `UNSANDBOXED BUILDER: '${config.builder_provider}' runs a local model with a real host bash ` +
+        `(write + exec) directly on this machine in ${config.workspace} — there is no container ` +
+        `isolation yet. Proceeding because --allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER is set.`,
+    );
+  }
+}
+
 function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
   return {
     ...base,
@@ -88,6 +102,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.builderMaxSteps !== undefined
       ? { builder_max_steps: Number(flags.builderMaxSteps) }
       : {}),
+    ...(flags.allowUnsandboxedBuilder === true ? { allow_unsandboxed_builder: true } : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),
     ...(flags.criticProvider !== undefined
       ? { critic_provider: flags.criticProvider as CriticProvider }
@@ -115,6 +130,9 @@ function dry_run(config: ResolvedConfig, renderer: Renderer): number {
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
   renderer.info(`builder model: ${config.builder_model} (provider: ${config.builder_provider})`);
   renderer.info(`builder max steps: ${config.builder_max_steps}`);
+  if (config.builder_provider !== 'claude_cli') {
+    renderer.info('unsandboxed builder: allowed (--allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER)');
+  }
   renderer.info(`critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`);
   renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
   if (config.check_resolved === 'checkride') {
@@ -165,6 +183,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--builder-model <model>', 'Builder model')
     .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
     .option('--builder-max-steps <n>', 'Local builder tool-loop step cap per iteration (default: 50)')
+    .option('--allow-unsandboxed-builder', 'Permit a local builder to run without a sandbox (real host bash + write)')
     .option('--critic-model <model>', 'Critic model')
     .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')
@@ -185,6 +204,7 @@ async function main(argv: string[]): Promise<number> {
       config.check_resolved = resolve_check_runner(config.check, config.workspace);
       const renderer = make_renderer(config);
       warn_api_key_meter(renderer);
+      warn_unsandboxed_builder(config, renderer);
       if (merged.dry_run === true) {
         exit_code = dry_run(config, renderer);
         return;
@@ -223,6 +243,7 @@ async function main(argv: string[]): Promise<number> {
       }
       const renderer = make_renderer(config);
       warn_api_key_meter(renderer);
+      warn_unsandboxed_builder(config, renderer);
       renderer.info(
         `resuming run ${run_id} at iteration ${String(resume.iterations_completed + 1)}`,
       );
@@ -242,5 +263,10 @@ async function main(argv: string[]): Promise<number> {
   return exit_code;
 }
 
-const code = await main(process.argv);
-process.exitCode = code;
+// Guard the entry so importing this module (e.g. from tests, to exercise the
+// exported warn helpers) does not run the CLI. `import.meta.main` is true only
+// when this file is the process entry point (symlink-safe; Node ≥ 24).
+if (import.meta.main) {
+  const code = await main(process.argv);
+  process.exitCode = code;
+}

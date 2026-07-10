@@ -9,8 +9,10 @@ import {
   load_config_file,
   resolve_config,
 } from '../../src/config.js';
+import { warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
+import { create_renderer } from '../../src/render/renderer.js';
 import { initialize_workspace, write_resolved_config } from '../../src/workspace.js';
 import { temp_workspace } from '../helpers/harness.js';
 
@@ -98,15 +100,25 @@ describe('resolve_config', () => {
     }
   });
 
-  it('defaults builder_provider to claude_cli and accepts local providers', () => {
+  it('defaults builder_provider to claude_cli and accepts local providers (with opt-out)', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       expect(resolve_config(base(workspace)).builder_provider).toBe('claude_cli');
+      // Local providers are refused without the D11 opt-out (covered separately);
+      // here they resolve once it is granted.
       expect(
-        resolve_config({ ...base(workspace), builder_provider: 'ollama' }).builder_provider,
+        resolve_config({
+          ...base(workspace),
+          builder_provider: 'ollama',
+          allow_unsandboxed_builder: true,
+        }).builder_provider,
       ).toBe('ollama');
       expect(
-        resolve_config({ ...base(workspace), builder_provider: 'lmstudio' }).builder_provider,
+        resolve_config({
+          ...base(workspace),
+          builder_provider: 'lmstudio',
+          allow_unsandboxed_builder: true,
+        }).builder_provider,
       ).toBe('lmstudio');
     } finally {
       cleanup();
@@ -119,6 +131,73 @@ describe('resolve_config', () => {
       expect(() =>
         resolve_config({ ...base(workspace), builder_provider: 'openai' as never }),
       ).toThrow(/--builder-provider/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a local builder with no opt-out (D11) — before any model spend', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const provider of ['ollama', 'lmstudio'] as const) {
+        try {
+          // resolve_config runs before any model spend and before the --dry-run
+          // branch, so this same throw is what refuses `--dry-run` too.
+          resolve_config({ ...base(workspace), builder_provider: provider }, { env: {} });
+          expect.unreachable('should have refused the unsandboxed local builder');
+        } catch (err) {
+          expect(error_kind(err)).toBe('config_error');
+          expect((err as Error).message).toMatch(/allow-unsandboxed-builder/);
+        }
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('claude_cli needs no opt-out and defaults allow_unsandboxed_builder to false', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), { env: {} });
+      expect(config.builder_provider).toBe('claude_cli');
+      expect(config.allow_unsandboxed_builder).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('the --allow-unsandboxed-builder flag lets a local builder resolve', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        { ...base(workspace), builder_provider: 'ollama', allow_unsandboxed_builder: true },
+        { env: {} },
+      );
+      expect(config.builder_provider).toBe('ollama');
+      expect(config.allow_unsandboxed_builder).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 (or =true) opts out; other values do not', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const value of ['1', 'true']) {
+        const config = resolve_config(
+          { ...base(workspace), builder_provider: 'lmstudio' },
+          { env: { VOLLEY_ALLOW_UNSANDBOXED_BUILDER: value } },
+        );
+        expect(config.allow_unsandboxed_builder).toBe(true);
+      }
+      for (const value of ['0', 'false', '']) {
+        expect(() =>
+          resolve_config(
+            { ...base(workspace), builder_provider: 'lmstudio' },
+            { env: { VOLLEY_ALLOW_UNSANDBOXED_BUILDER: value } },
+          ),
+        ).toThrow(/allow-unsandboxed-builder/);
+      }
     } finally {
       cleanup();
     }
@@ -320,5 +399,45 @@ describe('load_config_file', () => {
     await expect(load_config_file('/nope/volley.config.ts')).rejects.toMatchObject({
       kind: 'config_error',
     });
+  });
+});
+
+describe('warn_unsandboxed_builder', () => {
+  function capture(config: Parameters<typeof warn_unsandboxed_builder>[0]) {
+    const out: string[] = [];
+    const renderer = create_renderer({
+      mode: 'default',
+      show_thinking: true,
+      color: false,
+      max_cost_usd: null,
+      write: (text) => out.push(text),
+    });
+    warn_unsandboxed_builder(config, renderer);
+    return out.join('');
+  }
+
+  it('emits one loud warning when an opted-in local builder proceeds', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        { ...base(workspace), builder_provider: 'ollama', allow_unsandboxed_builder: true },
+        { env: {} },
+      );
+      const output = capture(config);
+      expect(output).toMatch(/unsandboxed/i);
+      expect(output.match(/warning:/g)).toHaveLength(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('stays silent for the sandboxed default (claude_cli) builder', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), { env: {} });
+      expect(capture(config)).toBe('');
+    } finally {
+      cleanup();
+    }
   });
 });
