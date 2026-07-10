@@ -1,5 +1,6 @@
 # volley
 
+A Converging Loop:
 A CLI harness that runs a **builder/critic loop** until a task passes both a
 deterministic check pipeline and a natural-language acceptance review.
 
@@ -174,12 +175,17 @@ Providers and their setup:
 
 | `--critic-provider` | Server | Base-URL env (default) | Required peer dependency |
 |---|---|---|---|
-| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434/api`) | `ai-sdk-ollama` |
+| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434`) | `ai-sdk-ollama` |
 | `lmstudio` | [LM Studio](https://lmstudio.ai) | `VOLLEY_LMSTUDIO_URL` (`http://localhost:1234/v1`) | `@ai-sdk/openai-compatible` |
 
 Install the peer for your provider in the project running volley (e.g.
-`pnpm add ai-sdk-ollama`); fascicle loads it lazily only when the local critic
-actually runs. Local providers are free, so the critic's cost is reported as
+`pnpm add ai-sdk-ollama@^3`); fascicle loads it lazily only when the local
+critic actually runs. The major matters: it must satisfy fascicle's declared
+peer range (`^3` for today's fascicle; a bare `pnpm add ai-sdk-ollama`
+installs v4, which targets a newer AI SDK spec and fails at the first call).
+The Ollama base URL is the **server root** — `ai-sdk-ollama` adds the `/api`
+prefix itself (volley strips a trailing `/api` from `VOLLEY_OLLAMA_URL` for
+compatibility). Local providers are free, so the critic's cost is reported as
 `$0.000` and the run total reflects builder spend only.
 
 Keeping the builder on Claude while the critic goes local is the low-risk split:
@@ -217,7 +223,12 @@ session; this opt-out then becomes the "I already run in a devcontainer" escape
 hatch.
 
 Provider setup is the same as the [local critic](#local-critic) table
-(`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, same peer dependencies). Getting a
+(`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, same peer dependencies). At
+builder start (and before a local critic's first verdict) volley pre-loads an
+Ollama model with a load-only `/api/generate` call, so a cold multi-GB model
+load doesn't eat the first real request's time-to-first-byte budget — without
+it, a big cold model can die minutes in with an opaque
+`stream interrupted: fetch failed`. Getting a
 weak local model to drive a tool loop reliably has three sharp edges:
 
 - **Set the context length to ≥ ~16k tokens.** Ollama's 4k default silently

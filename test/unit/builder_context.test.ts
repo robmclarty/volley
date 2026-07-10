@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MIN_RECOMMENDED_NUM_CTX,
   context_warning,
   parse_num_ctx,
+  probe_ollama_num_ctx,
 } from '../../src/builder/context_check.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('parse_num_ctx', () => {
   it('reads num_ctx from an Ollama parameters blob', () => {
@@ -20,6 +25,26 @@ describe('parse_num_ctx', () => {
     expect(parse_num_ctx('stop "<|im_end|>"\ntemperature 0.7')).toBeNull();
     expect(parse_num_ctx('num_ctx notanumber')).toBeNull();
     expect(parse_num_ctx(null)).toBeNull();
+  });
+});
+
+describe('probe_ollama_num_ctx', () => {
+  it('POSTs the model to /api/show at the server root and parses num_ctx', async () => {
+    const fetch_stub = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ parameters: 'num_ctx 8192' })));
+    vi.stubGlobal('fetch', fetch_stub);
+
+    // base_url is the server root (resolve_ollama_base_url output), so the
+    // probe supplies the /api prefix itself.
+    await expect(probe_ollama_num_ctx('http://localhost:11434', 'm')).resolves.toBe(8192);
+    const [url] = fetch_stub.mock.calls[0] as [string];
+    expect(url).toBe('http://localhost:11434/api/show');
+  });
+
+  it('returns null on any failure — probe never gates the builder', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    await expect(probe_ollama_num_ctx('http://localhost:11434', 'm')).resolves.toBeNull();
   });
 });
 

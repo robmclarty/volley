@@ -49,6 +49,7 @@
     "@tsconfig/node24": "24.0.4",
     "@types/node": "24.13.2",
     "@types/turndown": "5.0.6",
+    "ai-sdk-ollama": "3.8.8",
     "checkride": "0.2.1",
     "fallow": "2.48.0",
     "oxlint": "1.72.0",

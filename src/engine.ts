@@ -11,9 +11,21 @@ import type { BuilderProvider, CriticProvider } from './types.js';
 
 export type { Engine } from 'fascicle';
 
-/** LM Studio's OpenAI-compatible server and Ollama's native API defaults. */
-export const DEFAULT_OLLAMA_URL = 'http://localhost:11434/api';
+/** LM Studio's OpenAI-compatible server and Ollama's server-root defaults.
+ * The Ollama URL is the server root, NOT `…/api`: `ai-sdk-ollama` appends
+ * `/api/...` itself, so a base URL ending in `/api` requests `/api/api/chat`
+ * and 404s. */
+export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_LMSTUDIO_URL = 'http://localhost:1234/v1';
+
+/** The Ollama base URL from the environment or the localhost default,
+ * normalized to the server root. A trailing `/api` (the pre-v0.3.1 documented
+ * default, and a natural mistake since Ollama's REST paths all start with it)
+ * is stripped rather than left to 404 every request. */
+export function resolve_ollama_base_url(env: Record<string, string | undefined>): string {
+  const raw = env['VOLLEY_OLLAMA_URL'] ?? DEFAULT_OLLAMA_URL;
+  return raw.replace(/\/+$/, '').replace(/\/api$/, '');
+}
 
 function load_pricing_overrides(path: string): PricingTable {
   if (!existsSync(path)) {
@@ -57,7 +69,7 @@ function local_provider_config(
   env: Record<string, string | undefined>,
 ): ProviderConfigMap {
   if (provider === 'ollama') {
-    return { ollama: { base_url: env['VOLLEY_OLLAMA_URL'] ?? DEFAULT_OLLAMA_URL } };
+    return { ollama: { base_url: resolve_ollama_base_url(env) } };
   }
   return { lmstudio: { base_url: env['VOLLEY_LMSTUDIO_URL'] ?? DEFAULT_LMSTUDIO_URL } };
 }

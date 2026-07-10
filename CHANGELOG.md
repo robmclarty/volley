@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- The default Ollama base URL is now the server root (`http://localhost:11434`):
+  the previous `…/api` default made `ai-sdk-ollama` (which appends `/api/…`
+  itself) request `/api/api/chat` and 404 on every call, breaking both local
+  roles out of the box. A trailing `/api` on `VOLLEY_OLLAMA_URL` is stripped
+  for compatibility with the old documented value.
+- Pre-load an Ollama model at builder start (and before a local critic's first
+  verdict): a cold multi-GB model load could exceed the provider's in-request
+  first-byte timeout and kill the run minutes in with an opaque
+  `stream interrupted: fetch failed`.
+- Document that the `ai-sdk-ollama` peer must match fascicle's declared major
+  (`^3` today — a bare `pnpm add ai-sdk-ollama` pulls v4, which targets a newer
+  AI SDK spec and hard-fails at the first call), and ship it as a devDependency
+  so the local live smoke test runs from a fresh checkout.
+
 ## v0.3.0 — 2026-07-10
 
 ### Added

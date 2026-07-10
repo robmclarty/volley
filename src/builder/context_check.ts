@@ -40,8 +40,9 @@ export function parse_num_ctx(parameters: string | null): number | null {
 }
 
 /** Best-effort probe of an Ollama server for a model's configured `num_ctx`
- * via `/api/show`. Returns null on any failure (server down, non-OK, field
- * absent, parse/JSON error) — the warning never gates the builder. */
+ * via `/api/show` (`base_url` is the server root). Returns null on any
+ * failure (server down, non-OK, field absent, parse/JSON error) — the
+ * warning never gates the builder. */
 export async function probe_ollama_num_ctx(
   base_url: string,
   model: string,
@@ -50,7 +51,7 @@ export async function probe_ollama_num_ctx(
   const signals = [AbortSignal.timeout(PROBE_TIMEOUT_MS)];
   if (abort !== undefined) signals.push(abort);
   try {
-    const res = await fetch(`${base_url.replace(/\/$/, '')}/show`, {
+    const res = await fetch(`${base_url.replace(/\/$/, '')}/api/show`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ model }),

@@ -7,6 +7,8 @@ import { z } from 'zod';
 import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
 import { accumulate } from '../cost.js';
+import { resolve_ollama_base_url } from '../engine.js';
+import { prewarm_ollama_model } from '../prewarm.js';
 import { phase_error } from '../types.js';
 import type { LoopState, ResolvedConfig } from '../types.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
@@ -69,6 +71,16 @@ export async function run_critic(
     throw phase_error('critic', state.iteration, new Error('check phase did not run'));
   }
   try {
+    // Same cold-load guard as the builder: pre-load an Ollama critic model so
+    // a cold multi-GB load doesn't blow the real call's first-byte timeout.
+    // Best-effort; a model the builder already warmed returns immediately.
+    if (config.critic_provider === 'ollama') {
+      await prewarm_ollama_model(
+        resolve_ollama_base_url(process.env),
+        config.critic_model,
+        ctx.abort,
+      );
+    }
     const result = await engine.generate({
       provider: config.critic_provider,
       model: config.critic_model,
