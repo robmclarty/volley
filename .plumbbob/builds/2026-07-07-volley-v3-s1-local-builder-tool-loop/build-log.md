@@ -57,3 +57,4 @@ you point at to say "I did that — the LLM helped, but those were my calls."
 `/pb-finish` reads this for the report; `plumbbob finish` commits it with the build
 folder, so it rides the branch into the PR.)*
 - 2026-07-10 — step 1 checkpointed · 48559a971 — Config: thread `builder_max_steps` (default 50)
+- 2026-07-10 — step 2 checkpointed · 02a02e030 — Safety gate: unsandboxed-builder refusal + opt-out (D11)
