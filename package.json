@@ -21,6 +21,7 @@
   },
   "files": [
     "dist",
+    "src/builder/presets",
     "src/critic/presets"
   ],
   "scripts": {

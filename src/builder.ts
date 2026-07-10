@@ -2,10 +2,13 @@
  * Builder invocation (spec §6): one `engine.generate` call per iteration is
  * one complete agentic Claude Code session in the workspace.
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Engine, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
 import { accumulate } from './cost.js';
-import { phase_error } from './types.js';
+import { config_error, phase_error } from './types.js';
 import type { LoopState, ResolvedConfig } from './types.js';
 
 export const BUILDER_ALLOWED_TOOLS = [
@@ -26,6 +29,31 @@ export function compose_builder_system(): string {
     'criteria. Work directly in the current working directory. Plan',
     'internally, make the changes, and verify your own work before finishing.',
   ].join('\n');
+}
+
+/** Walk up from this module to the package root (works from src/ under tsx
+ * and from dist/ in the published package, which ships src/builder/presets). */
+export function presets_dir(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = join(dir, 'src', 'builder', 'presets');
+    if (existsSync(candidate)) return candidate;
+    dir = dirname(dir);
+  }
+  throw config_error('builder presets directory not found');
+}
+
+// D12: the CLI system prompt assumes CLI semantics (built-in tools, implicit
+// cwd), so the local builder gets its own — the volley tool set, the
+// workspace-is-cwd convention, and the harness-enforced `finish` stop.
+export function compose_builder_system_local(): string {
+  const identity = [
+    'You are the builder inside the volley harness: an autonomous agent',
+    'iterating on a workspace until it satisfies a task and its acceptance',
+    'criteria.',
+  ].join('\n');
+  const append = readFileSync(join(presets_dir(), 'harness_append_local.md'), 'utf8');
+  return `${identity}\n\n${append.trimEnd()}`;
 }
 
 export type BuilderPromptInput = {

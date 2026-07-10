@@ -60,3 +60,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-10 — step 2 checkpointed · 02a02e030 — Safety gate: unsandboxed-builder refusal + opt-out (D11)
 - 2026-07-10 — step 3 checkpointed · 5194f88b0 — `builder_tools` core: read reuse + `write_file` + `edit_file` + `finish`
 - 2026-07-10 — step 4 checkpointed · 8c1a6b0db — `bash` tool
+- 2026-07-10 — step 5 checkpointed · cc24adcb0 — `fetch` tool
