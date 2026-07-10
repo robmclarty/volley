@@ -3,6 +3,7 @@ dist/
 *.tsbuildinfo
 .check/
 .fallow/
+.firecrawl/
 .volley/
 .volley.bak.*/
 *.log
