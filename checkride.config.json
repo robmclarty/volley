@@ -1,12 +1,17 @@
 {
   "$schema": "./node_modules/checkride/schema/checkride.config.schema.json",
   "checks": {
+    "types": "tsc",
+    "lint": "oxlint",
+    "struct": "ast-grep",
+    "dead": "fallow",
     "test": {
       "use": "vitest",
       "args": ["exec", "vitest", "run", "--reporter=default", "--reporter=json", "--outputFile=.check/test.json"]
     },
-    "spell": false,
-    "docs": false
+    "docs": false,
+    "links": "links",
+    "spell": false
   },
   "timeout": 600
 }
