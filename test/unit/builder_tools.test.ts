@@ -19,14 +19,21 @@ async function call(tool: Tool, input: unknown): Promise<string> {
   return (await tool.execute(input, ctx)) as string;
 }
 
+type BashResult = { exit_code: number | null; stdout: string; stderr: string };
+
+async function call_bash(tool: Tool, command: string): Promise<BashResult> {
+  return (await tool.execute({ command }, ctx)) as BashResult;
+}
+
 describe('builder_tools', () => {
-  it('exposes the read trio plus write_file, edit_file, and finish', () => {
+  it('exposes the read trio plus write_file, edit_file, bash, and finish', () => {
     expect(builder_tools('/ws').map((t) => t.name)).toEqual([
       'read_file',
       'search_files',
       'list_files',
       'write_file',
       'edit_file',
+      'bash',
       'finish',
     ]);
   });
@@ -142,6 +149,75 @@ describe('edit_file', () => {
       await expect(
         call(tools.edit_file!, { path: '../../etc/hosts', old_str: 'a', new_str: 'b' }),
       ).rejects.toThrow(/escapes the workspace/);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('bash', () => {
+  it('returns stdout and exit_code 0 for a zero-exit command', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const tools = tool_map(workspace);
+      const out = await call_bash(tools.bash!, 'echo hello');
+      expect(out.exit_code).toBe(0);
+      expect(out.stdout).toContain('hello');
+      expect(out.stderr).toBe('');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('runs in the workspace directory (stateless per command)', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const tools = tool_map(workspace);
+      await call(tools.write_file!, { path: 'marker.txt', content: 'in-workspace' });
+      const out = await call_bash(tools.bash!, 'cat marker.txt');
+      expect(out.exit_code).toBe(0);
+      expect(out.stdout).toContain('in-workspace');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns (not throws) a non-zero exit with stdout and stderr', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const tools = tool_map(workspace);
+      const out = await call_bash(tools.bash!, 'echo out; echo err >&2; exit 7');
+      expect(out.exit_code).toBe(7);
+      expect(out.stdout).toContain('out');
+      expect(out.stderr).toContain('err');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('truncates output past the byte cap with a marker', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const tools = builder_tools(workspace, { bash_max_output_bytes: 20 });
+      const bash = tools.find((t) => t.name === 'bash')!;
+      const out = await call_bash(bash, 'printf "%s" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"');
+      expect(out.exit_code).toBe(0);
+      expect(out.stdout).toContain('[truncated at 20 bytes]');
+      // 20 kept bytes + a newline + the marker line
+      expect(out.stdout.startsWith('aaaaaaaaaaaaaaaaaaaa\n…')).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns a timed-out command as a normal result, not an error', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const tools = builder_tools(workspace, { bash_timeout_ms: 100 });
+      const bash = tools.find((t) => t.name === 'bash')!;
+      const out = await call_bash(bash, 'sleep 5');
+      expect(out.exit_code).toBeNull();
+      expect(out.stderr).toContain('timed out');
     } finally {
       cleanup();
     }
