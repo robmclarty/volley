@@ -63,3 +63,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-10 — step 5 checkpointed · cc24adcb0 — `fetch` tool
 - 2026-07-10 — step 6 checkpointed · 913a8a2e8 — Local builder system prompt (D12)
 - 2026-07-10 — step 7 checkpointed · c8dbbe46f — `run_builder` local branch
+- 2026-07-10 — step 8 checkpointed · a3616eff2 — Termination surfacing + salvage-rate health metric (D7)

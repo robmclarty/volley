@@ -214,6 +214,59 @@ describe('local builder (ollama provider)', () => {
     }
   });
 
+  it('never trips the max_cost_usd cap on $0 local phases and keeps totals accurate (D13)', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        builder_provider: 'ollama',
+        builder_model: 'qwen3-coder:30b',
+        allow_unsandboxed_builder: true,
+        max_cost_usd: 1,
+        max_iterations: 2,
+      });
+      // All-local, all-free run under a cap. Both iterations must run in
+      // full: with `>=` in the cap predicate, a $0 build must neither halt
+      // the loop nor short-circuit check + critic via the crossed-cap guard.
+      const engine = mock_engine((call, index) =>
+        call.role === 'builder'
+          ? {
+              content: 'built',
+              cost_usd: 0,
+              effect: () => writeFileSync(join(workspace, 'out.txt'), `iter ${String(index)}`),
+            }
+          : index === 1
+            ? { content: { verdict: 'changes_requested', feedback: 'more', unmet_criteria: ['done'] }, cost_usd: 0 }
+            : { content: { verdict: 'approved', feedback: 'ok', unmet_criteria: [] }, cost_usd: 0 },
+      );
+
+      const { renderer, warnings } = capturing_renderer();
+      const result = await run_volley(config, { renderer, engine, install_signal_handlers: false });
+
+      // Two full iterations ran to success — not 'cost_cap_reached'.
+      expect(result.status).toBe('success');
+      expect(result.iterations_completed).toBe(2);
+      expect(engine.calls.filter((c) => c.role === 'critic')).toHaveLength(2);
+
+      // Totals are accurate, not polluted by null-fallbacks.
+      expect(result.total_cost_usd).toBe(0);
+      expect(result.builder_cost_usd).toBe(0);
+      expect(result.critic_cost_usd).toBe(0);
+
+      // $0 is a real engine-derived price, not an unknown one — no warning.
+      expect(warnings.some((w) => w.includes('cost unavailable'))).toBe(false);
+
+      const summary = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
+      );
+      expect(summary.builder.cost_usd).toBe(0);
+      expect(summary.builder.cost_source).toBe('engine_derived');
+      expect(summary.builder.provider).toBe('ollama');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('leaves the claude_cli builder arm byte-for-byte unchanged (C3, §8 fairness)', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {

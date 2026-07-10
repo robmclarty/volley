@@ -130,4 +130,42 @@ describe('cost_cap_hit', () => {
     expect(cost_cap_hit(capped, state)).toBe(true);
     expect(cost_cap_hit(capped, { ...state, total_cost_usd: 0.99 })).toBe(false);
   });
+
+  it('a $0 engine-derived phase records 0 (not null), stays un-warned, and does not trip the cap (D13)', () => {
+    const capped = test_config({ workspace: '/tmp', max_cost_usd: 1 });
+    let state = { ...initial_state(), iteration: 1 };
+    state = accumulate(
+      state,
+      'builder',
+      result({
+        cost: { total_usd: 0, input_usd: 0, output_usd: 0, currency: 'USD', is_estimate: true },
+        model_resolved: { provider: 'ollama', model_id: 'qwen3-coder:30b' },
+      }),
+      'qwen3-coder:30b',
+    );
+    expect(state.builder?.cost_usd).toBe(0);
+    expect(state.builder?.cost_source).toBe('engine_derived');
+    expect(state.cost_warned).toBe(false);
+    expect(state.total_cost_usd).toBe(0);
+    expect(state.builder_cost_usd).toBe(0);
+    expect(cost_cap_hit(capped, state)).toBe(false);
+  });
+
+  it('a null-cost phase neither trips nor disables the cap (D13)', () => {
+    const capped = test_config({ workspace: '/tmp', max_cost_usd: 1 });
+    let state = { ...initial_state(), iteration: 1 };
+    const no_cost = result();
+    delete (no_cost as { cost?: unknown }).cost;
+    state = accumulate(state, 'builder', no_cost, 'qwen3-coder:30b');
+    expect(cost_cap_hit(capped, state)).toBe(false);
+
+    // The cap stays live: a later priced phase still counts toward it.
+    state = accumulate(
+      state,
+      'critic',
+      result({ cost: { total_usd: 1.5, input_usd: 0.9, output_usd: 0.6, currency: 'USD', is_estimate: true } }),
+      'opus',
+    );
+    expect(cost_cap_hit(capped, state)).toBe(true);
+  });
 });
