@@ -154,10 +154,24 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
   return parts.join('\n');
 }
 
+// D7: a `max_steps` cutoff is not an error. The local builder burned its whole
+// step budget without calling `finish`, so its partial workspace goes to check
+// + critic exactly like a `finish`-terminated iteration (the critic sees
+// incomplete work and requests changes, the loop continues). The renderer
+// surfaces this as a warning and `finish_reason: 'max_steps'` is recorded in
+// the iteration summary — non-convergence is data, not an exception.
+export function builder_max_steps_warning(max_steps: number): string {
+  return (
+    `builder hit the ${String(max_steps)}-step limit without calling finish; ` +
+    'handing the partial workspace to check + critic (raise --builder-max-steps if this recurs)'
+  );
+}
+
 export type BuilderDeps = {
   engine: Engine;
   config: ResolvedConfig;
   on_chunk: (chunk: StreamChunk) => void;
+  warn: (message: string) => void;
 };
 
 export async function run_builder(
@@ -183,6 +197,10 @@ export async function run_builder(
       on_chunk: deps.on_chunk,
       ...builder_tool_options(config),
     });
+    // D7: `max_steps` is a backstop, not a failure — surface it and carry on.
+    if (result.finish_reason === 'max_steps') {
+      deps.warn(builder_max_steps_warning(config.builder_max_steps));
+    }
     return accumulate(state, 'builder', result, config.builder_model);
   } catch (err) {
     throw phase_error('builder', state.iteration, err);

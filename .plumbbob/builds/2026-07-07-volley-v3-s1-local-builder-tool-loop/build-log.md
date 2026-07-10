@@ -62,3 +62,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-10 — step 4 checkpointed · 8c1a6b0db — `bash` tool
 - 2026-07-10 — step 5 checkpointed · cc24adcb0 — `fetch` tool
 - 2026-07-10 — step 6 checkpointed · 913a8a2e8 — Local builder system prompt (D12)
+- 2026-07-10 — step 7 checkpointed · c8dbbe46f — `run_builder` local branch

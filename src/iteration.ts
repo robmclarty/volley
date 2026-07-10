@@ -51,6 +51,14 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
     usage: record.usage,
     cost_usd: record.cost_usd,
     cost_source: record.cost_source,
+    finish_reason: record.finish_reason,
+    tool_calls: record.tool_calls,
+    salvaged_tool_calls: record.salvaged_tool_calls,
+    // Salvage rate (D5 health metric): the share of tool calls recovered from
+    // assistant text. A high rate on a local run means the model's native
+    // tool-call encoding is drifting from its runtime's parser (pin them as one
+    // unit). 0 when the phase made no tool calls (the CLI builder's own loop).
+    salvage_rate: record.tool_calls === 0 ? 0 : record.salvaged_tool_calls / record.tool_calls,
   };
 }
 

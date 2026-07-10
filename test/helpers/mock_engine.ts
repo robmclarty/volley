@@ -2,7 +2,14 @@
  * Scripted `Engine` mock for integration tests (spec §10): generate results
  * and side effects are driven by the test, no provider or subprocess involved.
  */
-import type { Engine, GenerateOptions, GenerateResult, UsageTotals } from 'fascicle';
+import type {
+  Engine,
+  FinishReason,
+  GenerateOptions,
+  GenerateResult,
+  ToolCallRecord,
+  UsageTotals,
+} from 'fascicle';
 
 export type MockReply = {
   content: unknown;
@@ -11,6 +18,12 @@ export type MockReply = {
   cost_usd?: number;
   session_id?: string;
   duration_ms?: number;
+  /** How the loop ended; default 'stop'. Set 'max_steps' to stand in for a
+   * local builder that burned its step budget without calling finish (D7). */
+  finish_reason?: FinishReason;
+  /** Tool calls to report on the result — e.g. some marked `salvaged` — so a
+   * test can drive the salvage-rate health metric (D5). Default none. */
+  tool_calls?: ToolCallRecord[];
   /** Side effect to run when this call happens (e.g. "builder writes file"). */
   effect?: (opts: GenerateOptions<unknown>) => void | Promise<void>;
   /** Throw instead of returning. */
@@ -61,11 +74,11 @@ export function mock_engine(
           };
     return {
       content: reply.content as t,
-      tool_calls: [],
+      tool_calls: reply.tool_calls ?? [],
       steps: [],
       usage: reply.usage ?? DEFAULT_USAGE,
       ...cost,
-      finish_reason: 'stop',
+      finish_reason: reply.finish_reason ?? 'stop',
       model_resolved: {
         provider: opts.provider ?? 'claude_cli',
         model_id: opts.model ?? 'opus',

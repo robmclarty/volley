@@ -139,7 +139,7 @@ export async function run_volley(
     };
     renderer.phase_start(next.iteration, 'builder');
     const built = await run_builder(
-      { engine, config, on_chunk: renderer.builder_chunk },
+      { engine, config, on_chunk: renderer.builder_chunk, warn: renderer.warn },
       next,
       ctx,
     );

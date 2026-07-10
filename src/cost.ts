@@ -61,6 +61,9 @@ export function phase_record(
     usage: result.usage,
     cost_usd: result.cost?.total_usd ?? null,
     cost_source: cost_source_of(result),
+    finish_reason: result.finish_reason,
+    tool_calls: result.tool_calls.length,
+    salvaged_tool_calls: result.tool_calls.filter((call) => call.salvaged === true).length,
   };
 }
 

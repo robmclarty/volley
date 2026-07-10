@@ -5,7 +5,7 @@
  * Fascicle's usage/cost types are used verbatim so summaries carry the
  * substrate's shapes, not a re-derivation.
  */
-import type { UsageTotals } from 'fascicle';
+import type { FinishReason, UsageTotals } from 'fascicle';
 
 export type Verdict = 'approved' | 'changes_requested';
 
@@ -125,6 +125,14 @@ export type PhaseRecord = {
   usage: UsageTotals;
   cost_usd: number | null;
   cost_source: CostSource;
+  /** How the phase's generate call ended (D6/D7). For a local builder,
+   * `'max_steps'` is a budget cutoff surfaced as a warning, not an error. */
+  finish_reason: FinishReason;
+  /** Tool calls fascicle executed in this phase, and how many were recovered
+   * from assistant text rather than returned structurally (D5) — the raw
+   * counts behind the salvage-rate health metric. */
+  tool_calls: number;
+  salvaged_tool_calls: number;
 };
 
 export type HaltReason = 'cost_cap' | null;

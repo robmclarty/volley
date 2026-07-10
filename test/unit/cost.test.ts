@@ -102,6 +102,23 @@ describe('cost_source_of / phase_record', () => {
     expect(record.duration_ms).toBe(0);
     expect(record.model).toBe('opus');
   });
+
+  it('phase_record captures finish_reason and counts salvaged tool calls (D5/D7)', () => {
+    const record = phase_record(
+      result({
+        finish_reason: 'max_steps',
+        tool_calls: [
+          { id: 'a', name: 'write_file', input: {}, duration_ms: 1, started_at: 0, salvaged: true },
+          { id: 'b', name: 'bash', input: {}, duration_ms: 1, started_at: 0 },
+          { id: 'c', name: 'edit_file', input: {}, duration_ms: 1, started_at: 0, salvaged: true },
+        ],
+      }),
+      'qwen3-coder:30b',
+    );
+    expect(record.finish_reason).toBe('max_steps');
+    expect(record.tool_calls).toBe(3);
+    expect(record.salvaged_tool_calls).toBe(2);
+  });
 });
 
 describe('cost_cap_hit', () => {
