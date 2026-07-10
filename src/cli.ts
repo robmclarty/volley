@@ -34,6 +34,7 @@ type CliFlags = {
   check?: string;
   builderModel?: string;
   builderProvider?: string;
+  builderMaxSteps?: number;
   criticModel?: string;
   criticProvider?: string;
   builderPermissionMode?: string;
@@ -84,6 +85,9 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.builderProvider !== undefined
       ? { builder_provider: flags.builderProvider as BuilderProvider }
       : {}),
+    ...(flags.builderMaxSteps !== undefined
+      ? { builder_max_steps: Number(flags.builderMaxSteps) }
+      : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),
     ...(flags.criticProvider !== undefined
       ? { critic_provider: flags.criticProvider as CriticProvider }
@@ -110,6 +114,7 @@ function dry_run(config: ResolvedConfig, renderer: Renderer): number {
   renderer.info(`workspace: ${config.workspace}`);
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
   renderer.info(`builder model: ${config.builder_model} (provider: ${config.builder_provider})`);
+  renderer.info(`builder max steps: ${config.builder_max_steps}`);
   renderer.info(`critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`);
   renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
   if (config.check_resolved === 'checkride') {
@@ -159,6 +164,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
     .option('--builder-model <model>', 'Builder model')
     .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
+    .option('--builder-max-steps <n>', 'Local builder tool-loop step cap per iteration (default: 50)')
     .option('--critic-model <model>', 'Critic model')
     .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')

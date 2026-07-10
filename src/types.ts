@@ -48,6 +48,7 @@ export type VolleyConfig = {
   check?: CheckMode;
   builder_model?: string;
   builder_provider?: BuilderProvider;
+  builder_max_steps?: number;
   critic_model?: string;
   critic_provider?: CriticProvider;
   builder_permission_mode?: BuilderPermissionMode;
@@ -73,6 +74,7 @@ export type ResolvedConfig = {
   check_resolved: CheckRunnerKind;
   builder_model: string;
   builder_provider: BuilderProvider;
+  builder_max_steps: number;
   critic_model: string;
   critic_provider: CriticProvider;
   builder_permission_mode: BuilderPermissionMode;

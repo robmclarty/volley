@@ -20,6 +20,7 @@ import type {
 export const DEFAULT_BUILDER_MODEL = 'opus';
 export const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
+export const DEFAULT_BUILDER_MAX_STEPS = 50;
 export const DEFAULT_CHECK = 'auto';
 export const DEFAULT_CRITIC = 'reviewer';
 export const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
@@ -121,7 +122,34 @@ export type ResolveOptions = {
   cwd?: string;
   run_id?: string;
   started_at?: string;
+  env?: Record<string, string | undefined>;
 };
+
+/** `--builder-max-steps` (a merged flag/config value) wins over the
+ * `VOLLEY_BUILDER_MAX_STEPS` env var, which wins over the default. Local
+ * builder only; ignored by the `claude_cli` arm. */
+function resolve_builder_max_steps(
+  raw: VolleyConfig,
+  env: Record<string, string | undefined>,
+): number {
+  if (raw.builder_max_steps !== undefined) {
+    return validate_builder_max_steps(raw.builder_max_steps, raw.builder_max_steps);
+  }
+  const env_value = env['VOLLEY_BUILDER_MAX_STEPS'];
+  if (env_value !== undefined && env_value !== '') {
+    return validate_builder_max_steps(Number(env_value), env_value);
+  }
+  return DEFAULT_BUILDER_MAX_STEPS;
+}
+
+function validate_builder_max_steps(value: number, original: unknown): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw config_error(
+      `--builder-max-steps / VOLLEY_BUILDER_MAX_STEPS must be a positive integer; got: ${String(original)}`,
+    );
+  }
+  return value;
+}
 
 /** Merge, expand, and validate a raw `VolleyConfig` into a `ResolvedConfig`.
  * `check_resolved` is filled in later by check detection (workspace-relative);
@@ -131,6 +159,7 @@ export function resolve_config(
   options: ResolveOptions = {},
 ): ResolvedConfig {
   const cwd = options.cwd ?? process.cwd();
+  const env = options.env ?? process.env;
 
   if (typeof raw.prompt !== 'string' || raw.prompt.length === 0) {
     throw config_error('missing required option: --prompt');
@@ -175,6 +204,8 @@ export function resolve_config(
     );
   }
 
+  const builder_max_steps = resolve_builder_max_steps(raw, env);
+
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
   if (!CRITIC_PROVIDERS.includes(critic_provider)) {
     throw config_error(
@@ -196,6 +227,7 @@ export function resolve_config(
     check_resolved: 'none',
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
     builder_provider,
+    builder_max_steps,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,
     builder_permission_mode,

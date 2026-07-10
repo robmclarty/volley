@@ -186,6 +186,9 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     check: String(recorded['check']),
     builder_model: String(recorded['builder_model']),
     builder_provider: (recorded['builder_provider'] ?? 'claude_cli') as BuilderProvider,
+    ...(recorded['builder_max_steps'] === undefined
+      ? {}
+      : { builder_max_steps: Number(recorded['builder_max_steps']) }),
     critic_model: String(recorded['critic_model']),
     critic_provider: (recorded['critic_provider'] ?? 'claude_cli') as CriticProvider,
     builder_permission_mode: recorded['builder_permission_mode'] as BuilderPermissionMode,

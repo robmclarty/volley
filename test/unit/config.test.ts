@@ -1,14 +1,17 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_BUILDER_MAX_STEPS,
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
   expand_at_file,
   load_config_file,
   resolve_config,
 } from '../../src/config.js';
+import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
+import { initialize_workspace, write_resolved_config } from '../../src/workspace.js';
 import { temp_workspace } from '../helpers/harness.js';
 
 function base(workspace: string) {
@@ -27,6 +30,7 @@ describe('resolve_config', () => {
       expect(config.check).toBe('auto');
       expect(config.critic_preset).toBe('reviewer');
       expect(config.builder_provider).toBe('claude_cli');
+      expect(config.builder_max_steps).toBe(DEFAULT_BUILDER_MAX_STEPS);
       expect(config.builder_permission_mode).toBe('acceptEdits');
       expect(config.git_checkpoints).toBe(false);
       expect(config.show_thinking).toBe(true);
@@ -115,6 +119,101 @@ describe('resolve_config', () => {
       expect(() =>
         resolve_config({ ...base(workspace), builder_provider: 'openai' as never }),
       ).toThrow(/--builder-provider/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('defaults builder_max_steps to 50', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(DEFAULT_BUILDER_MAX_STEPS).toBe(50);
+      expect(resolve_config(base(workspace), { env: {} }).builder_max_steps).toBe(50);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads builder_max_steps from VOLLEY_BUILDER_MAX_STEPS', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), {
+        env: { VOLLEY_BUILDER_MAX_STEPS: '12' },
+      });
+      expect(config.builder_max_steps).toBe(12);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('prefers the --builder-max-steps flag over the env var (flag > env > default)', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        { ...base(workspace), builder_max_steps: 7 },
+        { env: { VOLLEY_BUILDER_MAX_STEPS: '12' } },
+      );
+      expect(config.builder_max_steps).toBe(7);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('rejects a non-positive-integer builder_max_steps from flag or env', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const bad of [0, -1, 2.5]) {
+        expect(() =>
+          resolve_config({ ...base(workspace), builder_max_steps: bad }, { env: {} }),
+        ).toThrow(/builder-max-steps/);
+      }
+      for (const bad of ['0', '-3', '1.5', 'abc']) {
+        expect(() =>
+          resolve_config(base(workspace), { env: { VOLLEY_BUILDER_MAX_STEPS: bad } }),
+        ).toThrow(/builder-max-steps/i);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('preserves builder_max_steps across a persist→restore round-trip', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      initialize_workspace(workspace);
+      const original = resolve_config(
+        { ...base(workspace), builder_max_steps: 7 },
+        { run_id: 'rt-run', env: {} },
+      );
+      write_resolved_config(original);
+      const resume = load_resume_state(workspace, 'rt-run');
+      expect(resume.raw_config.builder_max_steps).toBe(7);
+      const restored = resolve_config(resume.raw_config, {
+        run_id: resume.run_id,
+        started_at: resume.started_at,
+        env: {},
+      });
+      expect(restored.builder_max_steps).toBe(7);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('defaults builder_max_steps when restoring a config that predates the field', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      initialize_workspace(workspace);
+      const original = resolve_config(base(workspace), { run_id: 'old-run', env: {} });
+      write_resolved_config(original);
+      const config_path = join(workspace, '.volley', 'config.json');
+      const record = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
+      delete record['builder_max_steps'];
+      writeFileSync(config_path, `${JSON.stringify(record, null, 2)}\n`);
+
+      const resume = load_resume_state(workspace, 'old-run');
+      expect(resume.raw_config.builder_max_steps).toBeUndefined();
+      const restored = resolve_config(resume.raw_config, { run_id: resume.run_id, env: {} });
+      expect(restored.builder_max_steps).toBe(DEFAULT_BUILDER_MAX_STEPS);
     } finally {
       cleanup();
     }
