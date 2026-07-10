@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.1 — 2026-07-10
 
 ### Fixed
 - The default Ollama base URL is now the server root (`http://localhost:11434`):
@@ -16,6 +16,12 @@
   (`^3` today — a bare `pnpm add ai-sdk-ollama` pulls v4, which targets a newer
   AI SDK spec and hard-fails at the first call), and ship it as a devDependency
   so the local live smoke test runs from a fresh checkout.
+
+### Internal
+- Name every checkride slot that actually runs (`types`, `lint`, `struct`,
+  `dead`, `links`) in `checkride.config.json`, not just the three that were
+  previously listed — the config file now matches the pipeline reality
+  instead of relying on silent tool detection.
 
 ## v0.3.0 — 2026-07-10
 
