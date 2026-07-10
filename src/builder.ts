@@ -7,8 +7,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
+import { warn_small_local_context } from './builder/context_check.js';
 import { builder_tools } from './builder/tools.js';
 import { accumulate } from './cost.js';
+import { DEFAULT_OLLAMA_URL } from './engine.js';
 import { config_error, phase_error } from './types.js';
 import type { LoopState, ResolvedConfig } from './types.js';
 
@@ -181,6 +183,19 @@ export async function run_builder(
 ): Promise<LoopState> {
   const { engine, config } = deps;
   try {
+    // Warn at builder start where a too-small context window is detectable —
+    // it silently truncates tool schemas (the #1 local tool-calling failure).
+    // Best-effort and Ollama-only; never blocks the build.
+    if (config.builder_provider === 'ollama') {
+      const base_url = process.env['VOLLEY_OLLAMA_URL'] ?? DEFAULT_OLLAMA_URL;
+      await warn_small_local_context(
+        config.builder_provider,
+        config.builder_model,
+        base_url,
+        deps.warn,
+        ctx.abort,
+      );
+    }
     const result = await engine.generate({
       provider: config.builder_provider,
       model: config.builder_model,

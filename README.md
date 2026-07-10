@@ -86,6 +86,9 @@ volley resume <run-id>
 | `--criteria` | (required) | Acceptance criteria. Literal string or `@path`. |
 | `--check` | `auto` | `auto` (checkride if detected, else none), `none`, or a shell command. |
 | `--builder-model` | `opus` | `opus`/`sonnet`/`haiku` or a full model id. |
+| `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local builder](#local-builder)). |
+| `--builder-max-steps` | `50` | Local builder tool-loop step cap per iteration. Ignored for `claude_cli`. |
+| `--allow-unsandboxed-builder` | off | Permit a local builder to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local critic](#local-critic)). |
 | `--builder-permission-mode` | `acceptEdits` | Or `bypassPermissions` for fully trusted workspaces. |
@@ -179,10 +182,65 @@ Install the peer for your provider in the project running volley (e.g.
 actually runs. Local providers are free, so the critic's cost is reported as
 `$0.000` and the run total reflects builder spend only.
 
-Note the split by design: the builder — where agentic capability matters most —
-stays on Claude, while the recurring per-iteration critic cost drops to zero.
-A local *builder* is out of scope (it would need write/execute tooling the CLI
-provides for free).
+Keeping the builder on Claude while the critic goes local is the low-risk split:
+the recurring per-iteration critic cost drops to zero and the critic is
+read-only, so a weaker local model can only mis-judge, never mis-edit. A local
+*builder* is also supported ([below](#local-builder)) but asks more of you — it
+gets a real host bash, so it is refused until you opt in.
+
+## Local builder
+
+`--builder-provider ollama|lmstudio` runs the builder on a local model too. A
+local model brings no built-in tools, so volley supplies the whole agentic
+surface itself — `read_file`, `search_files`, `list_files`, `write_file`,
+`edit_file`, `bash`, `fetch`, and an explicit `finish` — and runs one bounded
+tool loop per iteration (capped by `--builder-max-steps`, default 50; hitting
+the cap is treated as partial work, not an error). The produced workspace goes
+to check + critic exactly like a `claude_cli` build.
+
+```sh
+volley \
+  --prompt "@task.md" --workspace ./my-project --criteria "@criteria.md" \
+  --builder-provider ollama --builder-model qwen3-coder:30b \
+  --allow-unsandboxed-builder \
+  --check "pnpm check"
+```
+
+**A local builder runs unsandboxed and is refused by default.** Unlike the
+read-only critic, the builder gets a real host `bash` (write + exec) in your
+workspace, and volley has no container sandbox yet. So a local builder is
+refused *before any model spend* unless you opt in with
+`--allow-unsandboxed-builder` (or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`), which
+prints a one-time warning. Only point it at a workspace you are willing to let a
+local model run shell commands in. A container sandbox arrives in a later
+session; this opt-out then becomes the "I already run in a devcontainer" escape
+hatch.
+
+Provider setup is the same as the [local critic](#local-critic) table
+(`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, same peer dependencies). Getting a
+weak local model to drive a tool loop reliably has three sharp edges:
+
+- **Set the context length to ≥ ~16k tokens.** Ollama's 4k default silently
+  truncates the tool schemas volley sends, which is the single most common cause
+  of a local model "ignoring" its tools — set `num_ctx` (e.g. a Modelfile
+  `PARAMETER num_ctx 16384`, or the request-level option) before you blame the
+  prompt. volley warns at builder start when it can read a too-small `num_ctx`
+  off the Ollama server, but a window left at the server default is not
+  reported back, so treat this as a required setup step rather than something
+  the harness is guaranteed to catch.
+- **Pin the model, runtime, and parser as one unit.** Tool-call dialects differ
+  by model family (Qwen3 emits Hermes-style JSON; Qwen3-Coder emits XML), and
+  crossing a model with the wrong runtime parser silently drops tool calls.
+  volley salvages a call emitted as plain assistant text where it can (and
+  records a per-run salvage rate in the iteration summary), but that is
+  insurance, not a substitute for a matched runtime.
+- **LM Studio 0.4.1+ has an Anthropic-compatible fallback.** If OpenAI-compat
+  tool-call parsing misbehaves for a Qwen-class model, LM Studio 0.4.1+ ships an
+  Anthropic-style `/v1/messages` endpoint (point `VOLLEY_LMSTUDIO_URL` at it)
+  that field reports find more reliable for tool calling.
+
+Local providers are free, so a local builder's cost is reported as `$0.000` and
+never trips `--max-cost-usd`.
 
 ## Run artifacts
 
@@ -220,6 +278,14 @@ Live smoke tests against the real `claude` CLI and real checkride are opt-in:
 
 ```sh
 VOLLEY_LIVE=1 pnpm test
+```
+
+The local-builder live test needs a running local runtime, so it gates on an
+extra opt-in naming the provider that is actually up:
+
+```sh
+VOLLEY_LIVE=1 VOLLEY_LIVE_BUILDER_PROVIDER=ollama \
+  VOLLEY_LIVE_BUILDER_MODEL=qwen3-coder:30b pnpm test
 ```
 
 ## Relationship to ridgeline
