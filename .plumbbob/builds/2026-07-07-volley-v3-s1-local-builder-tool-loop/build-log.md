@@ -27,6 +27,8 @@ is done only after a checkpoint — check green + checkpoint taken, via `/pb-ver
 > Mid-step, every new problem / idea / "ooh what if" lands HERE, untouched, and you
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/pb-park` composes it). Harvest happens only at the boundary.
+- [ ] upstream fascicle feedback candidate: block a successful finish (ends_turn) when a tool call failed earlier in the same turn — Roo's didToolFailInCurrentTurn guardrail; prevents the weak-model 'error → shrug → finish' pattern. Loop-state, so fascicle's domain, not volley's.
+- [ ] revisit flag-gating fetch (off by default): research evidence cuts against shipping it always-on — absent from all strong minimal harnesses, 8-tool surface sits at the measured Qwen degradation edge (goose #6883), and it is the largest new-code step. D8 is locked (fetch ships); this is only about the default. Human's call at a boundary.
 
 ## Harvest  *(run `/pb-harvest` at each step boundary, after green)*
 
