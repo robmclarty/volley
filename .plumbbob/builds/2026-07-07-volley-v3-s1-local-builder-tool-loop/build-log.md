@@ -65,3 +65,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-10 — step 7 checkpointed · c8dbbe46f — `run_builder` local branch
 - 2026-07-10 — step 8 checkpointed · a3616eff2 — Termination surfacing + salvage-rate health metric (D7)
 - 2026-07-10 — step 9 checkpointed · c02a76f47 — Cost sanity for a `$0`/`null` local phase (D13)
+- 2026-07-10 — step 10 checkpointed · 14001f5f6 — Live path (`VOLLEY_LIVE=1`) + usage docs
