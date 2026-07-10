@@ -5,8 +5,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Engine, StreamChunk } from 'fascicle';
+import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
+import { builder_tools } from './builder/tools.js';
 import { accumulate } from './cost.js';
 import { config_error, phase_error } from './types.js';
 import type { LoopState, ResolvedConfig } from './types.js';
@@ -54,6 +55,61 @@ export function compose_builder_system_local(): string {
   ].join('\n');
   const append = readFileSync(join(presets_dir(), 'harness_append_local.md'), 'utf8');
   return `${identity}\n\n${append.trimEnd()}`;
+}
+
+/** The builder system prompt for the active provider (D12): the `claude_cli`
+ * prompt (implicit built-in tools, "the current working directory") for the
+ * CLI builder, or the local prompt (volley's tool set, workspace-is-cwd, and
+ * the harness-enforced `finish` stop) for a local model. Mirrors the critic's
+ * `resolve_critic_prompt`. */
+function resolve_builder_system(config: ResolvedConfig): string {
+  return config.builder_provider === 'claude_cli'
+    ? compose_builder_system()
+    : compose_builder_system_local();
+}
+
+// Salvage budget for a tool call a local model emits as assistant text instead
+// of a structured tool_call (Hermes / json-fenced / Qwen3-Coder XML). Must be
+// > 0 to turn salvage on (D5/C5); the budget is shared across the whole
+// generate call and each salvage is observable on the result for step 8's
+// health metric.
+export const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
+
+/** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
+ * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
+ * permission mode) and brings its own built-in tools — this arm is unchanged
+ * from v2 (C3). A local builder brings none, so volley supplies its whole
+ * workspace tool surface plus the five per-call loop knobs (D5/C5) and **no**
+ * schema (it produces a workspace, not a verdict); per-call values win over
+ * engine defaults. */
+function builder_tool_options(
+  config: ResolvedConfig,
+): Pick<
+  GenerateOptions,
+  | 'tools'
+  | 'provider_options'
+  | 'max_steps'
+  | 'tool_error_policy'
+  | 'tool_call_repair_attempts'
+  | 'max_tool_calls_per_step'
+> {
+  if (config.builder_provider === 'claude_cli') {
+    return {
+      provider_options: {
+        claude_cli: {
+          allowed_tools: [...BUILDER_ALLOWED_TOOLS],
+          extra_args: ['--permission-mode', config.builder_permission_mode],
+        },
+      },
+    };
+  }
+  return {
+    tools: builder_tools(config.workspace),
+    max_steps: config.builder_max_steps,
+    tool_error_policy: 'feed_back',
+    tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
+    max_tool_calls_per_step: 1,
+  };
 }
 
 export type BuilderPromptInput = {
@@ -112,9 +168,9 @@ export async function run_builder(
   const { engine, config } = deps;
   try {
     const result = await engine.generate({
-      provider: 'claude_cli',
+      provider: config.builder_provider,
       model: config.builder_model,
-      system: compose_builder_system(),
+      system: resolve_builder_system(config),
       prompt: compose_builder_prompt({
         task: config.prompt,
         criteria: config.criteria,
@@ -125,12 +181,7 @@ export async function run_builder(
       abort: ctx.abort,
       trajectory: ctx.trajectory,
       on_chunk: deps.on_chunk,
-      provider_options: {
-        claude_cli: {
-          allowed_tools: [...BUILDER_ALLOWED_TOOLS],
-          extra_args: ['--permission-mode', config.builder_permission_mode],
-        },
-      },
+      ...builder_tool_options(config),
     });
     return accumulate(state, 'builder', result, config.builder_model);
   } catch (err) {
