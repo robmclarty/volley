@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.0 — 2026-07-10
+
+### Added
+- Run the builder on a local model (Ollama or LM Studio) with `--builder-provider ollama|lmstudio`. A local builder brings no built-in tools, so volley supplies its own workspace tool loop — read/search/list, `write_file`, `edit_file` (exact-match-or-fail), a stateless `bash`, a readability-based `fetch` with SSRF protection, and an explicit `finish` — bounded by `--builder-max-steps` (default 50) per iteration. The produced workspace goes to check + critic exactly like a Claude Code CLI build.
+- Refuse a local builder by default: it runs a real host `bash` with no sandbox yet, so volley stops before any model spend unless you opt in with `--allow-unsandboxed-builder` (or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`), which prints a one-time warning.
+- Warn at builder start when an Ollama model's context window is detectably too small (`num_ctx` below ~16k) — the most common cause of a local model silently ignoring its tools.
+- Record local-builder health per iteration: a `max_steps` cutoff is surfaced as a warning rather than an error, and the run summary carries the loop's `finish_reason` and the rate of tool calls salvaged from unstructured model output.
+- README `Local builder` guide and a `VOLLEY_LIVE`-gated live smoke test for the local path.
+
+### Internal
+- Enforce the spec's architecture decisions as ast-grep rules (create-engine confinement, no deep-sibling imports, no classes).
+- Pin dependencies to exact versions; upgrade checkride to 0.2.1 and flesh out its config for the v3-s1 build.
+
 ## v0.2.1 — initial release
 
 ### Added
