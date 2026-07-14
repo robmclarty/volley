@@ -91,14 +91,19 @@ export function mock_engine(
       },
     };
   };
-  return {
+  const engine: MockEngine = {
     generate,
     register_price: () => {},
     resolve_price: () => undefined,
     list_prices: () => ({}),
+    // A scripted mock has no providers to merge, so deriving is a no-op that
+    // returns this same engine (keeping the responder and `calls` log intact).
+    // Present to satisfy fascicle 0.9.5's Engine.with_providers (D8).
+    with_providers: () => engine,
     dispose: async () => {},
     calls,
   };
+  return engine;
 }
 
 /** The prompt of a recorded call as text (volley always sends strings). */

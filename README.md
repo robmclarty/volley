@@ -175,14 +175,14 @@ Providers and their setup:
 
 | `--critic-provider` | Server | Base-URL env (default) | Required peer dependency |
 |---|---|---|---|
-| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434`) | `ai-sdk-ollama` |
+| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434`) | `ai-sdk-ollama@^4` |
 | `lmstudio` | [LM Studio](https://lmstudio.ai) | `VOLLEY_LMSTUDIO_URL` (`http://localhost:1234/v1`) | `@ai-sdk/openai-compatible` |
 
 Install the peer for your provider in the project running volley (e.g.
-`pnpm add ai-sdk-ollama@^3`); fascicle loads it lazily only when the local
+`pnpm add ai-sdk-ollama@^4`); fascicle loads it lazily only when the local
 critic actually runs. The major matters: it must satisfy fascicle's declared
-peer range (`^3` for today's fascicle; a bare `pnpm add ai-sdk-ollama`
-installs v4, which targets a newer AI SDK spec and fails at the first call).
+peer range (`^4` for fascicle 0.9.5, which tracks the AI SDK v7 line; a bare
+`pnpm add ai-sdk-ollama` installs v4, which is exactly what this major wants).
 The Ollama base URL is the **server root** — `ai-sdk-ollama` adds the `/api`
 prefix itself (volley strips a trailing `/api` from `VOLLEY_OLLAMA_URL` for
 compatibility). Local providers are free, so the critic's cost is reported as
