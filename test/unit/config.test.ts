@@ -5,6 +5,7 @@ import {
   DEFAULT_BUILDER_MAX_STEPS,
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
+  DEFAULT_SANDBOX_IMAGE,
   expand_at_file,
   load_config_file,
   resolve_config,
@@ -372,6 +373,65 @@ describe('resolve_config', () => {
       mkdirSync(join(workspace, '.git'));
       const config = resolve_config({ ...base(workspace), worktree: true });
       expect(config.worktree).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('defaults the sandbox image to volley-sandbox:latest', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(DEFAULT_SANDBOX_IMAGE).toBe('volley-sandbox:latest');
+      expect(resolve_config(base(workspace), { env: {} }).sandbox_image).toBe(
+        DEFAULT_SANDBOX_IMAGE,
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads the sandbox image from VOLLEY_SANDBOX_IMAGE', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), {
+        env: { VOLLEY_SANDBOX_IMAGE: 'my-org/sandbox:9' },
+      });
+      expect(config.sandbox_image).toBe('my-org/sandbox:9');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('prefers the --sandbox-image flag over the env var (flag > env > default)', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        { ...base(workspace), sandbox_image: 'flag/img:1' },
+        { env: { VOLLEY_SANDBOX_IMAGE: 'env/img:2' } },
+      );
+      expect(config.sandbox_image).toBe('flag/img:1');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('preserves the sandbox image across a persist→restore round-trip', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      initialize_workspace(workspace);
+      const original = resolve_config(
+        { ...base(workspace), sandbox_image: 'pinned/img:3' },
+        { run_id: 'si-run', env: {} },
+      );
+      write_resolved_config(original);
+      const resume = load_resume_state(workspace, 'si-run');
+      expect(resume.raw_config.sandbox_image).toBe('pinned/img:3');
+      const restored = resolve_config(resume.raw_config, {
+        run_id: resume.run_id,
+        started_at: resume.started_at,
+        env: {},
+      });
+      expect(restored.sandbox_image).toBe('pinned/img:3');
     } finally {
       cleanup();
     }

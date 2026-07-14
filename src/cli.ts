@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { cac } from 'cac';
 import {
   DEFAULT_CHECK,
+  DEFAULT_SANDBOX_IMAGE,
   load_config_file,
   resolve_config,
 } from './config.js';
@@ -44,6 +45,7 @@ type CliFlags = {
   maxCostUsd?: number;
   git?: boolean;
   worktree?: boolean;
+  sandboxImage?: string;
   dryRun?: boolean;
   config?: string;
   json?: boolean;
@@ -116,6 +118,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.maxCostUsd !== undefined ? { max_cost_usd: Number(flags.maxCostUsd) } : {}),
     ...(flags.git === true ? { git_checkpoints: true } : {}),
     ...(flags.worktree === true ? { worktree: true } : {}),
+    ...(flags.sandboxImage !== undefined ? { sandbox_image: flags.sandboxImage } : {}),
     ...(flags.dryRun === true ? { dry_run: true } : {}),
     ...(flags.json === true ? { json: true } : {}),
     ...(flags.verbose === true ? { verbose: true } : {}),
@@ -134,6 +137,7 @@ function dry_run(config: ResolvedConfig, renderer: Renderer): number {
   renderer.info(`builder max steps: ${config.builder_max_steps}`);
   if (config.builder_provider !== 'claude_cli') {
     renderer.info('unsandboxed builder: allowed (--allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER)');
+    renderer.info(`sandbox image: ${config.sandbox_image}`);
   }
   renderer.info(`critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`);
   renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
@@ -194,6 +198,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--max-cost-usd <usd>', 'Hard USD ceiling, enforced in the loop guard')
     .option('--git', 'Auto-commit after each phase (workspace must be a git repo)')
     .option('--worktree', 'Isolate the builder run in a per-run git worktree (workspace must be a git repo)')
+    .option('--sandbox-image <tag>', `Container image for the local-builder sandbox (default: ${DEFAULT_SANDBOX_IMAGE})`)
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')
     .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')

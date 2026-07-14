@@ -208,6 +208,9 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     max_cost_usd: recorded['max_cost_usd'] as number | null,
     git_checkpoints: recorded['git_checkpoints'] === true,
     worktree: recorded['worktree'] === true,
+    ...(recorded['sandbox_image'] === undefined
+      ? {}
+      : { sandbox_image: recorded['sandbox_image'] as string }),
   };
 
   const state: LoopState = {

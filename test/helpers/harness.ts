@@ -79,6 +79,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     max_cost_usd: null,
     git_checkpoints: false,
     worktree: false,
+    sandbox_image: 'volley-sandbox:latest',
     verbose: false,
     quiet: false,
     json: true,

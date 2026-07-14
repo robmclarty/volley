@@ -26,6 +26,9 @@ export const DEFAULT_CRITIC = 'reviewer';
 export const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
 export const DEFAULT_CRITIC_PROVIDER: CriticProvider = 'claude_cli';
 export const DEFAULT_PERMISSION_MODE: BuilderPermissionMode = 'acceptEdits';
+/** The image volley's own `Dockerfile` builds; the local-builder sandbox runs
+ * it unless `--sandbox-image` / `VOLLEY_SANDBOX_IMAGE` overrides it (s2 D5). */
+export const DEFAULT_SANDBOX_IMAGE = 'volley-sandbox:latest';
 
 const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
   'claude_cli',
@@ -160,6 +163,24 @@ function validate_builder_max_steps(value: number, original: unknown): number {
   return value;
 }
 
+/** `--sandbox-image` (a merged flag/config value) wins over the
+ * `VOLLEY_SANDBOX_IMAGE` env var, which wins over the default image. Used only
+ * on the local-builder Docker sandbox path (s2 D5); the `claude_cli` path never
+ * runs Docker (C4). */
+function resolve_sandbox_image(
+  raw: VolleyConfig,
+  env: Record<string, string | undefined>,
+): string {
+  if (raw.sandbox_image !== undefined && raw.sandbox_image !== '') {
+    return raw.sandbox_image;
+  }
+  const env_value = env['VOLLEY_SANDBOX_IMAGE'];
+  if (env_value !== undefined && env_value !== '') {
+    return env_value;
+  }
+  return DEFAULT_SANDBOX_IMAGE;
+}
+
 /** The `--allow-unsandboxed-builder` flag/config value wins; otherwise
  * `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` (or `=true`) opts out. Any other value
  * (incl. `0`/`false`/unset) leaves the local builder refused (D11). */
@@ -256,6 +277,8 @@ export function resolve_config(
     throw config_error(`--worktree requires the workspace to be a git repository: ${workspace}`);
   }
 
+  const sandbox_image = resolve_sandbox_image(raw, env);
+
   return {
     version: 2,
     run_id: options.run_id ?? randomUUID(),
@@ -277,6 +300,7 @@ export function resolve_config(
     max_cost_usd,
     git_checkpoints: raw.git_checkpoints ?? false,
     worktree,
+    sandbox_image,
     workspace,
     verbose: raw.verbose ?? false,
     quiet: raw.quiet ?? false,

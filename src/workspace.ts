@@ -57,6 +57,7 @@ export function write_resolved_config(config: ResolvedConfig): void {
     max_cost_usd: config.max_cost_usd,
     git_checkpoints: config.git_checkpoints,
     worktree: config.worktree,
+    sandbox_image: config.sandbox_image,
     workspace: config.workspace,
   };
   writeFileSync(

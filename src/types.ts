@@ -58,6 +58,7 @@ export type VolleyConfig = {
   max_cost_usd?: number | null;
   git_checkpoints?: boolean;
   worktree?: boolean;
+  sandbox_image?: string;
   verbose?: boolean;
   quiet?: boolean;
   json?: boolean;
@@ -93,6 +94,11 @@ export type ResolvedConfig = {
    * `.volley/` state stays under `workspace` (the control plane). Off by
    * default; requires the workspace to be a git repository. */
   worktree: boolean;
+  /** Container image the local-builder Docker sandbox runs (s2 D5). Defaults to
+   * volley's own `Dockerfile`-built image; `--sandbox-image <tag>` /
+   * `VOLLEY_SANDBOX_IMAGE` override it. Meaningful only for a local builder —
+   * the `claude_cli` path never uses Docker (C4). */
+  sandbox_image: string;
   workspace: string;
   verbose: boolean;
   quiet: boolean;

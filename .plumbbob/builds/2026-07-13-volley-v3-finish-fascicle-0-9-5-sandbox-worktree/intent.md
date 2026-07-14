@@ -204,7 +204,7 @@ Session 2 (containment, shape B):
    local build writes into the worktree so `git -C <worktree>` shows the diff.
    - seam: `src/workspace_tools.ts`, `src/config.ts`, `src/cli.ts`, `src/workspace.ts`, `src/types.ts`
    - model: opus — containment re-point + config plumbing
-9. [ ] Worktree-branch checkpoints (extends `--git`; D13) — **done when:** `--git` checkpoints
+9. [x] Worktree-branch checkpoints (extends `--git`; D13) — **done when:** `--git` checkpoints
    are taken on the **worktree branch** via `git -C <path> add -A && commit --no-verify`
    (D13), the raw checkpoints stay on the phase branch as the audit trail with a **squash-merge
    on integration**, abandoning the phase discards the branch wholesale (the D13 teardown trio),
