@@ -59,3 +59,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-14 — step 3 checkpointed · 02637634a — Retain the v0.3.1 workarounds; annotate reduced necessity under native (R3) (8m)
 - 2026-07-14 — step 4 checkpointed · 22c43e82c — Verify both critic-schema paths (R4 + R5) (21m)
 - 2026-07-14 — step 5 checkpointed · c4e23aa62 — Session 0 live acceptance + prove the native bridge once (verification §1) (61m)
+- 2026-07-14 — step 6 checkpointed · 90bf25f75 — Merge Session 0 to `main` (D4) (2m)

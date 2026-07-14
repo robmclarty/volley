@@ -181,7 +181,7 @@ Session 2 (containment, shape B):
    is confirmed to run the loop and then reverted.
    - seam: `test/integration/live_smoke.test.ts`, `src/engine.ts` (temporary flip)
    - model: opus — live-run judgment, interpreting live failures
-6. [ ] Merge Session 0 to `main` (D4) — **done when:** `local-builder` is merged to `main`
+6. [x] Merge Session 0 to `main` (D4) — **done when:** `local-builder` is merged to `main`
    with `pnpm check` green, so `main` holds the known-good (v0.3.1 fixes + 0.9.5) state
    before s2 containment work begins on top of it.
    - seam: `.plumbbob/builds/2026-07-13-volley-v3-finish-fascicle-0-9-5-sandbox-worktree/build-log.md` — git-only merge (`local-builder`→`main`), no source change; the step's checkpoint records plumbbob bookkeeping only

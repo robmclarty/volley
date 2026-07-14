@@ -36,6 +36,7 @@ import {
   volley_path,
   write_resolved_config,
 } from './workspace.js';
+import { with_worktree, worktree_branch } from './worktree.js';
 
 export function initial_state(): LoopState {
   return {
@@ -96,6 +97,10 @@ export type OrchestratorDeps = {
   engine?: Engine;
   abort?: AbortSignal;
   install_signal_handlers?: boolean;
+  /** Isolate the builder run's effects in a git worktree over a per-run branch
+   * (s2 D3/D7/D13), torn down when the run ends. Off by default; the
+   * `--worktree` flag/config wires this in a later step. */
+  worktree?: boolean;
 };
 
 export type RunOutcome = {
@@ -116,6 +121,27 @@ export async function run_volley(
   } else {
     initialize_workspace(config.workspace, { preserve: true });
   }
+
+  // The worktree lifecycle wraps the whole builder loop: created before the
+  // first iteration, torn down after the last. Off by default (deps.worktree),
+  // so the claude_cli path never touches git here.
+  return with_worktree(
+    {
+      enabled: deps.worktree === true,
+      workspace: config.workspace,
+      branch: worktree_branch(config.run_id),
+      log: (message) => renderer.info(message),
+    },
+    () => run_loop(config, deps, resume_from),
+  );
+}
+
+async function run_loop(
+  config: ResolvedConfig,
+  deps: OrchestratorDeps,
+  resume_from: LoopState | null,
+): Promise<RunResult> {
+  const { renderer } = deps;
 
   const engine =
     deps.engine ??

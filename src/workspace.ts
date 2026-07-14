@@ -16,6 +16,13 @@ export function iteration_dir(workspace: string, iteration: number): string {
   return volley_path(workspace, 'iterations', String(iteration).padStart(3, '0'));
 }
 
+/** Filesystem-safe timestamp for `.bak.<stamp>` rotation names. Shared by the
+ * `.volley/` rotation here and the worktree rotation (D7) so both preserve
+ * prior state under the same never-destroy naming. */
+export function backup_stamp(date: Date = new Date()): string {
+  return date.toISOString().replace(/[:.]/g, '-');
+}
+
 /** Fresh-run initialization: rotate a stale `.volley/` aside, then create the
  * directory tree. Resume runs skip rotation (`preserve: true`). */
 export function initialize_workspace(
@@ -24,8 +31,7 @@ export function initialize_workspace(
 ): void {
   const dir = volley_path(workspace);
   if (existsSync(dir) && options.preserve !== true) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    renameSync(dir, join(workspace, `.volley.bak.${stamp}`));
+    renameSync(dir, join(workspace, `.volley.bak.${backup_stamp()}`));
   }
   mkdirSync(volley_path(workspace, 'iterations'), { recursive: true });
 }
