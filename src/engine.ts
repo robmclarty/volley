@@ -63,7 +63,18 @@ function is_local_provider(
 /** Add a local provider (ollama/lmstudio) to the provider map, with a base URL
  * from the environment or a sensible localhost default. The ai-sdk peer
  * (`ai-sdk-ollama` / `@ai-sdk/openai-compatible`) is loaded lazily by fascicle
- * only when the provider actually runs. */
+ * only when the provider actually runs.
+ *
+ * Native transport is the deferred future bridge, not adopted here: volley stays
+ * on the ai_sdk transport, which fascicle 0.9.5 already selects by default
+ * (`transport?: 'ai_sdk' | 'native'` defaults to `'ai_sdk'`), so no field is
+ * needed today. Flipping later is a one-line change — add `transport: 'native'`
+ * to the ollama/lmstudio config object returned below. No URL re-pointing is
+ * required: `resolve_ollama_base_url` already yields the daemon-root URL the
+ * native `/api/chat` transport wants (its adapter appends `/api/chat` itself),
+ * which is exactly what the v0.3.1 base-URL fix produces. Kept as a
+ * proven-once-then-reverted option so the transport stays a clean second variable
+ * in the model-vs-transport comparison. */
 function local_provider_config(
   provider: LocalProvider,
   env: Record<string, string | undefined>,

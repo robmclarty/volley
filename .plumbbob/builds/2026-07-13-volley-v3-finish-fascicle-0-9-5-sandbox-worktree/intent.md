@@ -149,7 +149,7 @@ Session 2 (containment, shape B):
 
 ### Session 0 — fascicle 0.9.5 on the ai_sdk transport (the prerequisite)
 
-1. [ ] Bump the peer set forward together + update docs (R1) — **done when:** `pnpm check`
+1. [x] Bump the peer set forward together + update docs (R1) — **done when:** `pnpm check`
    is green with fascicle `0.9.5`, `ai@^7`, `ai-sdk-ollama@^4` installed (exact-pinned), and
    the README peer table + `.env.example` say `ai-sdk-ollama@^4` (was `@^3`).
    - seam: `package.json`, `pnpm-lock.yaml`, `README.md`, `.env.example`
