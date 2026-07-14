@@ -174,7 +174,7 @@ Session 2 (containment, shape B):
    (the `compile_schema` `$schema`/`$id` strip fix) so a future fascicle regression is caught.
    - seam: `src/critic/run.ts`, `test/integration/live_smoke.test.ts`
    - model: sonnet — verify-only assertion authoring
-5. [ ] Session 0 live acceptance + prove the native bridge once (verification §1) — **done
+5. [x] Session 0 live acceptance + prove the native bridge once (verification §1) — **done
    when:** under `VOLLEY_LIVE` the local-builder smoke passes on ai_sdk (peer mismatch gone),
    a cold large model succeeds via the retained pre-warm, the all-Claude live smoke
    (builder + critic schema) passes, and a one-line `transport: 'native'` edit in `engine.ts`
@@ -184,7 +184,7 @@ Session 2 (containment, shape B):
 6. [ ] Merge Session 0 to `main` (D4) — **done when:** `local-builder` is merged to `main`
    with `pnpm check` green, so `main` holds the known-good (v0.3.1 fixes + 0.9.5) state
    before s2 containment work begins on top of it.
-   - seam: (git only — no source change)
+   - seam: `.plumbbob/builds/2026-07-13-volley-v3-finish-fascicle-0-9-5-sandbox-worktree/build-log.md` — git-only merge (`local-builder`→`main`), no source change; the step's checkpoint records plumbbob bookkeeping only
    - model: sonnet — mechanical merge behind a green gate
 
 ### Session 2 — Phase 2a: git worktree (isolates effects)
