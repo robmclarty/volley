@@ -215,7 +215,7 @@ Session 2 (containment, shape B):
 
 ### Session 2 — Phase 2b: Docker sandbox (isolates blast radius, shape B)
 
-10. [ ] `Dockerfile` + default image (s2 D5; D11) — **done when:** the image carries node/pnpm
+10. [x] `Dockerfile` + default image (s2 D5; D11) — **done when:** the image carries node/pnpm
     + the workspace dev toolchain so the builder can self-run `pnpm check`/checkride, runs as a
     **non-root user** (D11), and `--sandbox-image <tag>` overrides it.
     - seam: new `Dockerfile`, `src/config.ts`, `src/cli.ts`

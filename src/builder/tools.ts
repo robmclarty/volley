@@ -77,11 +77,39 @@ const FETCH_MIN_EXTRACT_CHARS = 200;
 
 const FETCH_USER_AGENT = 'volley-local-builder';
 
+/** The raw outcome of running one bash command, before the model-facing
+ * truncation + timeout marker the `bash` tool applies. `status` is the exit code
+ * (null when the process was killed by a signal — e.g. the timeout SIGKILL);
+ * `timed_out` marks the timeout path. */
+export type BashOutcome = {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  timed_out: boolean;
+};
+
+/** How the `bash` tool runs a command: on the host (`spawnSync`, the default) or
+ * — when a container sandbox is active — via `docker exec` (s2 D1/D9). The
+ * executor runs one command to completion and returns its raw outcome; the
+ * `bash` tool owns the truncation + timeout marker so both paths present an
+ * identical tool contract to the model. */
+export type BashExecutor = (
+  command: string,
+  options: { timeout_ms: number; max_capture_bytes: number },
+) => BashOutcome;
+
 export type BuilderToolOptions = {
   /** Override `BASH_TIMEOUT_MS` (ms). */
   bash_timeout_ms?: number;
   /** Override `BASH_MAX_OUTPUT_BYTES` (bytes, per stream). */
   bash_max_output_bytes?: number;
+  /**
+   * Where `bash` runs a command (s2 D1/D9). Defaults to `host_bash_executor` —
+   * the host `spawnSync` this step preserves for the unsandboxed escape hatch.
+   * The Docker sandbox injects `docker_exec_bash` so commands run in the
+   * container against the bind-mounted worktree.
+   */
+  bash_executor?: BashExecutor;
   /** Override `FETCH_MAX_BYTES` (bytes read from the HTTP stream before the cap). */
   fetch_max_bytes?: number;
   /**
@@ -401,12 +429,40 @@ async function run_fetch(raw: unknown, ctx: ToolExecContext, config: FetchConfig
   }
 }
 
+/**
+ * The default (unsandboxed) `bash` executor: run the command on the host via
+ * `spawnSync` with a shell, bounded by the timeout (SIGKILL on expiry) and the
+ * OOM capture cap. This is the pre-sandbox behavior, retained for
+ * `--allow-unsandboxed-builder` (shape C); the sandbox path swaps in
+ * `docker_exec_bash` (D9). `status` is null when a signal (the timeout SIGKILL)
+ * killed the process.
+ */
+export function host_bash_executor(cwd: string): BashExecutor {
+  return (command, options) => {
+    const result = spawnSync(command, {
+      shell: true,
+      cwd,
+      encoding: 'utf8',
+      timeout: options.timeout_ms,
+      killSignal: 'SIGKILL',
+      maxBuffer: options.max_capture_bytes,
+    });
+    return {
+      status: result.status,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      timed_out: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT',
+    };
+  };
+}
+
 // Same wiring convention as the shared read tools: each tool is typed as
 // fascicle's `Tool` (input `unknown`) and re-parses the model's raw
 // arguments with its own schema inside `execute`.
 export function builder_tools(workspace: string, options: BuilderToolOptions = {}): Tool[] {
   const bash_timeout_ms = options.bash_timeout_ms ?? BASH_TIMEOUT_MS;
   const bash_max_output_bytes = options.bash_max_output_bytes ?? BASH_MAX_OUTPUT_BYTES;
+  const bash_executor = options.bash_executor ?? host_bash_executor(workspace);
 
   const write_file: Tool = {
     name: 'write_file',
@@ -470,34 +526,28 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       `Each stream is truncated past ${String(bash_max_output_bytes)} bytes, ` +
       `and the command is killed if it runs longer than ${String(bash_timeout_ms)}ms.`,
     input_schema: bash_input,
-    // D3/D4: stateless per command (the exact seam Session 2 swaps to
-    // `docker exec`), and never throws on the command's own failure — a
-    // non-zero exit or a timeout is *returned* as `{ exit_code, stdout,
-    // stderr }` for the model to read. `spawnSync` buffers up to
-    // `BASH_CAPTURE_MAX_BYTES` (OOM guard) before we truncate to the
-    // model-facing cap.
+    // D3/D4: stateless per command (Session 2 swaps the executor from the host
+    // `spawnSync` to `docker exec` without touching this contract), and never
+    // throws on the command's own failure — a non-zero exit or a timeout is
+    // *returned* as `{ exit_code, stdout, stderr }` for the model to read. The
+    // executor buffers up to `BASH_CAPTURE_MAX_BYTES` (OOM guard) before we
+    // truncate to the model-facing cap.
     execute: (raw) => {
       const input = bash_input.parse(raw);
-      const result = spawnSync(input.command, {
-        shell: true,
-        cwd: workspace,
-        encoding: 'utf8',
-        timeout: bash_timeout_ms,
-        killSignal: 'SIGKILL',
-        maxBuffer: BASH_CAPTURE_MAX_BYTES,
+      const outcome = bash_executor(input.command, {
+        timeout_ms: bash_timeout_ms,
+        max_capture_bytes: BASH_CAPTURE_MAX_BYTES,
       });
-      const timed_out =
-        (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
-      let stderr = truncate_bytes(result.stderr ?? '', bash_max_output_bytes);
-      if (timed_out) {
+      let stderr = truncate_bytes(outcome.stderr, bash_max_output_bytes);
+      if (outcome.timed_out) {
         const note = `[command timed out after ${String(bash_timeout_ms)}ms and was killed]`;
         stderr = stderr.length > 0 ? `${stderr}\n${note}` : note;
       }
-      // `status` is the numeric exit code, or null when the process was
-      // killed by a signal (e.g. the timeout SIGKILL above).
+      // `status` is the numeric exit code, or null when the process was killed
+      // by a signal (e.g. the timeout SIGKILL).
       return {
-        exit_code: result.status,
-        stdout: truncate_bytes(result.stdout ?? '', bash_max_output_bytes),
+        exit_code: outcome.status,
+        stdout: truncate_bytes(outcome.stdout, bash_max_output_bytes),
         stderr,
       };
     },

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
 import { warn_small_local_context } from './builder/context_check.js';
-import { builder_tools } from './builder/tools.js';
+import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { accumulate } from './cost.js';
 import { resolve_ollama_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
@@ -88,6 +88,7 @@ export const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
  * engine defaults. */
 function builder_tool_options(
   config: ResolvedConfig,
+  bash_executor: BashExecutor | null,
 ): Pick<
   GenerateOptions,
   | 'tools'
@@ -110,8 +111,13 @@ function builder_tool_options(
   return {
     // Containment root re-points to the worktree under `--worktree` (s2 D3), so
     // the model's writes, edits, and `bash` cwd land there and leave the
-    // workspace untouched.
-    tools: builder_tools(build_root(config.workspace, config.worktree)),
+    // workspace untouched. When the sandbox is active its `docker exec` executor
+    // runs `bash` in the container against the bind-mounted worktree (D9); the
+    // host `spawnSync` default stands in otherwise.
+    tools: builder_tools(
+      build_root(config.workspace, config.worktree),
+      bash_executor !== null ? { bash_executor } : {},
+    ),
     max_steps: config.builder_max_steps,
     tool_error_policy: 'feed_back',
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
@@ -179,6 +185,10 @@ export type BuilderDeps = {
   config: ResolvedConfig;
   on_chunk: (chunk: StreamChunk) => void;
   warn: (message: string) => void;
+  /** The `bash` executor for a sandboxed local builder (`docker exec` against
+   * the run's container, D9), or null to use the host `spawnSync` default (the
+   * unsandboxed escape hatch, or `claude_cli` which supplies no volley tools). */
+  bash_executor?: BashExecutor | null;
 };
 
 export async function run_builder(
@@ -218,7 +228,7 @@ export async function run_builder(
       abort: ctx.abort,
       trajectory: ctx.trajectory,
       on_chunk: deps.on_chunk,
-      ...builder_tool_options(config),
+      ...builder_tool_options(config, deps.bash_executor ?? null),
     });
     // D7: `max_steps` is a backstop, not a failure — surface it and carry on.
     if (result.finish_reason === 'max_steps') {

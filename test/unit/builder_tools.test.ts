@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Tool } from 'fascicle';
 import {
+  BASH_TIMEOUT_MS,
+  type BashExecutor,
   type BuilderToolOptions,
   WRITE_FILE_MAX_BYTES,
   builder_tools,
@@ -230,6 +232,45 @@ describe('bash', () => {
     } finally {
       cleanup();
     }
+  });
+
+  // The sandbox swap (s2 D9) replaces the host `spawnSync` with a `docker exec`
+  // executor; the tool must route through whatever executor is injected and keep
+  // its contract (exit code passthrough, truncation, the timeout marker) — so
+  // both paths look identical to the model.
+  it('routes commands through an injected bash_executor and passes its outcome through', async () => {
+    const seen: Array<{ command: string; timeout_ms: number; max_capture_bytes: number }> = [];
+    const fake: BashExecutor = (command, options) => {
+      seen.push({ command, ...options });
+      return { status: 0, stdout: 'from-executor', stderr: '', timed_out: false };
+    };
+    const bash = builder_tools('/ws', { bash_executor: fake }).find((t) => t.name === 'bash')!;
+    const out = await call_bash(bash, 'echo hi');
+    expect(out.exit_code).toBe(0);
+    expect(out.stdout).toContain('from-executor');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.command).toBe('echo hi');
+    expect(seen[0]!.timeout_ms).toBe(BASH_TIMEOUT_MS);
+    // The OOM capture cap (not the model-facing display cap) is what the
+    // executor buffers to.
+    expect(seen[0]!.max_capture_bytes).toBeGreaterThan(1_000_000);
+  });
+
+  it('applies truncation and the timeout marker to an injected executor’s output', async () => {
+    const fake: BashExecutor = () => ({
+      status: null,
+      stdout: 'x'.repeat(100),
+      stderr: 'boom',
+      timed_out: true,
+    });
+    const bash = builder_tools('/ws', { bash_executor: fake, bash_max_output_bytes: 10 }).find(
+      (t) => t.name === 'bash',
+    )!;
+    const out = await call_bash(bash, 'whatever');
+    expect(out.exit_code).toBeNull();
+    expect(out.stdout).toContain('[truncated at 10 bytes]');
+    expect(out.stderr).toContain('boom');
+    expect(out.stderr).toContain('timed out');
   });
 });
 

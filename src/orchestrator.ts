@@ -9,11 +9,14 @@ import { loop, run, sequence, step } from 'fascicle';
 import { filesystem_logger } from 'fascicle/adapters';
 import type { Engine } from 'fascicle';
 import { run_builder } from './builder.js';
+import type { BashExecutor } from './builder/tools.js';
 import { run_checkride } from './check/checkride.js';
 import { run_command_check, skipped_check } from './check/command.js';
+import { sandbox_enabled } from './config.js';
 import { cost_cap_hit } from './cost.js';
 import { EMPTY_USAGE } from './cost.js';
 import { create_volley_engine } from './engine.js';
+import { with_sandbox } from './sandbox.js';
 import {
   archive_iteration,
   run_result_from_state,
@@ -131,7 +134,21 @@ export async function run_volley(
       log: (message) => renderer.info(message),
     },
     async () => {
-      const result = await run_loop(config, deps, resume_from);
+      // Inside the worktree (its bind-mount source), start the run's container
+      // sandbox and hand the loop the `bash` executor to wire into the builder
+      // tools (s2 D1/D9): `docker exec` when the sandbox is on, else null (host
+      // `spawnSync`). Off for `claude_cli` and the unsandboxed escape hatch, so
+      // the default and all-Claude paths never touch Docker (C4).
+      const result = await with_sandbox(
+        {
+          enabled: sandbox_enabled(config),
+          image: config.sandbox_image,
+          build_root: build_root(config.workspace, config.worktree),
+          run_id: config.run_id,
+          log: (message) => renderer.info(message),
+        },
+        (bash_executor) => run_loop(config, deps, resume_from, bash_executor),
+      );
       // D13 integration: a *successful* `--worktree --git` run squash-merges the
       // phase branch's checkpoints onto the workspace branch before teardown
       // discards it. Any non-success outcome (cost cap, budget, interrupt,
@@ -151,6 +168,7 @@ async function run_loop(
   config: ResolvedConfig,
   deps: OrchestratorDeps,
   resume_from: LoopState | null,
+  bash_executor: BashExecutor | null,
 ): Promise<RunResult> {
   const { renderer } = deps;
 
@@ -176,7 +194,7 @@ async function run_loop(
     };
     renderer.phase_start(next.iteration, 'builder');
     const built = await run_builder(
-      { engine, config, on_chunk: renderer.builder_chunk, warn: renderer.warn },
+      { engine, config, on_chunk: renderer.builder_chunk, warn: renderer.warn, bash_executor },
       next,
       ctx,
     );
