@@ -161,7 +161,7 @@ Session 2 (containment, shape B):
    daemon-root URL native wants; `pnpm check` green.
    - seam: `src/engine.ts`
    - model: sonnet — comment only, no logic change
-3. [ ] Retain the v0.3.1 workarounds; annotate reduced necessity under native (R3) — **done
+3. [x] Retain the v0.3.1 workarounds; annotate reduced necessity under native (R3) — **done
    when:** base-URL normalizer, `num_ctx` warning, and cold-load pre-warm are behaviorally
    unchanged, and a code comment on `prewarm_ollama_model` + a README local-guide line note
    that the pre-warm's necessity drops away on the native transport (raw `fetch`, no

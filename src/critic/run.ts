@@ -44,7 +44,20 @@ export type CriticDeps = {
 /** Read-only tool wiring per provider. The claude_cli critic is confined at
  * the CLI permission layer (allowlist + explicit disallow); a local-model
  * critic gets volley's own workspace-scoped read-only tools and no write
- * path at all. */
+ * path at all.
+ *
+ * The two providers also enforce `verdict_schema` by two different paths, both
+ * verified live (v3 R4/R5). The claude_cli critic compiles the schema for
+ * `claude --json-schema`; that only works because fascicle 0.9.5's
+ * `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps (the
+ * CLI rejects them) — `live_smoke` asserts a structured verdict comes back, so a
+ * future fascicle regression there fails loudly rather than silently. The local
+ * (ollama/lmstudio) critic instead gets Ollama **constrained decode** —
+ * fascicle's ai_sdk default whenever a `schema` is passed — so the verdict is
+ * structurally guaranteed at decode time, with no prompt-parse-repair;
+ * `live_local_builder` exercises that path. Unchanged in v3: on ai_sdk
+ * constrained decode needs no wiring, and under the deferred native flip (D2) it
+ * would move to `provider_options.ollama.format` (Q5, parked). */
 function critic_tool_options(
   config: ResolvedConfig,
 ): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options'> {

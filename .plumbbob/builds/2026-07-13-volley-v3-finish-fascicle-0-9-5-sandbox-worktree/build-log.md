@@ -56,3 +56,4 @@ you point at to say "I did that — the LLM helped, but those were my calls."
 folder, so it rides the branch into the PR.)*
 - 2026-07-14 — step 1 checkpointed · b6a4f3c99 — Bump the peer set forward together + update docs (R1) (1 drift, 7m)
 - 2026-07-14 — step 2 checkpointed · 809d04216 — Keep ai_sdk transport; document the native flip as the future bridge (R2) (5m)
+- 2026-07-14 — step 3 checkpointed · 02637634a — Retain the v0.3.1 workarounds; annotate reduced necessity under native (R3) (8m)
