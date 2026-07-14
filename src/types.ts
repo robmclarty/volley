@@ -57,6 +57,7 @@ export type VolleyConfig = {
   max_iterations?: number;
   max_cost_usd?: number | null;
   git_checkpoints?: boolean;
+  worktree?: boolean;
   verbose?: boolean;
   quiet?: boolean;
   json?: boolean;
@@ -87,6 +88,11 @@ export type ResolvedConfig = {
   max_iterations: number;
   max_cost_usd: number | null;
   git_checkpoints: boolean;
+  /** Isolate the builder run's effects in a per-run git worktree (s2 D3): the
+   * builder/critic file tools' containment root moves to the worktree, while
+   * `.volley/` state stays under `workspace` (the control plane). Off by
+   * default; requires the workspace to be a git repository. */
+  worktree: boolean;
   workspace: string;
   verbose: boolean;
   quiet: boolean;

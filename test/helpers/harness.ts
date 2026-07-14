@@ -78,6 +78,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     max_iterations: 10,
     max_cost_usd: null,
     git_checkpoints: false,
+    worktree: false,
     verbose: false,
     quiet: false,
     json: true,

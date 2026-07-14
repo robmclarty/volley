@@ -189,7 +189,7 @@ Session 2 (containment, shape B):
 
 ### Session 2 — Phase 2a: git worktree (isolates effects)
 
-7. [ ] Worktree orchestration module — create / rotate / teardown (s2 D2/D4; D7, D13) — **done
+7. [x] Worktree orchestration module — create / rotate / teardown (s2 D2/D4; D7, D13) — **done
    when:** unit tests cover create (`git worktree add -b`), rotate, and the idempotent teardown
    trio (`worktree remove --force` → `branch -D` → `worktree prune`, D13); a dirty-or-existing
    worktree **rotates aside + logs** (mirroring `initialize_workspace`'s `.volley.bak.<ts>`, D7);

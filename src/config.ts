@@ -249,6 +249,13 @@ export function resolve_config(
     throw config_error(`--git requires the workspace to be a git repository: ${workspace}`);
   }
 
+  // A worktree is checked out from the workspace's git history, so refuse the
+  // flag before any model spend when the workspace is not a repository (s2 D3).
+  const worktree = raw.worktree ?? false;
+  if (worktree && !existsSync(resolve(workspace, '.git'))) {
+    throw config_error(`--worktree requires the workspace to be a git repository: ${workspace}`);
+  }
+
   return {
     version: 2,
     run_id: options.run_id ?? randomUUID(),
@@ -269,6 +276,7 @@ export function resolve_config(
     max_iterations,
     max_cost_usd,
     git_checkpoints: raw.git_checkpoints ?? false,
+    worktree,
     workspace,
     verbose: raw.verbose ?? false,
     quiet: raw.quiet ?? false,

@@ -361,6 +361,21 @@ describe('resolve_config', () => {
       cleanup();
     }
   });
+
+  it('defaults --worktree off and rejects it outside a git repository', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config(base(workspace)).worktree).toBe(false);
+      expect(() => resolve_config({ ...base(workspace), worktree: true })).toThrow(
+        /git repository/,
+      );
+      mkdirSync(join(workspace, '.git'));
+      const config = resolve_config({ ...base(workspace), worktree: true });
+      expect(config.worktree).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe('expand_at_file', () => {

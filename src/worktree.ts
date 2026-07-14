@@ -34,6 +34,19 @@ export function worktree_branch(run_id: string): string {
   return `volley/${run_id}`;
 }
 
+/**
+ * The directory the builder's *effects* land in (s2 D3): the run's worktree
+ * when `--worktree` is on, else the workspace itself. This is the containment
+ * root the builder/critic file tools resolve through `contain()` and the
+ * `bash` tool's cwd — re-pointing it moves writes into the worktree without
+ * disturbing the workspace. `.volley/` state, the resolved config, and the
+ * deterministic check stay under the workspace (the control plane), so only the
+ * model-driven effect surface moves.
+ */
+export function build_root(workspace: string, worktree: boolean): string {
+  return worktree ? worktree_path(workspace) : workspace;
+}
+
 type GitResult = { status: number; stdout: string; stderr: string };
 
 /** Run git in `cwd`. A missing git binary is a precondition failure (like the

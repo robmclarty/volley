@@ -43,6 +43,7 @@ type CliFlags = {
   maxIterations?: number;
   maxCostUsd?: number;
   git?: boolean;
+  worktree?: boolean;
   dryRun?: boolean;
   config?: string;
   json?: boolean;
@@ -114,6 +115,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.maxIterations !== undefined ? { max_iterations: Number(flags.maxIterations) } : {}),
     ...(flags.maxCostUsd !== undefined ? { max_cost_usd: Number(flags.maxCostUsd) } : {}),
     ...(flags.git === true ? { git_checkpoints: true } : {}),
+    ...(flags.worktree === true ? { worktree: true } : {}),
     ...(flags.dryRun === true ? { dry_run: true } : {}),
     ...(flags.json === true ? { json: true } : {}),
     ...(flags.verbose === true ? { verbose: true } : {}),
@@ -191,6 +193,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--max-iterations <n>', 'Iteration cap')
     .option('--max-cost-usd <usd>', 'Hard USD ceiling, enforced in the loop guard')
     .option('--git', 'Auto-commit after each phase (workspace must be a git repo)')
+    .option('--worktree', 'Isolate the builder run in a per-run git worktree (workspace must be a git repo)')
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')
     .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')

@@ -207,6 +207,7 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     max_iterations: Number(recorded['max_iterations']),
     max_cost_usd: recorded['max_cost_usd'] as number | null,
     git_checkpoints: recorded['git_checkpoints'] === true,
+    worktree: recorded['worktree'] === true,
   };
 
   const state: LoopState = {

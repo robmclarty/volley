@@ -14,6 +14,7 @@ import { resolve_ollama_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
 import { config_error, phase_error } from './types.js';
 import type { LoopState, ResolvedConfig } from './types.js';
+import { build_root } from './worktree.js';
 
 export const BUILDER_ALLOWED_TOOLS = [
   'Read',
@@ -107,7 +108,10 @@ function builder_tool_options(
     };
   }
   return {
-    tools: builder_tools(config.workspace),
+    // Containment root re-points to the worktree under `--worktree` (s2 D3), so
+    // the model's writes, edits, and `bash` cwd land there and leave the
+    // workspace untouched.
+    tools: builder_tools(build_root(config.workspace, config.worktree)),
     max_steps: config.builder_max_steps,
     tool_error_policy: 'feed_back',
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,

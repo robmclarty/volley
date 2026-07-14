@@ -31,7 +31,10 @@ export const IGNORED_DIRS = new Set([
 ]);
 
 /** Resolve `rel` inside `workspace`, rejecting absolute paths and any `..`
- * escape. Returns the absolute path; throws on containment violation. */
+ * escape. Returns the absolute path; throws on containment violation. The
+ * `workspace` root passed here is the build root, which is the per-run git
+ * worktree under `--worktree` (s2 D3, `build_root`), not necessarily the
+ * control-plane workspace that holds `.volley/`. */
 export function contain(workspace: string, rel: string): string {
   const root = resolve(workspace);
   const candidate = isAbsolute(rel) ? resolve(rel) : resolve(root, rel);

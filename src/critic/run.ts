@@ -11,6 +11,7 @@ import { resolve_ollama_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
 import { phase_error } from '../types.js';
 import type { LoopState, ResolvedConfig } from '../types.js';
+import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
 import { read_only_tools } from './tools.js';
 
@@ -71,7 +72,10 @@ function critic_tool_options(
       },
     };
   }
-  return { tools: read_only_tools(config.workspace) };
+  // Read the builder's actual output: under `--worktree` (s2 D3) that lives in
+  // the worktree, so the local critic's read tools resolve through the same
+  // re-pointed containment root as the builder's writes.
+  return { tools: read_only_tools(build_root(config.workspace, config.worktree)) };
 }
 
 export async function run_critic(

@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
+  build_root,
   create_worktree,
   teardown_worktree,
   with_worktree,
@@ -43,6 +44,13 @@ describe('worktree_path / worktree_branch', () => {
   it('places the worktree beside the workspace and names the branch per run', () => {
     expect(worktree_path('/tmp/proj')).toBe('/tmp/proj.worktree');
     expect(worktree_branch('abc-123')).toBe('volley/abc-123');
+  });
+});
+
+describe('build_root', () => {
+  it('re-points to the worktree when on, and stays the workspace when off (s2 D3)', () => {
+    expect(build_root('/tmp/proj', true)).toBe(worktree_path('/tmp/proj'));
+    expect(build_root('/tmp/proj', false)).toBe('/tmp/proj');
   });
 });
 
