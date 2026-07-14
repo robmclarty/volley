@@ -197,7 +197,7 @@ Session 2 (containment, shape B):
    uses fascicle's `loop` (no hand-written loop in `src/orchestrator.ts`).
    - seam: new `src/worktree.ts` (module), `src/orchestrator.ts`, `src/workspace.ts`
    - model: opus — orchestration design under the no-loops rule
-8. [ ] Re-point `contain()` root to the worktree + `--worktree` flag/config (s2 D3) — **done
+8. [x] Re-point `contain()` root to the worktree + `--worktree` flag/config (s2 D3) — **done
    when:** the containment root becomes the worktree path (write/edit/read tools already
    resolve through `contain()`), `--worktree` + its config field persist in
    `.volley/config.json` and restore on resume (defaulting like `builder_provider`), and a

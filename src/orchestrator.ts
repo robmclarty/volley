@@ -33,10 +33,11 @@ import type {
 import {
   git_checkpoint,
   initialize_workspace,
+  integrate_worktree,
   volley_path,
   write_resolved_config,
 } from './workspace.js';
-import { with_worktree, worktree_branch } from './worktree.js';
+import { build_root, with_worktree, worktree_branch } from './worktree.js';
 
 export function initial_state(): LoopState {
   return {
@@ -121,14 +122,28 @@ export async function run_volley(
   // The worktree lifecycle wraps the whole builder loop: created before the
   // first iteration, torn down after the last. Off unless `--worktree` is set
   // (config.worktree), so the default path never touches git here.
+  const branch = worktree_branch(config.run_id);
   return with_worktree(
     {
       enabled: config.worktree,
       workspace: config.workspace,
-      branch: worktree_branch(config.run_id),
+      branch,
       log: (message) => renderer.info(message),
     },
-    () => run_loop(config, deps, resume_from),
+    async () => {
+      const result = await run_loop(config, deps, resume_from);
+      // D13 integration: a *successful* `--worktree --git` run squash-merges the
+      // phase branch's checkpoints onto the workspace branch before teardown
+      // discards it. Any non-success outcome (cost cap, budget, interrupt,
+      // error) is abandoned — teardown discards the branch wholesale, nothing
+      // integrated. Gated on `--git` too, so volley only commits to the
+      // workspace branch when the operator opted into checkpoints.
+      if (config.worktree && config.git_checkpoints && result.status === 'success') {
+        integrate_worktree(config.workspace, branch, `volley run ${config.run_id}: integrate worktree (squash)`);
+        renderer.info(`worktree: squash-merged ${branch} onto the workspace branch`);
+      }
+      return result;
+    },
   );
 }
 
@@ -176,7 +191,10 @@ async function run_loop(
       renderer.warn('cost unavailable for this phase; recording null (run totals sum what is known)');
     }
     if (config.git_checkpoints) {
-      git_checkpoint(config.workspace, `volley iter ${String(built.iteration)}: build`);
+      git_checkpoint(
+        build_root(config.workspace, config.worktree),
+        `volley iter ${String(built.iteration)}: build`,
+      );
     }
     return built;
   });
@@ -247,7 +265,7 @@ async function run_loop(
     );
     if (config.git_checkpoints) {
       git_checkpoint(
-        config.workspace,
+        build_root(config.workspace, config.worktree),
         `volley iter ${String(s.iteration)}: critique (${s.verdict ?? 'skipped'})`,
       );
     }

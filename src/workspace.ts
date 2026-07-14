@@ -65,24 +65,73 @@ export function write_resolved_config(config: ResolvedConfig): void {
   );
 }
 
-/** `--git`: commit the whole workspace after a phase. A checkpoint with
- * nothing to commit is fine; a missing git binary or repo is not. */
-export function git_checkpoint(workspace: string, message: string): void {
-  if (!existsSync(join(workspace, '.git'))) {
-    throw config_error(`--git requires the workspace to be a git repository: ${workspace}`);
+/**
+ * `--git`: commit everything under `root` after a phase (`git -C <root>`, run
+ * here via the spawn `cwd`). `root` is the build root (`build_root`): the
+ * workspace on the default path, or the per-run worktree under `--worktree`, so
+ * checkpoints land on the worktree branch (D13) rather than the workspace's.
+ * A checkpoint with nothing to commit is fine; a missing git binary or repo is
+ * not.
+ */
+export function git_checkpoint(root: string, message: string): void {
+  if (!existsSync(join(root, '.git'))) {
+    // `.git` is a directory in the workspace and a file in a linked worktree;
+    // existsSync accepts both.
+    throw config_error(`git checkpoints require a git repository: ${root}`);
   }
-  const add = spawnSync('git', ['add', '-A'], { cwd: workspace });
+  const add = spawnSync('git', ['add', '-A'], { cwd: root });
   if (add.error !== undefined || add.status !== 0) {
     throw check_error(`git add failed: ${add.stderr?.toString() ?? String(add.error)}`);
   }
   const commit = spawnSync('git', ['commit', '-m', message, '--no-verify'], {
-    cwd: workspace,
+    cwd: root,
   });
   // Exit 1 with "nothing to commit" is a no-op iteration, not a failure.
   if (commit.error !== undefined) {
     throw check_error(`git commit failed to start: ${String(commit.error)}`);
   }
   const out = `${commit.stdout?.toString() ?? ''}${commit.stderr?.toString() ?? ''}`;
+  if (commit.status !== 0 && !out.includes('nothing to commit')) {
+    throw check_error(`git commit failed: ${out.trim()}`);
+  }
+}
+
+/**
+ * D13 integration — bring a successful `--worktree --git` run's effects onto the
+ * workspace branch. The per-phase checkpoints on `branch` are the raw
+ * audit/replay trail; here they collapse into a single squash commit
+ * (`git merge --squash` then `commit`) on the workspace's current branch. The
+ * shared object store makes this a local, fetch-free merge, and — because the
+ * workspace branch never moved during the run (checkpoints went to the phase
+ * branch) — it is conflict-free by construction. A run whose phase branch has no
+ * new commits integrates to a no-op. Only successful runs integrate; an
+ * abandoned run's branch is discarded wholesale by the teardown trio instead.
+ */
+export function integrate_worktree(workspace: string, branch: string, message: string): void {
+  if (!existsSync(join(workspace, '.git'))) {
+    throw config_error(`--worktree integration requires a git repository: ${workspace}`);
+  }
+  const squash = spawnSync('git', ['merge', '--squash', branch], {
+    cwd: workspace,
+    encoding: 'utf8',
+  });
+  if (squash.error !== undefined) {
+    throw check_error(`git merge --squash failed to start: ${String(squash.error)}`);
+  }
+  if (squash.status !== 0) {
+    throw check_error(
+      `git merge --squash ${branch} failed: ${(squash.stderr || squash.stdout).trim()}`,
+    );
+  }
+  const commit = spawnSync('git', ['commit', '-m', message, '--no-verify'], {
+    cwd: workspace,
+    encoding: 'utf8',
+  });
+  if (commit.error !== undefined) {
+    throw check_error(`git commit failed to start: ${String(commit.error)}`);
+  }
+  // An empty phase branch stages nothing; "nothing to commit" is a no-op.
+  const out = `${commit.stdout ?? ''}${commit.stderr ?? ''}`;
   if (commit.status !== 0 && !out.includes('nothing to commit')) {
     throw check_error(`git commit failed: ${out.trim()}`);
   }
