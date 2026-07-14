@@ -154,7 +154,7 @@ Session 2 (containment, shape B):
    the README peer table + `.env.example` say `ai-sdk-ollama@^4` (was `@^3`).
    - seam: `package.json`, `pnpm-lock.yaml`, `README.md`, `.env.example`
    - model: sonnet — mechanical dep bump, fully specified by the done-when
-2. [ ] Keep ai_sdk transport; document the native flip as the future bridge (R2) — **done
+2. [x] Keep ai_sdk transport; document the native flip as the future bridge (R2) — **done
    when:** `src/engine.ts` is unchanged except the dep bump plus a code comment recording
    that flipping to native is a one-line change (`transport: 'native'` on the
    `ollama`/`lmstudio` configs) and that `resolve_ollama_base_url` already yields the

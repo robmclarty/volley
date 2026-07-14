@@ -228,7 +228,12 @@ builder start (and before a local critic's first verdict) volley pre-loads an
 Ollama model with a load-only `/api/generate` call, so a cold multi-GB model
 load doesn't eat the first real request's time-to-first-byte budget — without
 it, a big cold model can die minutes in with an opaque
-`stream interrupted: fetch failed`. Getting a
+`stream interrupted: fetch failed`. (That cold-load timeout is an
+ai-sdk/undici in-request limit, not an Ollama one: on fascicle's native
+transport — a documented future option, not the path volley runs today — the
+per-turn call is a raw `fetch` with no in-request timeout, so this pre-load's
+necessity drops away and the `num_ctx`/`keep_alive` levers below move to
+per-call `provider_options.ollama`.) Getting a
 weak local model to drive a tool loop reliably has three sharp edges:
 
 - **Set the context length to ≥ ~16k tokens.** Ollama's 4k default silently

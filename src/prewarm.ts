@@ -20,7 +20,17 @@ export const PREWARM_TIMEOUT_MS = 300_000;
 /** Load `model` into the Ollama server's memory (`base_url` is the server
  * root). Resolves when the model is resident, on any failure, or at the
  * timeout — never throws, never gates the phase. An already-resident model
- * returns immediately, so warming the same model for both roles is free. */
+ * returns immediately, so warming the same model for both roles is free.
+ *
+ * Load-bearing only on the ai_sdk transport (D3): the cold-load death this
+ * absorbs is the ai-sdk/undici in-request header timeout, not an Ollama
+ * limit. On fascicle's native transport — the deferred future bridge, see
+ * `local_provider_config` in engine.ts — the per-turn call is a bare
+ * `fetch(..., { signal })` with no default body timeout, so a cold model can
+ * take as long as it needs and this pre-warm's necessity drops away (keep it
+ * regardless: a resident model makes it a no-op). Native would also move the
+ * `num_ctx`/`keep_alive` levers to per-call `provider_options.ollama`, rather
+ * than the server-side Modelfile defaults volley probes today. */
 export async function prewarm_ollama_model(
   base_url: string,
   model: string,

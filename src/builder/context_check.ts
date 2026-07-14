@@ -4,6 +4,13 @@
  * tool-calling failure (Ollama's 4k default). We warn at builder start *where
  * the value is detectable* and never block or fail on it: detection is a
  * courtesy, the setup requirement is the user's (README `## Local builder`).
+ *
+ * On the ai_sdk transport this probe reads the server-side `num_ctx` (a
+ * Modelfile or server default). Under fascicle's native transport (the
+ * deferred future bridge; D3) `num_ctx`/`keep_alive` become per-call
+ * `provider_options.ollama` options set at request time, so the value would be
+ * volley's to pass rather than a server default to probe — the warning stays
+ * useful either way.
  */
 import type { BuilderProvider } from '../types.js';
 
