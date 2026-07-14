@@ -168,7 +168,7 @@ Session 2 (containment, shape B):
    in-request timeout) and that `num_ctx`/`keep_alive` would move to `provider_options.ollama`.
    - seam: `src/prewarm.ts`, `src/builder/context_check.ts`, `README.md`
    - model: sonnet — documentation notes over unchanged code
-4. [ ] Verify both critic-schema paths (R4 + R5) — **done when:** the local critic keeps
+4. [x] Verify both critic-schema paths (R4 + R5) — **done when:** the local critic keeps
    Ollama constrained decode (`verdict_schema`, unchanged), and a live assertion exercises
    the all-Claude critic `verdict_schema` compiling for `claude --json-schema` on 0.9.5
    (the `compile_schema` `$schema`/`$id` strip fix) so a future fascicle regression is caught.
