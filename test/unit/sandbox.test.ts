@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { BashExecutor } from '../../src/builder/tools.js';
 import {
+  format_docker_run,
+  HOST_GATEWAY_HOST,
   network_run_args,
-  sandbox_container_name,
+  sandbox_invocation,
+  SANDBOX_NETWORK_NAME,
+  SANDBOX_NETWORK_SUBNET,
   sandbox_run_args,
-  with_sandbox,
 } from '../../src/sandbox.js';
 import { error_kind } from '../../src/types.js';
 
@@ -22,17 +24,35 @@ function run_args(overrides: Partial<Parameters<typeof sandbox_run_args>[0]> = {
   });
 }
 
-describe('sandbox_run_args (D9/D11 hardening flag set)', () => {
-  it('starts a detached, named, long-lived container bind-mounting the build root at /workspace', () => {
+describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', () => {
+  it('is a one-shot foreground --rm container, no daemon keep-alive (B′ retires -d … sleep infinity)', () => {
     const args = run_args();
-    expect(args.slice(0, 2)).toEqual(['run', '-d']);
+    expect(args.slice(0, 2)).toEqual(['run', '--rm']);
+    expect(args).not.toContain('-d');
+    expect(args.join(' ')).not.toContain('sleep infinity');
     expect(args[args.indexOf('--name') + 1]).toBe('volley-sandbox-run-1');
-    // The keep-alive command is the last argv, the image just before it (D9).
-    expect(args.slice(-2)).toEqual(['sleep', 'infinity']);
-    expect(args[args.length - 3]).toBe('volley-sandbox:latest');
-    // Shape B: the host build root is bind-mounted and is the container cwd.
+    // The image is the last argv when no command is appended.
+    expect(args[args.length - 1]).toBe('volley-sandbox:latest');
+    // The host build root is bind-mounted and is the container cwd (D5).
     expect(args).toContain('/tmp/ws.worktree:/workspace');
     expect(args[args.indexOf('-w') + 1]).toBe('/workspace');
+  });
+
+  it('appends the volley command after the image and injects env / entrypoint (B′-2 crossing)', () => {
+    const args = run_args({
+      command: ['--prompt', 'do the thing', '--workspace', '/workspace'],
+      env: [['VOLLEY_MODEL_HOST', HOST_GATEWAY_HOST]],
+      entrypoint: 'sh',
+    });
+    // Command trails the image; the image immediately precedes it.
+    expect(args.slice(-4)).toEqual(['--prompt', 'do the thing', '--workspace', '/workspace']);
+    expect(args[args.length - 5]).toBe('volley-sandbox:latest');
+    // Env injection and entrypoint override.
+    const joined = args.join(' ');
+    expect(joined).toContain(`-e VOLLEY_MODEL_HOST=${HOST_GATEWAY_HOST}`);
+    expect(args[args.indexOf('--entrypoint') + 1]).toBe('sh');
+    // The entrypoint override sits before the image.
+    expect(args.indexOf('--entrypoint')).toBeLessThan(args.lastIndexOf('volley-sandbox:latest'));
   });
 
   it('applies the D11 caps: non-root user, cap-drop, no-new-privileges, init, resource limits, read-only + tmpfs', () => {
@@ -72,13 +92,17 @@ describe('sandbox_run_args (D9/D11 hardening flag set)', () => {
     expect(run_args({ uid: null, gid: null })).not.toContain('--user');
   });
 
+  it('omits --name when none is given (the operator/example names the container, B′-2)', () => {
+    expect(run_args({ name: null })).not.toContain('--name');
+  });
+
   it('carries the network posture into the run argv (D6/D12)', () => {
     // Default-deny: no interface at all.
     expect(run_args({ network: 'none' }).join(' ')).toContain('--network none');
     // Allowlist: user-defined bridge + host-collapsed allowlist via host-gateway.
     const allow = run_args({ network: 'allowlist' });
     expect(allow[allow.indexOf('--network') + 1]).toBe('volley-sandbox-net');
-    expect(allow[allow.indexOf('--add-host') + 1]).toBe('host.docker.internal:host-gateway');
+    expect(allow[allow.indexOf('--add-host') + 1]).toBe(`${HOST_GATEWAY_HOST}:host-gateway`);
   });
 });
 
@@ -94,28 +118,60 @@ describe('network_run_args (D6/D12 egress postures)', () => {
       '--network',
       'volley-sandbox-net',
       '--add-host',
-      'host.docker.internal:host-gateway',
+      `${HOST_GATEWAY_HOST}:host-gateway`,
     ]);
   });
 });
 
-describe('sandbox_container_name', () => {
-  it('derives a valid, run-unique docker name from the run id', () => {
-    expect(sandbox_container_name('abc-123')).toBe('volley-sandbox-abc-123');
+describe('sandbox_invocation (the B′-2 invocation-spec helper)', () => {
+  it('composes the hardened run with the canonical bridge + pnpm store and the volley command', () => {
+    const args = sandbox_invocation({
+      image: 'volley-sandbox:latest',
+      build_root: '/tmp/ws.worktree',
+      uid: 501,
+      gid: 20,
+      network: 'none',
+      command: ['--prompt', 'p', '--workspace', '/workspace'],
+    });
+    expect(args.slice(0, 2)).toEqual(['run', '--rm']);
+    expect(args).toContain('/tmp/ws.worktree:/workspace');
+    expect(args.join(' ')).toContain('volley-pnpm-store:/home/node/.local/share/pnpm/store');
+    expect(args.slice(-4)).toEqual(['--prompt', 'p', '--workspace', '/workspace']);
+    // No crossing env when no host model is targeted (fully-offline shape).
+    expect(args.join(' ')).not.toContain('VOLLEY_MODEL_HOST');
+  });
+
+  it('injects VOLLEY_MODEL_HOST on the allowlist crossing and uses the canonical bridge (D12/OQ-8)', () => {
+    const args = sandbox_invocation({
+      image: 'volley-sandbox:latest',
+      build_root: '/tmp/ws.worktree',
+      uid: 501,
+      gid: 20,
+      network: 'allowlist',
+      model_host: HOST_GATEWAY_HOST,
+      command: ['--prompt', 'p'],
+    });
+    expect(args[args.indexOf('--network') + 1]).toBe(SANDBOX_NETWORK_NAME);
+    expect(args.join(' ')).toContain(`-e VOLLEY_MODEL_HOST=${HOST_GATEWAY_HOST}`);
   });
 });
 
-describe('with_sandbox (disabled pass-through)', () => {
-  it('hands the body a null executor and never touches Docker when disabled', async () => {
-    let received: BashExecutor | null | 'unset' = 'unset';
-    const out = await with_sandbox(
-      { enabled: false, image: 'x', build_root: '/tmp', run_id: 'r' },
-      async (executor) => {
-        received = executor;
-        return 42;
-      },
-    );
-    expect(out).toBe(42);
-    expect(received).toBeNull();
+describe('allowlist bridge identity (D12 invocation spec the examples share)', () => {
+  it('names the dedicated user-defined bridge and its pinned /24 subnet', () => {
+    expect(SANDBOX_NETWORK_NAME).toBe('volley-sandbox-net');
+    expect(SANDBOX_NETWORK_SUBNET).toBe('172.31.99.0/24');
+    // The subnet the host `DOCKER-USER` default-DROP rules scope to is a /24.
+    expect(SANDBOX_NETWORK_SUBNET.endsWith('/24')).toBe(true);
+  });
+});
+
+describe('format_docker_run (copy-paste shell line for examples / --dry-run)', () => {
+  it('prefixes docker and single-quotes only tokens with whitespace/specials', () => {
+    const line = format_docker_run(run_args({ command: ['--prompt', 'build a thing'] }));
+    expect(line.startsWith('docker run --rm')).toBe(true);
+    expect(line).toContain('volley-sandbox:latest');
+    // A plain flag stays bare; an arg with a space is quoted.
+    expect(line).toContain('--prompt');
+    expect(line).toContain("'build a thing'");
   });
 });

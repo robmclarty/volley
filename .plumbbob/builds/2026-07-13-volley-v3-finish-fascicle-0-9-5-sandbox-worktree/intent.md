@@ -267,7 +267,7 @@ Session 2 (containment, shape B′ — the whole volley builder runs in one hard
       volley-orchestrated lifecycle (`start_sandbox`/`stop_sandbox`/`with_sandbox`) are retired in
       revised step 13. The FS-isolation done-when (`cat /etc/passwd` can't read the host) still
       holds — it's now the container volley runs in.
-12. [ ] Network policy: default-deny egress (s2 D6; D12) — **done when:** the container sits on
+12. [x] Network policy: default-deny egress (s2 D6; D12) — **done when:** the container sits on
     a user-defined bridge with **`DOCKER-USER` default-DROP** egress, the two allowlist targets
     are reached via `host.docker.internal:host-gateway` (D12), a fully offline all-local run
     uses `--network none` so `fetch` degrades cleanly (returns an error tool result, run

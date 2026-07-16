@@ -1,38 +1,33 @@
 /**
- * Docker sandbox orchestration (s2 Phase 2b; D5, D9, D11): isolate the local
- * builder's *blast radius*. Shape B keeps volley (Node, model client, tools) on
- * the host — only the `bash` tool's commands run inside a container, against the
- * bind-mounted worktree (`build_root`). volley's `write_file`/`edit_file` still
- * write host-side through `contain()`, so the container and the host see one
- * identical file tree across the bind mount.
+ * Docker sandbox invocation spec (s2 Phase 2b; D5, D9, D11, D12): the hardened
+ * `docker run` argv that launches the *whole* volley builder inside one
+ * container (shape B′). volley no longer orchestrates the container — under B′-2
+ * the operator/example runs `docker run <these flags> <image> <volley args>` and
+ * volley detects it is already contained. The create/`exec`/reap/teardown
+ * lifecycle and the `docker exec` bash executor were retired in step 13; what
+ * remains here is the *spec* — pure, daemon-free flag-builders the blessed
+ * examples and the `--dry-run` preflight render into the `docker run` line,
+ * unit-testable without a daemon.
  *
- * Lifecycle (D9): one long-lived, hardened container per run
- * (`docker run -d … sleep infinity`), then many `docker exec`s against it — the
- * universal agent-sandbox pattern. On Docker ≥ 19.03 each `exec`'d command
- * inherits the container's cap-drop / no-new-privileges / seccomp hardening
- * (moby #38871), so the `run` flag set below is the whole containment surface.
- * The lifecycle wraps the fascicle loop — it is not itself a loop — so these are
- * straight-line docker subprocess calls and the no-loops rule is unaffected.
+ * Inside that container volley's `bash` is the local `host_bash_executor`
+ * (`spawnSync`, now running in-container), its file tools write straight to the
+ * bind-mounted worktree at `/workspace`, and its model client reaches the host
+ * LLM endpoint across the boundary at `host.docker.internal` (the D12 allowlist
+ * target; see the `VOLLEY_MODEL_HOST` crossing in `src/engine.ts`).
  *
- * Network policy (default-deny egress, D6/D12): the container's legitimate egress
- * is the package registry for an in-container `pnpm install` and — under
- * whole-process containment (B′/D5, completing in step 13) — the host LLM endpoint
- * the in-container model client reaches via host-gateway. The default
- * posture is `--network none` — no interface, a complete L3 egress deny; the
- * opt-in `'allowlist'` posture attaches a dedicated user-defined bridge and
- * collapses the allowlist targets onto the host gateway (see `SandboxNetwork`).
- * This module owns container start / `exec` / reap / teardown, the D11 hardening
- * flags the `bash` swap rides on, and the network posture above.
+ * Hardening (D9/D11): non-root as the worktree owner, cap-drop-all,
+ * no-new-privileges, default seccomp, tini as PID 1 (`--init`), memory/cpu/pids
+ * caps, a read-only rootfs with tmpfs for the few writable paths, and the pnpm
+ * store on a named volume. Never `--privileged`, never `--user 0`. volley's Node
+ * process reaps its own bash children in-container, so the old reap-between-`exec`
+ * rider (D9) falls away.
  */
-import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import type { BashExecutor, BashOutcome } from './builder/tools.js';
 import { config_error } from './types.js';
 
 /** The in-container mount point for the bind-mounted worktree; matches the
- * `Dockerfile`'s `WORKDIR`. Every `docker exec` sets its cwd here, so a command
- * that uses a workspace-relative path resolves against the same tree volley's
- * file tools write host-side. */
+ * `Dockerfile`'s `WORKDIR`, so a workspace-relative path resolves against the
+ * same tree volley's file tools write. */
 const SANDBOX_WORKDIR = '/workspace';
 
 /** The container user's home; matches the `Dockerfile`'s `node` user. `HOME` is
@@ -47,93 +42,42 @@ const SANDBOX_HOME = '/home/node';
  * actually runs — the blessed examples — not here.) */
 const SANDBOX_STORE_VOLUME = 'volley-pnpm-store';
 
-/** The dedicated user-defined bridge for the `'allowlist'` network posture (D12).
- * A user-defined bridge (not the default `bridge`) isolates volley's sandbox from
- * other containers and is the attach point for the host-collapsed allowlist.
- * Created idempotently and left in place — shared across runs and cheap, like the
- * pnpm store volume; teardown never removes it. */
-const SANDBOX_NETWORK_NAME = 'volley-sandbox-net';
+/** The host spelling of the Docker gateway (Linux-portable; Docker Desktop
+ * already provides it). It is both the `--add-host` target for the allowlist
+ * bridge and the value the example injects as `VOLLEY_MODEL_HOST` so the
+ * in-container model client crosses to the host LLM endpoint (see
+ * `resolve_ollama_base_url` in `src/engine.ts`, OQ-8). */
+export const HOST_GATEWAY_HOST = 'host.docker.internal';
 
-/** Pinned subnet for that bridge, so the host-applied `DOCKER-USER` default-DROP
- * (below) can scope to volley's containers alone and never disturb other
- * containers on the host. An obscure /24 to keep collisions rare; a clash fails
- * `network create` loudly (exit 5) rather than silently sharing a subnet. */
-const SANDBOX_NETWORK_SUBNET = '172.31.99.0/24';
-
-/** How long a management docker call may run (start allows for an image pull;
- * exec-based readiness/reap are quick). Command execution has its own per-call
- * budget from the `bash` tool. */
-const DOCKER_START_TIMEOUT_MS = 300_000;
-const DOCKER_ADMIN_TIMEOUT_MS = 30_000;
-
-/** A live sandbox: the container it runs against, the in-container cwd every
- * `exec` uses, and the PID set to preserve when reaping (PID 1 / the keep-alive
- * `sleep`, captured at start). */
-export type SandboxHandle = {
-  container: string;
-  workdir: string;
-  /** Space-padded (`" 1 7 "`) list of protected PIDs for the reaper's `case`
-   * match — the processes present right after start, never reaped. */
-  baseline: string;
-};
-
-type DockerResult = { status: number; stdout: string; stderr: string };
-
-/** Run a docker management subcommand. A missing docker binary is a hard
- * precondition failure (exit 5, like the missing-repo guard); a non-zero exit
- * is returned for the caller to interpret. */
-function docker(args: string[], timeout_ms: number): DockerResult {
-  const result = spawnSync('docker', args, { encoding: 'utf8', timeout: timeout_ms });
-  if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-    throw config_error('docker is required for the builder sandbox but was not found on PATH');
-  }
-  return {
-    status: result.status ?? -1,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-  };
-}
-
-/** The host uid/gid, present only on POSIX. When available it is exactly the
- * owner the container's `--user` must match (D11): volley created the worktree,
- * so the volley process owns the bind-mounted tree. When absent (non-POSIX) the
- * image's own non-root `node` user is the floor. */
-function host_ids(): { uid: number; gid: number } | null {
-  const uid = process.getuid?.();
-  const gid = process.getgid?.();
-  if (uid === undefined || gid === undefined) return null;
-  return { uid, gid };
-}
-
-/** Run-unique container name. Docker names must start alphanumeric and use
- * `[A-Za-z0-9_.-]`; the run id is a UUID (hyphens only), so a `volley-sandbox-`
- * prefix is always valid. */
-export function sandbox_container_name(run_id: string): string {
-  return `volley-sandbox-${run_id}`;
-}
+/** Canonical identity of the allowlist bridge the examples create (`docker
+ * network create --subnet <SANDBOX_NETWORK_SUBNET> <SANDBOX_NETWORK_NAME>`) and
+ * the host `DOCKER-USER` rules scope to (D12). Exported so the blessed examples
+ * (step 15) share one spelling of the invocation spec. */
+export const SANDBOX_NETWORK_NAME = 'volley-sandbox-net';
+export const SANDBOX_NETWORK_SUBNET = '172.31.99.0/24';
 
 /**
  * The container's egress posture (s2 D6/D12). Under whole-process containment
- * (B′/D5, completing in step 13) the model client and the `fetch` tool run inside
- * the container, so its legitimate egress is the package registry for `pnpm
- * install` plus the host LLM endpoint the model client reaches via host-gateway.
+ * (B′/D5) the model client and the `fetch` tool run inside the container, so its
+ * legitimate egress is the package registry for `pnpm install` plus the host LLM
+ * endpoint the model client reaches via host-gateway.
  *
  * - `'none'` — `--network none`: no interface at all, a complete L3 egress deny.
- *   The default-deny default and the fully-offline all-local posture (deps served
- *   from the pre-warmed pnpm store volume). With the whole process in-container,
- *   `fetch` has no route either, so it degrades cleanly to a returned error and the
- *   run continues.
+ *   The default-deny default; it fits a genuinely offline run where the model and
+ *   deps are already in-container (a host-run model is unreachable under `none`).
+ *   With the whole process in-container, `fetch` has no route either, so it
+ *   degrades cleanly to a returned error result and the run continues.
  * - `'allowlist'` — the container sits on volley's dedicated user-defined bridge
  *   with `host.docker.internal:host-gateway`, collapsing the allowlist targets
- *   (the package registry, and the host LLM endpoint the in-container model client
- *   reaches — B′/D5) onto the host gateway. The L3/L4 default-DROP that
+ *   (the package registry, and the host LLM endpoint the in-container model
+ *   client now reaches — B′/D5) onto the host gateway. The L3/L4 default-DROP that
  *   makes the bridge a true allowlist is the host-applied, subnet-scoped
- *   `DOCKER-USER` rule volley documents but never installs itself — that chain is
- *   root and host-global (and, on Docker Desktop, inside a VM unreachable from an
- *   unprivileged per-run host process). The always-on tool-level SSRF deny-list is
- *   the second, in-process defense-in-depth layer. Host hardening, run once as root
- *   on a Linux host, scoped to volley's subnet so it never touches other
- *   containers (insert ahead of the chain's terminating RETURN, in order):
+ *   `DOCKER-USER` rule the operator installs (volley never installs it — that
+ *   chain is root and host-global, and on Docker Desktop lives inside a VM). The
+ *   always-on tool-level SSRF deny-list is the second, in-process defense-in-depth
+ *   layer. Host hardening, run once as root on a Linux host, scoped to volley's
+ *   subnet so it never touches other containers (insert ahead of the chain's
+ *   terminating RETURN, in order):
  *     iptables -I DOCKER-USER -s 172.31.99.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
  *     iptables -I DOCKER-USER -s 172.31.99.0/24 -d <host-gateway-ip> -j ACCEPT   # collapsed allowlist
  *     iptables -I DOCKER-USER -s 172.31.99.0/24 -p udp --dport 53 -j ACCEPT      # DNS
@@ -150,12 +94,21 @@ export type SandboxNetwork = 'none' | 'allowlist';
  */
 export function network_run_args(network: SandboxNetwork, network_name: string): string[] {
   if (network === 'none') return ['--network', 'none'];
-  return ['--network', network_name, '--add-host', 'host.docker.internal:host-gateway'];
+  return ['--network', network_name, '--add-host', `${HOST_GATEWAY_HOST}:host-gateway`];
 }
 
 /**
- * The `docker run` argv for the hardened, long-lived sandbox (D9/D11). Pure and
- * exported so the flag set is unit-testable without a daemon.
+ * The hardened `docker run` argv that launches volley inside its container
+ * (D5/D9/D11/D12). Pure and exported so the flag set is unit-testable without a
+ * daemon and the blessed examples / `--dry-run` preflight can render it.
+ *
+ * A one-shot, foreground `--rm` container — under B′ the whole run *is* this
+ * container (it was a detached `-d … sleep infinity` daemon volley `exec`'d
+ * against under shape B), so `--rm` cleans it up when volley exits. `command`
+ * appends the container command (the volley args); omit it to use the image's
+ * `volley` entrypoint. `env` injects `-e KEY=VALUE` pairs (the `VOLLEY_MODEL_HOST`
+ * crossing, D5). `entrypoint` overrides the image entrypoint (the opt-in
+ * real-docker isolation test runs a raw `sh` this way).
  *
  * Never emits `--privileged` and refuses `--user 0` (D9): volley must not hand
  * the sandbox root or full capabilities. Everything writable under the
@@ -165,12 +118,15 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
 export function sandbox_run_args(options: {
   image: string;
   build_root: string;
-  name: string;
   uid: number | null;
   gid: number | null;
   store_volume: string;
   network: SandboxNetwork;
   network_name: string;
+  name?: string | null;
+  env?: ReadonlyArray<readonly [string, string]>;
+  entrypoint?: string | null;
+  command?: ReadonlyArray<string>;
 }): string[] {
   if (options.uid === 0) {
     throw config_error('refusing to start the builder sandbox as root (uid 0)');
@@ -179,11 +135,19 @@ export function sandbox_run_args(options: {
     options.uid !== null && options.gid !== null
       ? ['--user', `${String(options.uid)}:${String(options.gid)}`]
       : [];
+  const name =
+    options.name !== undefined && options.name !== null ? ['--name', options.name] : [];
+  const entrypoint =
+    options.entrypoint !== undefined && options.entrypoint !== null
+      ? ['--entrypoint', options.entrypoint]
+      : [];
+  const env = (options.env ?? []).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
   return [
     'run',
-    '-d',
-    '--name',
-    options.name,
+    // One-shot, foreground container: the whole run *is* this container (B′), so
+    // remove it when volley exits.
+    '--rm',
+    ...name,
     ...user,
     // Network policy (D6/D12): default-deny egress. `'none'` gives the container
     // no interface; `'allowlist'` puts it on the user-defined bridge and collapses
@@ -218,215 +182,67 @@ export function sandbox_run_args(options: {
     `${SANDBOX_HOME}/.cache`,
     '-e',
     `HOME=${SANDBOX_HOME}`,
+    ...env,
     // The bind-mounted worktree (writable — a bind mount is exempt from
     // `--read-only`) and the persistent pnpm store.
     '-v',
-    `${options.build_root}:${SANDBOX_WORKDIR}`,
+    `${resolve(options.build_root)}:${SANDBOX_WORKDIR}`,
     '-v',
     `${options.store_volume}:${SANDBOX_HOME}/.local/share/pnpm/store`,
     '-w',
     SANDBOX_WORKDIR,
+    ...entrypoint,
     options.image,
-    'sleep',
-    'infinity',
+    ...(options.command ?? []),
   ];
 }
 
-/** Snapshot the container's live PIDs right after start — PID 1 (tini) and the
- * keep-alive `sleep` — as the reaper's protected set. Excludes the snapshotting
- * shell itself (`$$`) so no soon-dead PID is protected; PID 1 is always added
- * back in case the snapshot raced. Doubles as a readiness probe: a non-zero exit
- * means the container never came up. */
-function capture_baseline_pids(container: string): string {
-  const snapshot =
-    'me=$$; for d in /proc/[0-9]*; do p=${d#/proc/}; [ "$p" = "$me" ] && continue; printf "%s " "$p"; done';
-  const res = docker(['exec', container, 'sh', '-c', snapshot], DOCKER_ADMIN_TIMEOUT_MS);
-  if (res.status !== 0) {
-    throw config_error(
-      `builder sandbox container ${container} did not become ready: ${res.stderr.trim() || 'docker exec failed'}`,
-    );
-  }
-  const pids = res.stdout.split(/\s+/).filter((p) => /^\d+$/.test(p));
-  return ` ${['1', ...pids].join(' ')} `;
-}
-
 /**
- * Ensure the dedicated, subnet-pinned user-defined bridge exists for the
- * `'allowlist'` posture (D12), idempotently: create it, and treat an
- * already-exists failure (a racing or prior run) as success by re-inspecting.
- * Left in place across runs — shared and cheap, like the pnpm store volume — so
- * teardown never removes it. The `'none'` posture uses `--network none` and never
- * calls this. Throws `config_error` (exit 5) if the network can't be made ready.
+ * The small helper that surfaces the full invocation spec (B′-2): compose the
+ * hardened `docker run` argv with the canonical bridge + pnpm store and, when
+ * crossing to a host-run model (the `'allowlist'` posture), the
+ * `VOLLEY_MODEL_HOST` env the base-url normalizer consumes (engine.ts, OQ-8). The
+ * operator/example runs this (`format_docker_run` renders it as a copy-paste
+ * shell line); volley detects it is contained rather than running it itself.
  */
-export function ensure_sandbox_network(name: string, log?: (message: string) => void): void {
-  const created = docker(
-    ['network', 'create', '--subnet', SANDBOX_NETWORK_SUBNET, name],
-    DOCKER_ADMIN_TIMEOUT_MS,
-  );
-  if (created.status === 0) {
-    log?.(`sandbox: created network ${name} (${SANDBOX_NETWORK_SUBNET}, default-deny egress + host-gateway allowlist)`);
-    return;
-  }
-  // `create` fails when the name already exists (a concurrent or prior run) — a
-  // shared bridge is the intent, so a present network is success, not an error.
-  if (docker(['network', 'inspect', name], DOCKER_ADMIN_TIMEOUT_MS).status === 0) return;
-  throw config_error(
-    `failed to create the builder sandbox network (${name}): ${created.stderr.trim() || 'docker network create failed'}`,
-  );
-}
-
-/**
- * Start one long-lived, hardened container for the run and bind-mount
- * `build_root` at `/workspace` (D5/D9/D11), on the chosen network posture
- * (D6/D12; defaults to the default-deny `'none'`). Throws `config_error` (exit 5)
- * when docker is missing, the `'allowlist'` network can't be readied, `run` fails,
- * or the container never becomes ready.
- */
-export function start_sandbox(options: {
+export function sandbox_invocation(options: {
   image: string;
   build_root: string;
-  run_id: string;
-  network?: SandboxNetwork;
-  log?: (message: string) => void;
-}): SandboxHandle {
-  const network = options.network ?? 'none';
-  const name = sandbox_container_name(options.run_id);
-  const ids = host_ids();
-  if (network === 'allowlist') {
-    ensure_sandbox_network(SANDBOX_NETWORK_NAME, options.log);
-  }
-  const args = sandbox_run_args({
-    image: options.image,
-    build_root: resolve(options.build_root),
-    name,
-    uid: ids?.uid ?? null,
-    gid: ids?.gid ?? null,
-    store_volume: SANDBOX_STORE_VOLUME,
-    network,
-    network_name: SANDBOX_NETWORK_NAME,
-  });
-  const run = docker(args, DOCKER_START_TIMEOUT_MS);
-  if (run.status !== 0) {
-    throw config_error(
-      `failed to start the builder sandbox (${name}): ${run.stderr.trim() || run.stdout.trim() || 'docker run failed'}`,
-    );
-  }
-  const handle: SandboxHandle = {
-    container: name,
-    workdir: SANDBOX_WORKDIR,
-    baseline: capture_baseline_pids(name),
-  };
-  options.log?.(`sandbox: started container ${name} from ${options.image} (network: ${network})`);
-  return handle;
-}
-
-/**
- * Reap every process the last command left running in the long-lived container
- * — a backgrounded job, or the command itself when a timeout SIGKILL'd only the
- * host `docker exec` client and left its in-container process orphaned onto PID 1
- * (D9). Preserves the baseline set (PID 1 + the keep-alive `sleep`) and the
- * reaper shell itself. Best-effort: reaping is hygiene and never fails a command.
- */
-function reap_sandbox(handle: SandboxHandle): void {
-  const script =
-    'me=$$; for d in /proc/[0-9]*; do p=${d#/proc/}; ' +
-    '[ "$p" = "$me" ] && continue; ' +
-    'case "' +
-    handle.baseline +
-    '" in *" $p "*) continue ;; esac; ' +
-    'kill -9 "$p" 2>/dev/null; done; exit 0';
-  try {
-    docker(['exec', handle.container, 'sh', '-c', script], DOCKER_ADMIN_TIMEOUT_MS);
-  } catch {
-    // Reaping is cleanup; never surface a reap failure as the command's result.
-  }
-}
-
-/**
- * The `bash` executor that runs a command via `docker exec` against the run's
- * container (D1/D9). Each call is a fresh `sh -c` with cwd reset to `/workspace`
- * — the same stateless-per-command contract as the host `spawnSync` path (no
- * cwd/env drift). The command's exit status passes through; a timeout SIGKILLs
- * the host client and `timed_out` is set, then the reaper cleans up any process
- * left behind in the container.
- */
-export function docker_exec_bash(handle: SandboxHandle): BashExecutor {
-  return (command, opts) => {
-    const result = spawnSync(
-      'docker',
-      ['exec', '-w', handle.workdir, handle.container, 'sh', '-c', command],
-      {
-        encoding: 'utf8',
-        timeout: opts.timeout_ms,
-        killSignal: 'SIGKILL',
-        maxBuffer: opts.max_capture_bytes,
-      },
-    );
-    const err = result.error as NodeJS.ErrnoException | undefined;
-    const timed_out = err?.code === 'ETIMEDOUT';
-    let stderr = result.stderr ?? '';
-    // A docker-side failure (daemon gone mid-run, container removed) is opaque
-    // otherwise — surface it so the model/operator sees more than a bare null.
-    if (err !== undefined && !timed_out) {
-      const detail = `[docker exec failed: ${err.message}]`;
-      stderr = stderr.length > 0 ? `${stderr}\n${detail}` : detail;
-    }
-    const outcome: BashOutcome = {
-      status: result.status,
-      stdout: result.stdout ?? '',
-      stderr,
-      timed_out,
-    };
-    reap_sandbox(handle);
-    return outcome;
-  };
-}
-
-/** Tear the container down (`docker rm -f`), idempotent and best-effort so it
- * never masks the run's real outcome from a `finally`. */
-export function stop_sandbox(handle: SandboxHandle, log?: (message: string) => void): void {
-  try {
-    docker(['rm', '-f', handle.container], DOCKER_ADMIN_TIMEOUT_MS);
-    log?.(`sandbox: removed container ${handle.container}`);
-  } catch {
-    // Teardown is cleanup; a lingering container never fails the run.
-  }
-}
-
-export type SandboxOptions = {
-  enabled: boolean;
-  image: string;
-  build_root: string;
-  run_id: string;
-  /** Egress posture (D6/D12); defaults to the default-deny `'none'`. */
-  network?: SandboxNetwork;
-  log?: (message: string) => void;
-};
-
-/**
- * Run `body` with the run's container lifecycle around it, handing it the `bash`
- * executor to wire into the builder tools: `docker exec` when enabled (start
- * first, guaranteed teardown in a `finally`), or `null` when disabled — a
- * transparent pass-through so the unsandboxed path (`--allow-unsandboxed-builder`,
- * shape C) keeps the host `spawnSync` executor and never touches Docker.
- */
-export async function with_sandbox<T>(
-  options: SandboxOptions,
-  body: (bash_executor: BashExecutor | null) => Promise<T>,
-): Promise<T> {
-  if (!options.enabled) {
-    return body(null);
-  }
-  const handle = start_sandbox({
+  uid: number | null;
+  gid: number | null;
+  network: SandboxNetwork;
+  command: ReadonlyArray<string>;
+  name?: string | null;
+  /** The host the in-container model client crosses to (e.g. `HOST_GATEWAY_HOST`)
+   * — injected as `VOLLEY_MODEL_HOST`; omit for a fully-offline `'none'` run. */
+  model_host?: string;
+}): string[] {
+  const env: ReadonlyArray<readonly [string, string]> =
+    options.model_host !== undefined && options.model_host !== ''
+      ? [['VOLLEY_MODEL_HOST', options.model_host]]
+      : [];
+  return sandbox_run_args({
     image: options.image,
     build_root: options.build_root,
-    run_id: options.run_id,
-    network: options.network ?? 'none',
-    ...(options.log !== undefined ? { log: options.log } : {}),
+    name: options.name ?? null,
+    uid: options.uid,
+    gid: options.gid,
+    store_volume: SANDBOX_STORE_VOLUME,
+    network: options.network,
+    network_name: SANDBOX_NETWORK_NAME,
+    env,
+    command: options.command,
   });
-  try {
-    return await body(docker_exec_bash(handle));
-  } finally {
-    stop_sandbox(handle, options.log);
-  }
+}
+
+/** Render a docker argv as a copy-pasteable shell line for the examples /
+ * `--dry-run` preflight. Minimal POSIX quoting: single-quote any token with
+ * whitespace or shell-special characters. */
+export function format_docker_run(run_args: ReadonlyArray<string>): string {
+  return ['docker', ...run_args].map(quote_shell_token).join(' ');
+}
+
+function quote_shell_token(token: string): string {
+  if (token.length > 0 && /^[A-Za-z0-9_./:=@-]+$/.test(token)) return token;
+  return `'${token.replace(/'/g, `'\\''`)}'`;
 }

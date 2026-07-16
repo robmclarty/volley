@@ -18,13 +18,50 @@ export type { Engine } from 'fascicle';
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_LMSTUDIO_URL = 'http://localhost:1234/v1';
 
+/** Loopback authorities the container→host crossing rewrites. A base URL
+ * pointing at one of these is local to wherever volley runs; under B′ that is
+ * *inside* the sandbox container, where the host LLM daemon is unreachable
+ * except across the boundary at `VOLLEY_MODEL_HOST`. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+/** Cross a loopback base URL to the host LLM endpoint (B′/D5, OQ-8). When volley
+ * runs inside its sandbox container the local model daemon is on the *host*, so
+ * the example's `docker run` injects `VOLLEY_MODEL_HOST=host.docker.internal`
+ * (the D12 host-gateway allowlist target; see `sandbox_invocation` in
+ * `src/sandbox.ts`). This normalizer *consumes that override* and swaps a
+ * loopback host for the gateway, so an unchanged `http://localhost:11434` still
+ * reaches the host from in-container. A non-loopback URL (a real remote daemon)
+ * is left untouched, and an unset `VOLLEY_MODEL_HOST` (the host / unsandboxed
+ * path) is a no-op — so the default and all-Claude paths are unaffected. */
+export function cross_to_host_gateway(
+  base_url: string,
+  env: Record<string, string | undefined>,
+): string {
+  const host = env['VOLLEY_MODEL_HOST'];
+  if (host === undefined || host === '') return base_url;
+  let parsed: URL;
+  try {
+    parsed = new URL(base_url);
+  } catch {
+    return base_url;
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) return base_url;
+  parsed.hostname = host;
+  // `URL` re-serializes `http://host:port` with a trailing `/`; drop it so the
+  // Ollama server-root shape (no path) is preserved, while a real path (LM
+  // Studio's `/v1`) is left intact.
+  return parsed.toString().replace(/\/$/, '');
+}
+
 /** The Ollama base URL from the environment or the localhost default,
  * normalized to the server root. A trailing `/api` (the pre-v0.3.1 documented
  * default, and a natural mistake since Ollama's REST paths all start with it)
- * is stripped rather than left to 404 every request. */
+ * is stripped rather than left to 404 every request, then a loopback authority
+ * is crossed to the host LLM endpoint when volley runs contained (B′/D5, OQ-8). */
 export function resolve_ollama_base_url(env: Record<string, string | undefined>): string {
   const raw = env['VOLLEY_OLLAMA_URL'] ?? DEFAULT_OLLAMA_URL;
-  return raw.replace(/\/+$/, '').replace(/\/api$/, '');
+  const normalized = raw.replace(/\/+$/, '').replace(/\/api$/, '');
+  return cross_to_host_gateway(normalized, env);
 }
 
 function load_pricing_overrides(path: string): PricingTable {
@@ -74,7 +111,12 @@ function is_local_provider(
  * native `/api/chat` transport wants (its adapter appends `/api/chat` itself),
  * which is exactly what the v0.3.1 base-URL fix produces. Kept as a
  * proven-once-then-reverted option so the transport stays a clean second variable
- * in the model-vs-transport comparison. */
+ * in the model-vs-transport comparison.
+ *
+ * Both providers' base URLs cross a loopback authority to `VOLLEY_MODEL_HOST` when
+ * volley runs contained (B′/D5, OQ-8), so an in-container model client reaches the
+ * host LLM endpoint at `host.docker.internal`; on the host / unsandboxed path the
+ * override is unset and this is a no-op. */
 function local_provider_config(
   provider: LocalProvider,
   env: Record<string, string | undefined>,
@@ -82,7 +124,8 @@ function local_provider_config(
   if (provider === 'ollama') {
     return { ollama: { base_url: resolve_ollama_base_url(env) } };
   }
-  return { lmstudio: { base_url: env['VOLLEY_LMSTUDIO_URL'] ?? DEFAULT_LMSTUDIO_URL } };
+  const lmstudio_url = env['VOLLEY_LMSTUDIO_URL'] ?? DEFAULT_LMSTUDIO_URL;
+  return { lmstudio: { base_url: cross_to_host_gateway(lmstudio_url, env) } };
 }
 
 /** Per-run engine. `claude_cli` is always configured with the workspace as its

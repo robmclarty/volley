@@ -45,19 +45,6 @@ const LOCAL_BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
   'lmstudio',
 ];
 
-/** Whether the builder's `bash` runs inside volley's Docker sandbox (s2 D6): on
- * for a local builder unless the operator took the `--allow-unsandboxed-builder`
- * escape hatch (shape C), and never for `claude_cli` (which brings its own
- * permission model and must never require Docker — C4). Step 13 promotes this to
- * an explicit `--sandbox` flag; today it is derived from the resolved config, so
- * the containment swap has a gate to ride on. */
-export function sandbox_enabled(config: ResolvedConfig): boolean {
-  return (
-    LOCAL_BUILDER_PROVIDERS.includes(config.builder_provider) &&
-    !config.allow_unsandboxed_builder
-  );
-}
-
 const CRITIC_PROVIDERS: ReadonlyArray<CriticProvider> = [
   'claude_cli',
   'ollama',

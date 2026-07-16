@@ -26,10 +26,10 @@
  * Egress is defended in two independent layers (s2 D6/D12): this tool's SSRF
  * deny-list (above) and the sandbox's container network posture (`--network none`
  * by default, or a host-collapsed allowlist bridge — see `SandboxNetwork` in
- * `src/sandbox.ts`). Under whole-process containment (B′/D5, step 13) the whole
- * volley process — `fetch` included — runs inside the container, so both layers
- * apply to `fetch`'s egress: `--network none` leaves it no route and it returns a
- * "could not fetch" error result, and the loop continues.
+ * `src/sandbox.ts`). Under whole-process containment (B′/D5) the whole volley
+ * process — `fetch` included — runs inside the container, so both layers apply to
+ * `fetch`'s egress: `--network none` leaves it no route and it returns a "could
+ * not fetch" error result, and the loop continues.
  */
 import { spawnSync } from 'node:child_process';
 import { lookup as dns_lookup } from 'node:dns';
@@ -96,11 +96,13 @@ export type BashOutcome = {
   timed_out: boolean;
 };
 
-/** How the `bash` tool runs a command: on the host (`spawnSync`, the default) or
- * — when a container sandbox is active — via `docker exec` (s2 D1/D9). The
- * executor runs one command to completion and returns its raw outcome; the
- * `bash` tool owns the truncation + timeout marker so both paths present an
- * identical tool contract to the model. */
+/** How the `bash` tool runs a command: the local `host_bash_executor`
+ * (`spawnSync`) — which under whole-process containment (B′/D5) runs *inside*
+ * volley's own hardened container, no `docker exec` hop. The executor runs one
+ * command to completion and returns its raw outcome; the `bash` tool owns the
+ * truncation + timeout marker. Kept as an injectable seam so tests can supply a
+ * fake and a future shape could re-point it (the `docker exec` executor was
+ * retired in step 13). */
 export type BashExecutor = (
   command: string,
   options: { timeout_ms: number; max_capture_bytes: number },
@@ -112,10 +114,10 @@ export type BuilderToolOptions = {
   /** Override `BASH_MAX_OUTPUT_BYTES` (bytes, per stream). */
   bash_max_output_bytes?: number;
   /**
-   * Where `bash` runs a command (s2 D1/D9). Defaults to `host_bash_executor` —
-   * the host `spawnSync` this step preserves for the unsandboxed escape hatch.
-   * The Docker sandbox injects `docker_exec_bash` so commands run in the
-   * container against the bind-mounted worktree.
+   * Where `bash` runs a command. Defaults to `host_bash_executor` — the local
+   * `spawnSync`, which under B′ runs inside volley's own container against the
+   * bind-mounted worktree. Injectable so tests can supply a fake (the
+   * `docker exec` executor was retired in step 13).
    */
   bash_executor?: BashExecutor;
   /** Override `FETCH_MAX_BYTES` (bytes read from the HTTP stream before the cap). */
@@ -438,12 +440,13 @@ async function run_fetch(raw: unknown, ctx: ToolExecContext, config: FetchConfig
 }
 
 /**
- * The default (unsandboxed) `bash` executor: run the command on the host via
- * `spawnSync` with a shell, bounded by the timeout (SIGKILL on expiry) and the
- * OOM capture cap. This is the pre-sandbox behavior, retained for
- * `--allow-unsandboxed-builder` (shape C); the sandbox path swaps in
- * `docker_exec_bash` (D9). `status` is null when a signal (the timeout SIGKILL)
- * killed the process.
+ * The `bash` executor: run the command via `spawnSync` with a shell, bounded by
+ * the timeout (SIGKILL on expiry) and the OOM capture cap. Under whole-process
+ * containment (B′/D5) this runs *inside* volley's hardened container against the
+ * bind-mounted worktree — the container is the isolation boundary, no
+ * `docker exec` hop — and it is likewise the executor on the
+ * `--allow-unsandboxed-builder` host escape hatch (shape C). `status` is null
+ * when a signal (the timeout SIGKILL) killed the process.
  */
 export function host_bash_executor(cwd: string): BashExecutor {
   return (command, options) => {
@@ -534,12 +537,12 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       `Each stream is truncated past ${String(bash_max_output_bytes)} bytes, ` +
       `and the command is killed if it runs longer than ${String(bash_timeout_ms)}ms.`,
     input_schema: bash_input,
-    // D3/D4: stateless per command (Session 2 swaps the executor from the host
-    // `spawnSync` to `docker exec` without touching this contract), and never
-    // throws on the command's own failure — a non-zero exit or a timeout is
-    // *returned* as `{ exit_code, stdout, stderr }` for the model to read. The
-    // executor buffers up to `BASH_CAPTURE_MAX_BYTES` (OOM guard) before we
-    // truncate to the model-facing cap.
+    // D3/D4: stateless per command (the executor is injectable without touching
+    // this contract — under B′ it is the local `spawnSync` running in-container),
+    // and never throws on the command's own failure — a non-zero exit or a
+    // timeout is *returned* as `{ exit_code, stdout, stderr }` for the model to
+    // read. The executor buffers up to `BASH_CAPTURE_MAX_BYTES` (OOM guard)
+    // before we truncate to the model-facing cap.
     execute: (raw) => {
       const input = bash_input.parse(raw);
       const outcome = bash_executor(input.command, {

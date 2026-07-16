@@ -65,3 +65,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-14 — step 9 checkpointed · b21f69223 — Worktree-branch checkpoints (extends `--git`; D13) (1 drift, 16m)
 - 2026-07-14 — step 10 checkpointed · 5f0727db9 — `Dockerfile` + default image (s2 D5; D11) (1 drift, 16m)
 - 2026-07-14 — step 11 checkpointed · 5895dc7ba — Swap the `bash` executor `spawnSync` → `docker exec` (s2 D1/D3; D9, D11) (1 drift, 176m)
+- 2026-07-16 — step 12 checkpointed · 55659b153 — Network policy: default-deny egress (s2 D6; D12) (1 drift, 436m)

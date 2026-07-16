@@ -1,0 +1,18 @@
+# Keep the volley sandbox image build context (B′/D5) lean and reproducible:
+# ship source + manifests, never host-built artifacts or run state. node_modules
+# and dist are rebuilt in-image (`pnpm install` / `pnpm build`); the rest is
+# host-only bookkeeping the in-container builder must not inherit.
+node_modules
+dist
+*.tsbuildinfo
+.git
+.plumbbob
+.check
+.fallow
+.firecrawl
+.volley
+.volley.bak.*
+*.worktree
+*.log
+.DS_Store
+.env
