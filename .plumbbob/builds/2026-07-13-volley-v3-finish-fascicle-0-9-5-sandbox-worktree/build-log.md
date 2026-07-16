@@ -67,3 +67,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-14 — step 11 checkpointed · 5895dc7ba — Swap the `bash` executor `spawnSync` → `docker exec` (s2 D1/D3; D9, D11) (1 drift, 176m)
 - 2026-07-16 — step 12 checkpointed · 55659b153 — Network policy: default-deny egress (s2 D6; D12) (1 drift, 436m)
 - 2026-07-16 — step 13 checkpointed · 20bbb3a3e — Whole-process containment: run volley in-container + retire the host-orchestrated exec (1 drift, 22m)
+- 2026-07-16 — step 14 checkpointed · fc90e3fac — `--sandbox` = require-containment gate + `--dry-run` preflight (s2 D1/D6/D7/D10; D9, B′) (1 drift, 25m)

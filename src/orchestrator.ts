@@ -15,11 +15,8 @@ import { run_command_check, skipped_check } from './check/command.js';
 import { cost_cap_hit } from './cost.js';
 import { EMPTY_USAGE } from './cost.js';
 import { create_volley_engine } from './engine.js';
-import {
-  archive_iteration,
-  run_result_from_state,
-  write_run_summary,
-} from './iteration.js';
+import { archive_iteration, run_result_from_state } from './iteration.js';
+import { write_run_summary } from './summary.js';
 import { run_critic } from './critic/run.js';
 import type { Renderer } from './render/renderer.js';
 import { error_kind, phase_error } from './types.js';
@@ -269,10 +266,7 @@ async function run_loop(
 
   const record = step('record', (s: LoopState) => {
     archive_iteration(config, s);
-    write_run_summary(
-      config.workspace,
-      run_result_from_state(config, s, 'running', null),
-    );
+    write_run_summary(config, run_result_from_state(config, s, 'running', null));
     if (config.git_checkpoints) {
       git_checkpoint(
         build_root(config.workspace, config.worktree),
@@ -307,7 +301,7 @@ async function run_loop(
     );
     const status = status_of(value, converged);
     const result = run_result_from_state(config, value, status, new Date().toISOString());
-    write_run_summary(config.workspace, result);
+    write_run_summary(config, result);
     return result;
   } catch (err) {
     finalize_failed_run(config, err);
@@ -330,7 +324,7 @@ function finalize_failed_run(config: ResolvedConfig, err: unknown): void {
     const prior = existsSync(summary_path)
       ? (JSON.parse(readFileSync(summary_path, 'utf8')) as RunResult)
       : run_result_from_state(config, initial_state(), status, null);
-    write_run_summary(config.workspace, {
+    write_run_summary(config, {
       ...prior,
       status,
       completed_at: new Date().toISOString(),

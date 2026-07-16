@@ -1,0 +1,16 @@
+{
+  "checks": {
+    "types": "tsc",
+    "test": {
+      "use": "vitest",
+      "args": ["exec", "vitest", "run", "--reporter=default", "--reporter=json", "--outputFile=.check/test.json"]
+    },
+    "lint": false,
+    "struct": false,
+    "dead": false,
+    "docs": false,
+    "links": false,
+    "spell": false
+  },
+  "timeout": 600
+}

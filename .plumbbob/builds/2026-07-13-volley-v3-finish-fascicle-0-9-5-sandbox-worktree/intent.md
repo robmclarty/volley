@@ -296,7 +296,7 @@ Session 2 (containment, shape B′ — the whole volley builder runs in one hard
 
 ### Session 2 — Phase 2c: preflight + the two blessed examples
 
-14. [ ] `--sandbox` = require-containment gate + `--dry-run` preflight (s2 D1/D6/D7/D10; D9, B′) —
+14. [x] `--sandbox` = require-containment gate + `--dry-run` preflight (s2 D1/D6/D7/D10; D9, B′) —
     **done when:** the gate at `src/config.ts:230-237` reframes from "refuse a local builder" to
     "for a local builder, **refuse unless volley detects it is running inside a container** (B′-2)
     **or** `--allow-unsandboxed-builder` is in effect"; `--sandbox` is default-on for a local

@@ -137,10 +137,6 @@ export function run_result_from_state(
   };
 }
 
-export function write_run_summary(workspace: string, result: RunResult): void {
-  write_json(volley_path(workspace, 'summary.json'), result);
-}
-
 export type ResumeState = {
   raw_config: VolleyConfig;
   run_id: string;
