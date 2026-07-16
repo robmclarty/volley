@@ -64,3 +64,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-14 — step 8 checkpointed · 627d6422c — Re-point `contain()` root to the worktree + `--worktree` flag/config (s2 D3) (1 drift, 32m)
 - 2026-07-14 — step 9 checkpointed · b21f69223 — Worktree-branch checkpoints (extends `--git`; D13) (1 drift, 16m)
 - 2026-07-14 — step 10 checkpointed · 5f0727db9 — `Dockerfile` + default image (s2 D5; D11) (1 drift, 16m)
+- 2026-07-14 — step 11 checkpointed · 5895dc7ba — Swap the `bash` executor `spawnSync` → `docker exec` (s2 D1/D3; D9, D11) (1 drift, 176m)

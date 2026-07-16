@@ -39,14 +39,15 @@ Session 0 (prerequisite, on ai_sdk):   deps forward together → main
   engine.ts: default transport 'ai_sdk' unchanged (+ native-flip comment)
   prewarm / context_check / base-url normalizer: KEPT (load-bearing on ai_sdk)
 
-Session 2 (containment, shape B):
-  ┌ host ─────────────────────────────────────────────┐
-  │ volley: Node + model client + tools               │   local provider stays trivial
-  │   contain() root ── re-pointed ──► git worktree ◄──┼── bind-mount
-  │   bash tool: spawnSync ──► docker exec ────────────┼──► container (node/pnpm toolchain)
-  │   orchestrator: worktree create/rotate/teardown    │      default-deny egress
-  └───────────────────────────────────────────────────┘
-  2c: --dry-run preflight (exit 5 pre-spend) + examples/{all-claude,all-local}
+Session 2 (containment, shape B′ — the whole volley builder runs in one hardened container):
+  ┌ container (node/pnpm toolchain + volley) ──────────┐
+  │ volley: Node + model client + file tools + bash    │   started by the run invocation
+  │   worktree create/rotate/teardown (on the mount)   │   (example/operator: docker run …),
+  │   bash: local spawnSync — native, in-container     │   not host-orchestrated (B′-2)
+  │   contain() root ─► git worktree ◄── bind-mounted repo
+  │   model client ─► host LLM via host.docker.internal:host-gateway (D12 allowlist)
+  └── default-deny egress (--network none / allowlist) ─┘
+  2c: --sandbox = require-containment gate + --dry-run preflight (exit 5) + examples/{all-claude,all-local}
 ```
 
 ## Decisions
@@ -67,9 +68,21 @@ Session 2 (containment, shape B):
 - D4: **Session 0 lands before s2, and `local-builder` merges to `main` right after
   Session 0** — *because* s2's all-local example stands on a working local transport, and
   `main` should hold the known-good (v0.3.1 fixes + 0.9.5) state before containment work.
-- D5: **Sandbox shape (B)** — volley (Node, model client, tools) stays on the **host**; only
-  the `bash` tool's commands run via `docker exec` against a container that bind-mounts the
-  worktree — *because* it keeps native local-provider access trivial (s2 D1, author-locked lean).
+- D5: **Sandbox shape (B′) — the whole volley builder process runs inside one hardened
+  container** on a local-builder run (was shape B: only `bash` in the container). volley (Node,
+  model client, file tools, and `bash`) all execute in the container over the bind-mounted
+  worktree; `bash` runs natively in-process (no `docker exec` hop), file tools write straight to
+  the mount, and that container is the single containment boundary. The in-container model client
+  reaches the host LLM endpoint across the boundary via `host.docker.internal:host-gateway` + the
+  D12 egress allowlist. **B′-2 (resolved, OQ-7):** volley is **invoked already inside** the
+  container (`docker run <hardened flags> <image> volley run …`, the example/operator's job) and
+  volley *detects* it is contained rather than starting the container itself. *Because* containing
+  the *whole* model-driven process — not just `bash` — closes the defense-in-depth gap shape B left
+  open (a bug in volley's own `contain()`/SSRF guards, or in the volley process itself, could
+  otherwise reach the host), and one boundary is simpler than the host/container split. **Cost
+  accepted vs the original shape B:** local-provider access is no longer host-trivial — it crosses
+  the boundary (OQ-8). Kernel-shared `runc` is the portable default (Linux/CI/mac/win); a microVM
+  is the documented future "paranoid mode" (D14), not now.
 - D6: **`--sandbox` default-on for a local builder**, forbidden/no-op for `claude_cli`;
   `--allow-unsandboxed-builder` becomes the **shape-C escape hatch** (still prints the loud
   warning, skips volley's Docker orchestration) — *because* containment is the correct
@@ -93,7 +106,13 @@ Session 2 (containment, shape B):
   to reap zombies; (iii) **reap stray/background processes between commands** — the one hygiene
   bit per-command `--rm` gives free (volley's bash is already stateless, so nothing of value is
   lost); (iv) volley must **never pass `--privileged` / `--user 0` on its `exec` calls**.
-  *(resolves Q1 / s2 OQ-1, web-researched)*
+  *(resolves Q1 / s2 OQ-1, web-researched)* — **B′/D5 adjustment (2026-07-15):** under
+  whole-process containment the single per-run container *is* where volley runs, so its commands
+  are local `spawnSync` **inside** it, not `docker exec` from the host (OQ-9 = retire the exec
+  path). The one-container-per-run shape and the ≥ 19.03 / `--init` / cap-drop / never-privileged
+  riders still hold for that container — but they are set by the run invocation's `docker run`
+  (B′-2), not by volley's own `exec` calls; the reap-between-commands rider falls away (volley's
+  Node process reaps its own bash children).
 - D10: **volley owns its containment; do not depend on `claude_cli`'s sandbox** — the
   all-Claude path stays Docker-free and volley does **not** harden the CLI builder via
   fascicle's `claude_cli` bwrap/greywall sandbox — *because* that API's stability is unknown;
@@ -128,6 +147,16 @@ Session 2 (containment, shape B):
   diff immediately visible to main, and a checked-out branch can't be deleted (remove the
   worktree first). These are plain git calls, not iteration — `orchestrator-no-loops` unaffected.
   *(resolves Q4 / s2 OQ-4)*
+- D14: **Docker Sandboxes (`sbx` microVM) evaluated and deferred** — the D5/B′ boundary stays on
+  portable `runc`, with Docker Sandboxes' microVM kept as a *future pluggable stronger-isolation
+  backend* — *because* today `sbx` runs only pre-integrated interactive coding agents (no arbitrary
+  or headless orchestrator like volley), is macOS/Windows-only + experimental with reported heavy
+  perf cost, and its fine-grained network governance is a paid tier; depending on it now repeats
+  the D10 "unstable third-party sandbox" anti-pattern. Its microVM (own kernel) is exactly the
+  D12 "paranoid mode" caveat, so this settles the *how/when*, not a new direction. Revisit when it
+  is GA-stable, scriptable/headless, and Linux-capable — at which point it could also unify the
+  all-Claude and all-local containment mechanisms and shrink the D9-confound (s2 D9).
+  *(resolves the 2026-07-15 shape re-examination; sources logged in the session.)*
 
 ## Constraints
 
@@ -213,14 +242,17 @@ Session 2 (containment, shape B):
    - seam: `src/workspace.ts`, `src/iteration.ts`, `src/orchestrator.ts`
    - model: opus — checkpoint semantics decision (OQ-4)
 
-### Session 2 — Phase 2b: Docker sandbox (isolates blast radius, shape B)
+### Session 2 — Phase 2b: Docker sandbox (isolates blast radius, shape B′ — whole volley in-container)
 
 10. [x] `Dockerfile` + default image (s2 D5; D11) — **done when:** the image carries node/pnpm
     + the workspace dev toolchain so the builder can self-run `pnpm check`/checkride, runs as a
     **non-root user** (D11), and `--sandbox-image <tag>` overrides it.
     - seam: new `Dockerfile`, `src/config.ts`, `src/cli.ts`
     - model: sonnet — Dockerfile + flag wiring, mostly mechanical
-11. [ ] Swap the `bash` executor `spawnSync` → `docker exec` (s2 D1/D3; D9, D11) — **done
+    - **B′/D5 extension (2026-07-15):** under whole-process containment the image must also carry
+      **volley itself** (the builder loop runs inside), so its entrypoint runs `volley`, not just
+      the toolchain. Folded into revised step 13.
+11. [x] Swap the `bash` executor `spawnSync` → `docker exec` (s2 D1/D3; D9, D11) — **done
     when:** volley starts one long-lived hardened container per run (`docker run -d … sleep
     infinity` with the D11 flag set) and the `bash` tool `exec`s against it (D9); the swap keeps
     the **tool contract unchanged** (stateless-per-command, no cwd/env drift); file writes land
@@ -229,6 +261,12 @@ Session 2 (containment, shape B):
     (D9); and `bash -c 'cat /etc/passwd'` inside the sandbox cannot read the host file.
     - seam: `src/builder/tools.ts`, sandbox module
     - model: opus — the load-bearing containment swap
+    - **Superseded by B′/D5 (2026-07-15, OQ-9 = retire):** whole-process containment runs volley
+      *inside* the container, so `bash` is local `spawnSync` (in-container), not `docker exec` from
+      the host. The `BashExecutor` seam + `host_bash_executor` survive; `docker_exec_bash` and the
+      volley-orchestrated lifecycle (`start_sandbox`/`stop_sandbox`/`with_sandbox`) are retired in
+      revised step 13. The FS-isolation done-when (`cat /etc/passwd` can't read the host) still
+      holds — it's now the container volley runs in.
 12. [ ] Network policy: default-deny egress (s2 D6; D12) — **done when:** the container sits on
     a user-defined bridge with **`DOCKER-USER` default-DROP** egress, the two allowlist targets
     are reached via `host.docker.internal:host-gateway` (D12), a fully offline all-local run
@@ -236,24 +274,40 @@ Session 2 (containment, shape B):
     continues), and the tool-level SSRF deny-list + container policy stack as defense in depth.
     - seam: sandbox module, `src/builder/tools.ts`
     - model: opus — network policy design
-13. [ ] `--sandbox` flag + reframe the safety gate (s2 D1; D10) — **done when:** `--sandbox` is
-    default-on for a local builder and forbidden/no-op for `claude_cli` (which never requires
-    Docker and is **not** hardened via fascicle's `claude_cli` sandbox, D10); the gate at
-    `src/config.ts:230-237` flips from "refuse a local builder" to "refuse **only when neither
-    `--sandbox` nor `--allow-unsandboxed-builder` is in effect**"; `--allow-unsandboxed-builder`
-    runs (loud warning, skips volley's Docker orchestration); and Phase 2b verification passes.
-    - seam: `src/config.ts`, `src/cli.ts`
-    - model: opus — subtle safety-gate reframe
+    - **Built 2026-07-15 (uncheckpointed); survives B′/D5.** The `network_run_args` /
+      `sandbox_run_args` flag-builders become the **invocation spec the example's `docker run`
+      uses** (B′-2), rather than flags volley's orchestrator executes. **Reframe before
+      checkpoint:** under B′ the **host LLM endpoint is a *live* allowlist target** (the model
+      client is now in-container), not "N/A under shape B" — flip the stale `SandboxNetwork`
+      doc-comment; `--network none` now fits only a genuinely offline run (model + deps already
+      in-container). Then checkpoint the (lightly-adjusted) built diff.
+13. [ ] Whole-process containment: run volley in-container + retire the host-orchestrated exec
+    path (B′/D5; D9, OQ-9) — **done when:** `bash` uses the local executor (`host_bash_executor`,
+    now executing **inside** volley's container), `docker_exec_bash` +
+    `start_sandbox`/`stop_sandbox`/`with_sandbox` are removed and the orchestrator no longer wraps
+    the loop in a sandbox lifecycle; the `sandbox_run_args`/`network_run_args` flag-builders remain
+    as the **invocation spec** (surfaced via a small `volley` helper / documented `docker run` line
+    the examples use); the **image entrypoint runs volley** (step 10 extension); and the
+    in-container model client reaches the host LLM endpoint by resolving its base URL to
+    `host.docker.internal:<port>` via a config/env override the v0.3.1 base-url normalizer consumes
+    (OQ-8), proven by a local build writing into the mounted worktree from inside the container.
+    - seam: `src/sandbox.ts`, `src/orchestrator.ts`, `src/builder/tools.ts`, `src/engine.ts`/`src/config.ts`
+    - model: opus — the containment-model transition (retire lifecycle + endpoint crossing)
 
 ### Session 2 — Phase 2c: preflight + the two blessed examples
 
-14. [ ] `--dry-run` preflight, mirroring `checkride doctor` (s2 D7; D9) — **done when:** before
-    any model spend it checks docker available **and ≥ 19.03** (D9 — older `exec` silently drops
-    hardening), image present (build/pull per policy), worktree creatable, and local endpoint
-    reachable; Docker unavailable / too old / image missing → **exit 5**, and it **never exits 5
-    on the all-Claude path**.
-    - seam: `src/cli.ts`, `src/config.ts`, new preflight module
-    - model: opus — preflight orchestration + exit-code contract
+14. [ ] `--sandbox` = require-containment gate + `--dry-run` preflight (s2 D1/D6/D7/D10; D9, B′) —
+    **done when:** the gate at `src/config.ts:230-237` reframes from "refuse a local builder" to
+    "for a local builder, **refuse unless volley detects it is running inside a container** (B′-2)
+    **or** `--allow-unsandboxed-builder` is in effect"; `--sandbox` is default-on for a local
+    builder and forbidden/no-op for `claude_cli` (which never requires Docker and is **not**
+    hardened via fascicle's `claude_cli` sandbox, D10, C4); `--allow-unsandboxed-builder` runs
+    uncontained on the host (loud warning); and the `--dry-run` preflight (before any model spend,
+    run from inside the container) checks the toolchain present, the worktree creatable, and the
+    **host LLM endpoint reachable via `host.docker.internal`** — failure → **exit 5**, and it
+    **never exits 5 on the all-Claude path**.
+    - seam: `src/config.ts`, `src/cli.ts`, new preflight module
+    - model: opus — safety-gate reframe (create → require containment) + preflight exit-code contract
 15. [ ] The two blessed examples + `summary.json` comparison fields (s2 D9/D10) — **done
     when:** `examples/all-claude/` (`claude_cli` builder+critic, no Docker) and
     `examples/all-local/` (`ollama` builder+critic, ai_sdk transport, checkride gate, Docker
@@ -274,8 +328,24 @@ Session 2 (containment, shape B):
 
 ## Open questions
 
-*(Q1–Q4 resolved 2026-07-13 → see Decisions D9–D13 and Verdicts. Only the two native-only
-questions remain parked — neither blocks planning or this cycle.)*
+*(Q1–Q4 resolved 2026-07-13 → see Decisions D9–D13 and Verdicts. Q7 resolved + Q9 resolved-by-rec
+2026-07-15 in the B′ shape re-examination; Q8/Q10 open but non-blocking, resolved as we build.)*
+
+- Q7 (B′ bootstrap): self-launcher (volley `docker run`s itself, streams stdio/exit/resume) vs
+  invoked-in-container (operator/example runs `docker run … volley run`, volley detects it is
+  contained). **Resolved 2026-07-15 → invoked-in-container (B′-2)** — minimal new volley code,
+  containerization is the example/harness's job; reshapes the safety gate (create → require). (D5)
+- Q9 (fate of the `docker exec` bash executor under B′): retire vs keep as a shape-B fallback.
+  **Resolved-by-rec 2026-07-15 → retire** (bash → local `spawnSync` in-container;
+  `docker_exec_bash` + `start/stop/with_sandbox` removed; flag-builders kept as the invocation
+  spec) — a retained-but-uncalled exec path is dead code (`fallow`) and revives the two-boundary
+  story; `--allow-unsandboxed` already covers "won't containerize." Flip if the fallback is wanted. (D9)
+- Q8 (LLM endpoint across the boundary, **open**): confirm the base-URL override that points the
+  in-container model client at `host.docker.internal:<port>` and that the v0.3.1 normalizer + D12
+  allowlist admit it (was "N/A under shape B", now a live target). *resolve by:* build step 13.
+- Q10 (D11 hardening-profile fit, **open**): does read-only rootfs / non-root / tmpfs / pnpm-store
+  volume / cap-drop still hold when the *whole* volley Node process runs under it (its caches,
+  `.volley/` writes, git), or need loosening? *resolve by:* build steps 13–14 + the examples.
 
 - Q5 (s2 OQ-0, native-only): local critic verdict via prompt+parse+repair
   (`schema_repair_attempts`) vs Ollama constrained decode via `provider_options.ollama.format`
@@ -316,6 +386,14 @@ questions remain parked — neither blocks planning or this cycle.)*
   integration**, idempotent `remove --force → branch -D → prune` teardown. (D13)
 - 2026-07-13 — native bridge trigger (Q6/s2 OQ-6) → **not this build**; prove the bridge once
   (step 5) and defer the flip. Reaffirmed ai_sdk for the local critic (Q5). (D1/D2)
+- 2026-07-15 — **sandbox shape re-examination (web-researched: Docker Sandboxes / `sbx`)** →
+  chose **shape B′: run the *whole* volley builder process in one hardened container** (was shape
+  B: only `bash` in-container), **B′-2 = invoked-in-container** (Q7). Retire the host-orchestrated
+  `docker exec` path (Q9). **Deferred Docker Sandboxes' microVM** as a future paranoid-mode backend
+  (D14) — it runs only interactive pre-integrated agents, is mac/win-only + experimental + partly
+  paid, so depending on it now repeats the D10 anti-pattern. Trade accepted: model→host access now
+  crosses the boundary (Q8). Steps 10–14 reshaped; step 12's egress work survives. (D5/D14; supersedes
+  the shape-B half of D9)
 
 ## Source
 
@@ -344,8 +422,8 @@ artifacts are preserved verbatim below so this intent stands on its own for buil
 - `package.json` + `pnpm-lock.yaml` — fascicle 0.9.5, `ai@^7`, `ai-sdk-ollama@^4` (Session 0).
 - `src/engine.ts` — dependency bump only + a native-flip comment; `resolve_ollama_base_url` unchanged.
 - `src/prewarm.ts` / `src/builder/context_check.ts` — kept; add the reduced-necessity note.
-- `src/builder/tools.ts` — `bash` executor `spawnSync` → `docker exec` (2b); `contain()` root → worktree (2a, via read/write tools).
-- New sandbox/worktree orchestration module(s) — create/rotate worktree, build/pull/start container, tear down; invoked around the builder phase by `src/orchestrator.ts` (respecting `orchestrator-no-loops`).
+- `src/builder/tools.ts` — `bash` executor stays local `spawnSync` (**B′/D5:** now running *inside* volley's own container; the shape-B `docker exec` swap is retired in step 13); `contain()` root → worktree (2a, via read/write tools).
+- New worktree orchestration module — create/rotate worktree, tear down; invoked around the builder phase by `src/orchestrator.ts` (respecting `orchestrator-no-loops`). **B′/D5:** volley no longer starts/tears down the container (B′-2 — the example's `docker run` does); `src/sandbox.ts` keeps the `sandbox_run_args`/`network_run_args` flag-builders as the invocation spec.
 - `src/config.ts` / `src/cli.ts` — `--sandbox`, `--sandbox-image`, `--worktree`, `VOLLEY_SANDBOX_*`; reframe the `--allow-unsandboxed-builder` gate.
 - `src/workspace.ts` / `src/iteration.ts` / `src/types.ts` — persist + restore the new fields; worktree-branch checkpoints.
 - `Dockerfile` (new) + `examples/all-local/`, `examples/all-claude/` (new).

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BashExecutor } from '../../src/builder/tools.js';
 import {
+  network_run_args,
   sandbox_container_name,
   sandbox_run_args,
   with_sandbox,
@@ -15,6 +16,8 @@ function run_args(overrides: Partial<Parameters<typeof sandbox_run_args>[0]> = {
     uid: 501,
     gid: 20,
     store_volume: 'volley-pnpm-store',
+    network: 'none',
+    network_name: 'volley-sandbox-net',
     ...overrides,
   });
 }
@@ -67,6 +70,32 @@ describe('sandbox_run_args (D9/D11 hardening flag set)', () => {
 
   it('omits --user when the host uid is unavailable (falls back to the image non-root user)', () => {
     expect(run_args({ uid: null, gid: null })).not.toContain('--user');
+  });
+
+  it('carries the network posture into the run argv (D6/D12)', () => {
+    // Default-deny: no interface at all.
+    expect(run_args({ network: 'none' }).join(' ')).toContain('--network none');
+    // Allowlist: user-defined bridge + host-collapsed allowlist via host-gateway.
+    const allow = run_args({ network: 'allowlist' });
+    expect(allow[allow.indexOf('--network') + 1]).toBe('volley-sandbox-net');
+    expect(allow[allow.indexOf('--add-host') + 1]).toBe('host.docker.internal:host-gateway');
+  });
+});
+
+describe('network_run_args (D6/D12 egress postures)', () => {
+  it("'none' denies all egress with --network none and no host-gateway", () => {
+    const args = network_run_args('none', 'volley-sandbox-net');
+    expect(args).toEqual(['--network', 'none']);
+    expect(args).not.toContain('--add-host');
+  });
+
+  it("'allowlist' attaches the user-defined bridge and collapses the allowlist onto the host gateway", () => {
+    expect(network_run_args('allowlist', 'volley-sandbox-net')).toEqual([
+      '--network',
+      'volley-sandbox-net',
+      '--add-host',
+      'host.docker.internal:host-gateway',
+    ]);
   });
 });
 

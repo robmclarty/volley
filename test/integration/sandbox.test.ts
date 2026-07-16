@@ -83,6 +83,33 @@ describe.runIf(RUN)('builder sandbox (real docker exec)', () => {
   );
 
   it(
+    'default-deny egress: --network none leaves the container with only loopback (D6/D12)',
+    async () => {
+      const { workspace, cleanup } = temp_workspace();
+      // Default posture is 'none' — no `network` override needed; assert it here.
+      const handle = start_sandbox({
+        image: IMAGE,
+        build_root: workspace,
+        network: 'none',
+        run_id: `itest-netnone-${String(process.pid)}-${String(Date.now())}`,
+      });
+      try {
+        const bash = docker_exec_bash(handle);
+        // With `--network none` the container's only interface is loopback: no
+        // `eth0`, so an in-container `bash` command has no path off the box.
+        const ifaces = bash('ls /sys/class/net', EXEC_OPTS);
+        expect(ifaces.status).toBe(0);
+        expect(ifaces.stdout).toContain('lo');
+        expect(ifaces.stdout).not.toContain('eth0');
+      } finally {
+        stop_sandbox(handle);
+        cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it(
     'cannot read the host /etc/passwd — the container has its own root filesystem',
     async () => {
       const { workspace, cleanup } = temp_workspace();

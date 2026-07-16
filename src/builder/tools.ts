@@ -22,6 +22,14 @@
  * (each re-dispatches through the same guarded connector). The byte cap is
  * enforced while reading the HTTP stream, so raw HTML is never returned and a
  * huge page cannot OOM the tool (C7).
+ *
+ * Egress is defended in two independent layers (s2 D6/D12): this tool's SSRF
+ * deny-list (above) and the sandbox's container network posture (`--network none`
+ * by default, or a host-collapsed allowlist bridge — see `SandboxNetwork` in
+ * `src/sandbox.ts`). Under whole-process containment (B′/D5, step 13) the whole
+ * volley process — `fetch` included — runs inside the container, so both layers
+ * apply to `fetch`'s egress: `--network none` leaves it no route and it returns a
+ * "could not fetch" error result, and the loop continues.
  */
 import { spawnSync } from 'node:child_process';
 import { lookup as dns_lookup } from 'node:dns';

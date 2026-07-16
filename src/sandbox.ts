@@ -14,9 +14,15 @@
  * The lifecycle wraps the fascicle loop — it is not itself a loop — so these are
  * straight-line docker subprocess calls and the no-loops rule is unaffected.
  *
- * The network policy (default-deny egress, D12) lands in a later step; this
- * module owns container start / `exec` / reap / teardown and the D11 hardening
- * flags the `bash` swap rides on.
+ * Network policy (default-deny egress, D6/D12): the container's legitimate egress
+ * is the package registry for an in-container `pnpm install` and — under
+ * whole-process containment (B′/D5, completing in step 13) — the host LLM endpoint
+ * the in-container model client reaches via host-gateway. The default
+ * posture is `--network none` — no interface, a complete L3 egress deny; the
+ * opt-in `'allowlist'` posture attaches a dedicated user-defined bridge and
+ * collapses the allowlist targets onto the host gateway (see `SandboxNetwork`).
+ * This module owns container start / `exec` / reap / teardown, the D11 hardening
+ * flags the `bash` swap rides on, and the network posture above.
  */
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -40,6 +46,19 @@ const SANDBOX_HOME = '/home/node';
  * non-1000 uid writable to a fresh volume is a footgun handled where pnpm
  * actually runs — the blessed examples — not here.) */
 const SANDBOX_STORE_VOLUME = 'volley-pnpm-store';
+
+/** The dedicated user-defined bridge for the `'allowlist'` network posture (D12).
+ * A user-defined bridge (not the default `bridge`) isolates volley's sandbox from
+ * other containers and is the attach point for the host-collapsed allowlist.
+ * Created idempotently and left in place — shared across runs and cheap, like the
+ * pnpm store volume; teardown never removes it. */
+const SANDBOX_NETWORK_NAME = 'volley-sandbox-net';
+
+/** Pinned subnet for that bridge, so the host-applied `DOCKER-USER` default-DROP
+ * (below) can scope to volley's containers alone and never disturb other
+ * containers on the host. An obscure /24 to keep collisions rare; a clash fails
+ * `network create` loudly (exit 5) rather than silently sharing a subnet. */
+const SANDBOX_NETWORK_SUBNET = '172.31.99.0/24';
 
 /** How long a management docker call may run (start allows for an image pull;
  * exec-based readiness/reap are quick). Command execution has its own per-call
@@ -94,6 +113,47 @@ export function sandbox_container_name(run_id: string): string {
 }
 
 /**
+ * The container's egress posture (s2 D6/D12). Under whole-process containment
+ * (B′/D5, completing in step 13) the model client and the `fetch` tool run inside
+ * the container, so its legitimate egress is the package registry for `pnpm
+ * install` plus the host LLM endpoint the model client reaches via host-gateway.
+ *
+ * - `'none'` — `--network none`: no interface at all, a complete L3 egress deny.
+ *   The default-deny default and the fully-offline all-local posture (deps served
+ *   from the pre-warmed pnpm store volume). With the whole process in-container,
+ *   `fetch` has no route either, so it degrades cleanly to a returned error and the
+ *   run continues.
+ * - `'allowlist'` — the container sits on volley's dedicated user-defined bridge
+ *   with `host.docker.internal:host-gateway`, collapsing the allowlist targets
+ *   (the package registry, and the host LLM endpoint the in-container model client
+ *   reaches — B′/D5) onto the host gateway. The L3/L4 default-DROP that
+ *   makes the bridge a true allowlist is the host-applied, subnet-scoped
+ *   `DOCKER-USER` rule volley documents but never installs itself — that chain is
+ *   root and host-global (and, on Docker Desktop, inside a VM unreachable from an
+ *   unprivileged per-run host process). The always-on tool-level SSRF deny-list is
+ *   the second, in-process defense-in-depth layer. Host hardening, run once as root
+ *   on a Linux host, scoped to volley's subnet so it never touches other
+ *   containers (insert ahead of the chain's terminating RETURN, in order):
+ *     iptables -I DOCKER-USER -s 172.31.99.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+ *     iptables -I DOCKER-USER -s 172.31.99.0/24 -d <host-gateway-ip> -j ACCEPT   # collapsed allowlist
+ *     iptables -I DOCKER-USER -s 172.31.99.0/24 -p udp --dport 53 -j ACCEPT      # DNS
+ *     iptables -I DOCKER-USER -s 172.31.99.0/24 -j DROP                          # default-deny the rest
+ */
+export type SandboxNetwork = 'none' | 'allowlist';
+
+/**
+ * The network-related `docker run` args for a posture (D6/D12), pure and exported
+ * so the policy is unit-testable without a daemon. `'none'` denies all egress
+ * (`--network none`); `'allowlist'` attaches the dedicated user-defined bridge and
+ * collapses the allowlist targets onto the host gateway (`host.docker.internal`,
+ * the Linux-portable spelling — harmless where Docker Desktop already provides it).
+ */
+export function network_run_args(network: SandboxNetwork, network_name: string): string[] {
+  if (network === 'none') return ['--network', 'none'];
+  return ['--network', network_name, '--add-host', 'host.docker.internal:host-gateway'];
+}
+
+/**
  * The `docker run` argv for the hardened, long-lived sandbox (D9/D11). Pure and
  * exported so the flag set is unit-testable without a daemon.
  *
@@ -109,6 +169,8 @@ export function sandbox_run_args(options: {
   uid: number | null;
   gid: number | null;
   store_volume: string;
+  network: SandboxNetwork;
+  network_name: string;
 }): string[] {
   if (options.uid === 0) {
     throw config_error('refusing to start the builder sandbox as root (uid 0)');
@@ -123,6 +185,10 @@ export function sandbox_run_args(options: {
     '--name',
     options.name,
     ...user,
+    // Network policy (D6/D12): default-deny egress. `'none'` gives the container
+    // no interface; `'allowlist'` puts it on the user-defined bridge and collapses
+    // the allowlist targets onto the host gateway.
+    ...network_run_args(options.network, options.network_name),
     // Resource caps (D11): contain a runaway / fork-bomb / OOM without starving
     // pnpm/tsc (pids 1024, not 100; nofile high enough for esbuild/watchers).
     '--memory=4g',
@@ -185,18 +251,50 @@ function capture_baseline_pids(container: string): string {
 }
 
 /**
+ * Ensure the dedicated, subnet-pinned user-defined bridge exists for the
+ * `'allowlist'` posture (D12), idempotently: create it, and treat an
+ * already-exists failure (a racing or prior run) as success by re-inspecting.
+ * Left in place across runs — shared and cheap, like the pnpm store volume — so
+ * teardown never removes it. The `'none'` posture uses `--network none` and never
+ * calls this. Throws `config_error` (exit 5) if the network can't be made ready.
+ */
+export function ensure_sandbox_network(name: string, log?: (message: string) => void): void {
+  const created = docker(
+    ['network', 'create', '--subnet', SANDBOX_NETWORK_SUBNET, name],
+    DOCKER_ADMIN_TIMEOUT_MS,
+  );
+  if (created.status === 0) {
+    log?.(`sandbox: created network ${name} (${SANDBOX_NETWORK_SUBNET}, default-deny egress + host-gateway allowlist)`);
+    return;
+  }
+  // `create` fails when the name already exists (a concurrent or prior run) — a
+  // shared bridge is the intent, so a present network is success, not an error.
+  if (docker(['network', 'inspect', name], DOCKER_ADMIN_TIMEOUT_MS).status === 0) return;
+  throw config_error(
+    `failed to create the builder sandbox network (${name}): ${created.stderr.trim() || 'docker network create failed'}`,
+  );
+}
+
+/**
  * Start one long-lived, hardened container for the run and bind-mount
- * `build_root` at `/workspace` (D5/D9/D11). Throws `config_error` (exit 5) when
- * docker is missing, `run` fails, or the container never becomes ready.
+ * `build_root` at `/workspace` (D5/D9/D11), on the chosen network posture
+ * (D6/D12; defaults to the default-deny `'none'`). Throws `config_error` (exit 5)
+ * when docker is missing, the `'allowlist'` network can't be readied, `run` fails,
+ * or the container never becomes ready.
  */
 export function start_sandbox(options: {
   image: string;
   build_root: string;
   run_id: string;
+  network?: SandboxNetwork;
   log?: (message: string) => void;
 }): SandboxHandle {
+  const network = options.network ?? 'none';
   const name = sandbox_container_name(options.run_id);
   const ids = host_ids();
+  if (network === 'allowlist') {
+    ensure_sandbox_network(SANDBOX_NETWORK_NAME, options.log);
+  }
   const args = sandbox_run_args({
     image: options.image,
     build_root: resolve(options.build_root),
@@ -204,6 +302,8 @@ export function start_sandbox(options: {
     uid: ids?.uid ?? null,
     gid: ids?.gid ?? null,
     store_volume: SANDBOX_STORE_VOLUME,
+    network,
+    network_name: SANDBOX_NETWORK_NAME,
   });
   const run = docker(args, DOCKER_START_TIMEOUT_MS);
   if (run.status !== 0) {
@@ -216,7 +316,7 @@ export function start_sandbox(options: {
     workdir: SANDBOX_WORKDIR,
     baseline: capture_baseline_pids(name),
   };
-  options.log?.(`sandbox: started container ${name} from ${options.image}`);
+  options.log?.(`sandbox: started container ${name} from ${options.image} (network: ${network})`);
   return handle;
 }
 
@@ -298,6 +398,8 @@ export type SandboxOptions = {
   image: string;
   build_root: string;
   run_id: string;
+  /** Egress posture (D6/D12); defaults to the default-deny `'none'`. */
+  network?: SandboxNetwork;
   log?: (message: string) => void;
 };
 
@@ -319,6 +421,7 @@ export async function with_sandbox<T>(
     image: options.image,
     build_root: options.build_root,
     run_id: options.run_id,
+    network: options.network ?? 'none',
     ...(options.log !== undefined ? { log: options.log } : {}),
   });
   try {
