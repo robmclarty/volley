@@ -37,8 +37,9 @@ const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
 ];
 
 /** Builder providers that run a local model through volley's own tool loop —
- * a real host `bash` (write + exec) with no sandbox yet. Refused unless the
- * operator opts out (D11); `claude_cli` has its own permission model and is
+ * a real `bash` (write + exec). Refused (D11 → B′/D5) unless volley is running
+ * inside a container (B′-2, the correct blast-radius default) or the operator
+ * explicitly opts out; `claude_cli` has its own permission model and is
  * exempt. */
 const LOCAL_BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
   'ollama',
@@ -183,7 +184,8 @@ function resolve_sandbox_image(
 
 /** The `--allow-unsandboxed-builder` flag/config value wins; otherwise
  * `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` (or `=true`) opts out. Any other value
- * (incl. `0`/`false`/unset) leaves the local builder refused (D11). */
+ * (incl. `0`/`false`/unset) leaves the local builder refused unless contained
+ * (D11 → B′/D5). */
 function resolve_allow_unsandboxed_builder(
   raw: VolleyConfig,
   env: Record<string, string | undefined>,
@@ -191,6 +193,19 @@ function resolve_allow_unsandboxed_builder(
   if (raw.allow_unsandboxed_builder === true) return true;
   const env_value = env['VOLLEY_ALLOW_UNSANDBOXED_BUILDER'];
   return env_value === '1' || env_value === 'true';
+}
+
+/** B′-2: volley *detects* it is running inside its sandbox container rather than
+ * starting the container itself. The signal is the `VOLLEY_CONTAINED=1` marker
+ * volley's own image bakes in (`Dockerfile` `ENV`), so a `docker run <hardened
+ * flags> <image> volley run …` is recognized as contained out of the box. Kept
+ * env-only — no ambient `/.dockerenv` probe — so the safety gate is deterministic
+ * and testable, and so a CI job that itself runs in an unrelated container does
+ * not silently satisfy the gate; a hand-rolled sandbox must set the marker (or
+ * the operator uses `--allow-unsandboxed-builder`). */
+export function detect_containment(env: Record<string, string | undefined>): boolean {
+  const value = env['VOLLEY_CONTAINED'];
+  return value === '1' || value === 'true';
 }
 
 /** Merge, expand, and validate a raw `VolleyConfig` into a `ResolvedConfig`.
@@ -246,14 +261,22 @@ export function resolve_config(
     );
   }
 
-  // Safety gate (D11): a local builder gets a real host bash with no sandbox,
-  // so refuse it — before any model spend — unless the operator opts out.
+  // Safety gate (D11 → B′/D5): a local builder gets a real `bash` (write + exec),
+  // so refuse it — before any model spend — unless volley is running *inside* a
+  // container (B′-2, the correct blast-radius default) or the operator explicitly
+  // opts out to run uncontained on the host.
   const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, env);
-  if (LOCAL_BUILDER_PROVIDERS.includes(builder_provider) && !allow_unsandboxed_builder) {
+  const contained = detect_containment(env);
+  if (
+    LOCAL_BUILDER_PROVIDERS.includes(builder_provider) &&
+    !contained &&
+    !allow_unsandboxed_builder
+  ) {
     throw config_error(
-      `builder-provider '${builder_provider}' runs a local model with a real host bash ` +
-        `(write + exec) and no sandbox — refused by default. Pass --allow-unsandboxed-builder ` +
-        `(or set VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1) to proceed; a container sandbox arrives in a later session.`,
+      `builder-provider '${builder_provider}' runs a local model with a real bash ` +
+        `(write + exec) — refused unless contained. Launch volley inside its sandbox container ` +
+        `(docker run <hardened flags> <image> volley run …, which sets VOLLEY_CONTAINED=1), or pass ` +
+        `--allow-unsandboxed-builder (VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1) to run uncontained on the host.`,
     );
   }
 
@@ -264,6 +287,27 @@ export function resolve_config(
     throw config_error(
       `--critic-provider must be one of ${CRITIC_PROVIDERS.join(', ')}; got: ${String(raw.critic_provider)}`,
     );
+  }
+
+  // Containment auth gate (B′/D5): `claude_cli`'s subscription/OAuth credentials
+  // do not survive containerization — the token is mangled inside the container —
+  // so a contained run may drive Claude only by API key (a plain env var that
+  // travels the boundary). Refuse a contained `claude_cli` role (builder and/or
+  // critic) that is not explicitly in `api_key` mode; the all-Claude path stays
+  // on the host and Docker-free by design (C4/D10), where subscription auth works.
+  if (contained) {
+    const claude_roles = [
+      builder_provider === 'claude_cli' ? 'builder' : null,
+      critic_provider === 'claude_cli' ? 'critic' : null,
+    ].filter((role): role is string => role !== null);
+    const auth_mode = env['VOLLEY_AUTH_MODE'] ?? 'auto';
+    if (claude_roles.length > 0 && auth_mode !== 'api_key') {
+      throw config_error(
+        `claude_cli (${claude_roles.join(', ')}) cannot use its subscription/OAuth token inside a ` +
+          `container — it is mangled there. Set VOLLEY_AUTH_MODE=api_key (with ANTHROPIC_API_KEY) to ` +
+          `drive Claude contained, or run claude_cli on the host uncontained.`,
+      );
+    }
   }
 
   if (raw.git_checkpoints === true && !existsSync(resolve(workspace, '.git'))) {

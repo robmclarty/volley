@@ -281,7 +281,7 @@ Session 2 (containment, shape B′ — the whole volley builder runs in one hard
       client is now in-container), not "N/A under shape B" — flip the stale `SandboxNetwork`
       doc-comment; `--network none` now fits only a genuinely offline run (model + deps already
       in-container). Then checkpoint the (lightly-adjusted) built diff.
-13. [ ] Whole-process containment: run volley in-container + retire the host-orchestrated exec
+13. [x] Whole-process containment: run volley in-container + retire the host-orchestrated exec
     path (B′/D5; D9, OQ-9) — **done when:** `bash` uses the local executor (`host_bash_executor`,
     now executing **inside** volley's container), `docker_exec_bash` +
     `start_sandbox`/`stop_sandbox`/`with_sandbox` are removed and the orchestrator no longer wraps

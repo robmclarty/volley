@@ -3,7 +3,6 @@
  * CLI entry point (spec §5): cac argv parsing, dispatch, exit-code mapping.
  * Human progress goes to stderr; stdout carries machine output only.
  */
-import { spawnSync } from 'node:child_process';
 import { cac } from 'cac';
 import {
   DEFAULT_CHECK,
@@ -12,9 +11,10 @@ import {
   resolve_config,
 } from './config.js';
 import { resolve_check_runner } from './check/detect.js';
-import { exit_code_for_error, exit_code_for_status, EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
+import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
 import { load_resume_state } from './iteration.js';
 import { run_volley } from './orchestrator.js';
+import { preflight } from './preflight.js';
 import { colors_enabled } from './render/format.js';
 import { create_renderer } from './render/renderer.js';
 import type { Renderer, RenderMode } from './render/renderer.js';
@@ -78,15 +78,17 @@ function warn_api_key_meter(renderer: Renderer): void {
   }
 }
 
-/** One loud warning when an unsandboxed local builder is about to run (D11).
- * Config resolution has already refused this unless the opt-out is set, so
- * reaching here with a local provider means the operator accepted the risk. */
+/** One loud warning when a local builder is about to run *uncontained* on the
+ * host via the opt-out (D11 → B′/D5). Config resolution has already refused this
+ * unless volley is contained or the opt-out is set, so reaching here with the
+ * opt-out active means the operator accepted the uncontained risk. */
 export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Renderer): void {
   if (config.builder_provider !== 'claude_cli' && config.allow_unsandboxed_builder) {
     renderer.warn(
-      `UNSANDBOXED BUILDER: '${config.builder_provider}' runs a local model with a real host bash ` +
-        `(write + exec) directly on this machine in ${config.workspace} — there is no container ` +
-        `isolation yet. Proceeding because --allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER is set.`,
+      `UNSANDBOXED BUILDER: '${config.builder_provider}' runs a local model with a real bash ` +
+        `(write + exec) directly on this machine in ${config.workspace} — no container isolation. ` +
+        `Proceeding because --allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER is set; ` +
+        `run volley inside its sandbox container (B′-2) for blast-radius containment instead.`,
     );
   }
 }
@@ -125,34 +127,6 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.quiet === true ? { quiet: true } : {}),
     ...(flags.thinking === false ? { show_thinking: false } : {}),
   };
-}
-
-/** `--dry-run`: validate config and, when checkride is the resolved check,
- * run `checkride doctor` before any model spend (spec §5). */
-function dry_run(config: ResolvedConfig, renderer: Renderer): number {
-  renderer.info(`dry run: config valid (run ${config.run_id})`);
-  renderer.info(`workspace: ${config.workspace}`);
-  renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
-  renderer.info(`builder model: ${config.builder_model} (provider: ${config.builder_provider})`);
-  renderer.info(`builder max steps: ${config.builder_max_steps}`);
-  if (config.builder_provider !== 'claude_cli') {
-    renderer.info('unsandboxed builder: allowed (--allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER)');
-    renderer.info(`sandbox image: ${config.sandbox_image}`);
-  }
-  renderer.info(`critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`);
-  renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
-  if (config.check_resolved === 'checkride') {
-    const doctor = spawnSync('pnpm', ['exec', 'checkride', 'doctor'], {
-      cwd: config.workspace,
-      stdio: ['ignore', 'ignore', 'inherit'],
-    });
-    if (doctor.error !== undefined || doctor.status !== 0) {
-      renderer.error('checkride doctor failed; fix the workspace check pipeline before running');
-      return EXIT_CONFIG_ERROR;
-    }
-    renderer.info('checkride doctor: ok');
-  }
-  return EXIT_SUCCESS;
 }
 
 function emit_result(config: ResolvedConfig, result: RunResult, renderer: Renderer): number {
@@ -214,7 +188,7 @@ async function main(argv: string[]): Promise<number> {
       warn_api_key_meter(renderer);
       warn_unsandboxed_builder(config, renderer);
       if (merged.dry_run === true) {
-        exit_code = dry_run(config, renderer);
+        exit_code = await preflight(config, renderer, process.env);
         return;
       }
       const result = await run_volley(config, { renderer });

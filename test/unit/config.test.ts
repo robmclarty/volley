@@ -6,6 +6,7 @@ import {
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_SANDBOX_IMAGE,
+  detect_containment,
   expand_at_file,
   load_config_file,
   resolve_config,
@@ -199,6 +200,84 @@ describe('resolve_config', () => {
           ),
         ).toThrow(/allow-unsandboxed-builder/);
       }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('a contained local builder resolves without the opt-out (B′-2)', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const provider of ['ollama', 'lmstudio'] as const) {
+        // A fully-local contained run: local critic too, so the claude_cli
+        // containment auth gate does not apply here.
+        const config = resolve_config(
+          { ...base(workspace), builder_provider: provider, critic_provider: provider },
+          { env: { VOLLEY_CONTAINED: '1' } },
+        );
+        expect(config.builder_provider).toBe(provider);
+        // Containment is not the host opt-out — the flag stays false.
+        expect(config.allow_unsandboxed_builder).toBe(false);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('an uncontained local builder is still refused without the opt-out', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      // Falsy containment markers do not open the gate; only the opt-out or a
+      // real container does.
+      for (const value of ['0', 'false', '']) {
+        expect(() =>
+          resolve_config(
+            { ...base(workspace), builder_provider: 'ollama' },
+            { env: { VOLLEY_CONTAINED: value } },
+          ),
+        ).toThrow(/refused unless contained/);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a contained claude_cli role unless it uses api_key auth (OAuth is mangled in a container)', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      // Contained claude_cli builder without an explicit api_key mode.
+      for (const auth of [undefined, 'auto', 'oauth']) {
+        expect(() =>
+          resolve_config(
+            { ...base(workspace) },
+            { env: { VOLLEY_CONTAINED: '1', ...(auth !== undefined ? { VOLLEY_AUTH_MODE: auth } : {}) } },
+          ),
+        ).toThrow(/mangled/);
+      }
+      // Contained claude_cli critic behind a local builder is caught too, named.
+      expect(() =>
+        resolve_config(
+          { ...base(workspace), builder_provider: 'ollama', critic_provider: 'claude_cli' },
+          { env: { VOLLEY_CONTAINED: '1' } },
+        ),
+      ).toThrow(/critic/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('allows a contained claude_cli role in api_key mode, and any claude_cli on the host', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      // Contained + api_key: the key travels the boundary, so this resolves.
+      expect(
+        resolve_config(
+          { ...base(workspace) },
+          { env: { VOLLEY_CONTAINED: '1', VOLLEY_AUTH_MODE: 'api_key' } },
+        ).builder_provider,
+      ).toBe('claude_cli');
+      // Uncontained (no marker): the host path is unaffected by the auth gate.
+      expect(resolve_config(base(workspace), { env: {} }).builder_provider).toBe('claude_cli');
     } finally {
       cleanup();
     }
@@ -474,6 +553,17 @@ describe('load_config_file', () => {
     await expect(load_config_file('/nope/volley.config.ts')).rejects.toMatchObject({
       kind: 'config_error',
     });
+  });
+});
+
+describe('detect_containment (B′-2)', () => {
+  it('recognizes the VOLLEY_CONTAINED marker truthy values only', () => {
+    expect(detect_containment({ VOLLEY_CONTAINED: '1' })).toBe(true);
+    expect(detect_containment({ VOLLEY_CONTAINED: 'true' })).toBe(true);
+    for (const value of ['0', 'false', '', 'yes', undefined]) {
+      expect(detect_containment({ VOLLEY_CONTAINED: value })).toBe(false);
+    }
+    expect(detect_containment({})).toBe(false);
   });
 });
 

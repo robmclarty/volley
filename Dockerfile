@@ -48,6 +48,12 @@ COPY . .
 RUN pnpm build \
   && chmod -R a+rX /opt/volley
 
+# The B′-2 containment marker: volley *detects* it is running inside its sandbox
+# (rather than starting the container itself) by this env being set, so the
+# safety gate admits a local builder here without `--allow-unsandboxed-builder`
+# (src/config.ts `detect_containment`).
+ENV VOLLEY_CONTAINED=1
+
 # The bind-mounted worktree lands here; volley's file tools + in-container `bash`
 # resolve workspace-relative paths against it. The pnpm store is mounted at run
 # time (a named volume under the read-only rootfs, D11), so it is not created here.
