@@ -1,0 +1,8 @@
+- Each of the five modules in `handlers/` (`create`, `read`, `update`, `remove`, `list`) validates its arguments and throws a `TypeError` on invalid input, matching `handlers.test.mjs`:
+  - `create(store, record)` — `record` must be an object with a non-empty string `id`
+  - `read(store, id)` and `remove(store, id)` — `id` must be a non-empty string
+  - `update(store, id, patch)` — `id` must be a non-empty string and `patch` must be an object
+  - `list(store, filter)` — if `filter` is passed it must be a function
+- Every valid-input path still behaves as before (the passing tests stay passing)
+- `handlers.test.mjs` is unchanged
+- `node --test` exits 0 in the workspace — completed within the step budget, so every handler is fixed, not just the first few

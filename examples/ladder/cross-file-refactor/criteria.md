@@ -1,0 +1,5 @@
+- The vector codebase is migrated from 2D `{ x, y }` points to 3D `{ x, y, z }` across all three modules — `vec.mjs`, `shapes.mjs`, and `physics.mjs`
+- `add`, `scale`, and `magnitude` in `vec.mjs` operate on all three axes; `magnitude` becomes the full 3D length (`Math.hypot(x, y, z)`)
+- Every point literal the code constructs gains an explicit `z` — including the `reduce` seed in `shapes.mjs`'s `centroid` and the vector returned by `physics.mjs`'s `drag`
+- No `{ x, y }` literal without a `z` component remains in any module
+- `node --test` exits 0 in the workspace and `kinematics.test.mjs` is unchanged

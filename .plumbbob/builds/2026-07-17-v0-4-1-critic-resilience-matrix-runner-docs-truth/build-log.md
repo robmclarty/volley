@@ -61,3 +61,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-18 — step 4 checkpointed · 3d5c05eb6 — `volley matrix` subcommand (1 drift, 17m)
 - 2026-07-18 — step 5 checkpointed · 38436fa92 — README refresh to v0.4.0 truth (7m)
 - 2026-07-18 — step 6 checkpointed · f475bc3a7 — Draft the upstream Ollama report (4m)
+- 2026-07-18 — step 7 checkpointed · 9ea0881fb — Essayist example (19m)

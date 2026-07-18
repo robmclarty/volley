@@ -156,7 +156,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `research/ollama-qwen-parser-issue.md`
    - model: sonnet — distillation of an existing finding
 
-7. [ ] Essayist example — **done when:** `examples/essayist/` (config, rubric criteria, custom critic prompt, prose brief) passes `--dry-run`, and a prose variant of the local harness-append exists if the builder preset proves code-toned
+7. [x] Essayist example — **done when:** `examples/essayist/` (config, rubric criteria, custom critic prompt, prose brief) passes `--dry-run`, and a prose variant of the local harness-append exists if the builder preset proves code-toned
    - seam: `examples/essayist/`, `src/builder/presets/`
    - model: fable — the rubric/critic prompt is creative-judgment work
 

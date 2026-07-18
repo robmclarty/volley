@@ -1,0 +1,8 @@
+- `stack.test.mjs` exists at the workspace root, uses `node:test`, and imports the stack from `'./stack.mjs'`
+- The suite **passes** against the real `stack.mjs` (`node check.mjs` runs it there first)
+- The suite is thorough enough to **catch every planted mutant** in `mutants/`: swapped in for `stack.mjs`, each mutant must make the suite fail. This means the suite must, at minimum, pin:
+  - `peek()` returns the top without mutating (size unchanged after a peek)
+  - the capacity limit — a push past `capacity` throws
+  - `pop()` / `peek()` on an empty stack throw
+- `stack.mjs` and everything under `mutants/` are left unchanged — you write tests only
+- `node check.mjs` exits 0 in the workspace

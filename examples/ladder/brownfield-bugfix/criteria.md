@@ -1,0 +1,5 @@
+- `node --test` exits 0 in the workspace — every test in `cart.test.mjs` passes
+- `subtotal(items)` sums `price * quantity` across the items (it currently ignores quantity)
+- `applyDiscount(total, pct)` returns the amount left *after* the percentage discount, e.g. `applyDiscount(200, 10) === 180` (it currently returns the discount instead)
+- `withShipping(total, opts)` is free at or above the threshold and adds the flat fee only below it, e.g. `withShipping(50) === 50` at the default threshold (the boundary is currently wrong)
+- The fixes are made in `cart.mjs`; `cart.test.mjs` is unchanged and the exported names/signatures (`subtotal`, `applyDiscount`, `withShipping`) are preserved — the bugs are fixed in the source, not hidden by weakening the tests
