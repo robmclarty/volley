@@ -58,3 +58,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-18 — step 2 checkpointed · bb7fedac4 — OQ-12: tool-less critic fallback + `critic_degraded` marker (1 drift, 88m)
 - 2026-07-18 — step 3 checkpointed · d476dd3db — Critic-seat canary in `--dry-run` (1 drift, 11m)
 - 2026-07-18 — step 4 checkpointed · 3d5c05eb6 — `volley matrix` subcommand (1 drift, 17m)
+- 2026-07-18 — step 5 checkpointed · 38436fa92 — README refresh to v0.4.0 truth (7m)

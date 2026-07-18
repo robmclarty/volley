@@ -148,7 +148,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `src/cli.ts`, `src/matrix.ts`, `test/matrix.test.ts`, `README.md`
    - model: opus — new subcommand surface over existing orchestration
 
-5. [ ] README refresh to v0.4.0 truth — **done when:** the local-builder section documents the shipped sandbox + `--worktree`, the flag table matches `src/cli.ts` exactly (including matrix), and the qwen3.6 critic caveat links `research/v3-comparison-finding.md`
+5. [x] README refresh to v0.4.0 truth — **done when:** the local-builder section documents the shipped sandbox + `--worktree`, the flag table matches `src/cli.ts` exactly (including matrix), and the qwen3.6 critic caveat links `research/v3-comparison-finding.md`
    - seam: `README.md`, `CHANGELOG.md`
    - model: sonnet — mechanical reconciliation against cli.ts
 
