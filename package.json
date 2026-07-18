@@ -53,7 +53,7 @@
     "checkride": "0.4.1",
     "fallow": "2.48.0",
     "oxlint": "1.72.0",
-    "oxlint-tsgolint": "0.21.1",
+    "oxlint-tsgolint": "0.22.1",
     "tsup": "8.5.1",
     "tsx": "4.23.0",
     "typescript": "5.9.3",
