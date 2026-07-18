@@ -152,7 +152,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `README.md`, `CHANGELOG.md`
    - model: sonnet — mechanical reconciliation against cli.ts
 
-6. [ ] Draft the upstream Ollama report — **done when:** `research/ollama-qwen-parser-issue.md` contains the minimal repro, the `qwen35.go`/`qwen3coder.go` log lines, and the degrade-to-text ask, ready to paste into a GitHub issue
+6. [x] Draft the upstream Ollama report — **done when:** `research/ollama-qwen-parser-issue.md` contains the minimal repro, the `qwen35.go`/`qwen3coder.go` log lines, and the degrade-to-text ask, ready to paste into a GitHub issue
    - seam: `research/ollama-qwen-parser-issue.md`
    - model: sonnet — distillation of an existing finding
 

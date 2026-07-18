@@ -27,6 +27,7 @@ is done only after a checkpoint — check green + checkpoint taken, via `/pb-ver
 > Mid-step, every new problem / idea / "ooh what if" lands HERE, untouched, and you
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/pb-park` composes it). Harvest happens only at the boundary.
+- [ ] README matrix example references nonexistent ./examples/local-loop/volley.config.ts — point it at examples/essayist/ (or another real example) next docs pass
 
 ## Harvest  *(run `/pb-harvest` at each step boundary, after green)*
 
@@ -59,3 +60,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-18 — step 3 checkpointed · d476dd3db — Critic-seat canary in `--dry-run` (1 drift, 11m)
 - 2026-07-18 — step 4 checkpointed · 3d5c05eb6 — `volley matrix` subcommand (1 drift, 17m)
 - 2026-07-18 — step 5 checkpointed · 38436fa92 — README refresh to v0.4.0 truth (7m)
+- 2026-07-18 — step 6 checkpointed · f475bc3a7 — Draft the upstream Ollama report (4m)

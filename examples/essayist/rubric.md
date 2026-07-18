@@ -1,0 +1,7 @@
+- `essay.md` exists at the workspace root with one `# ` title, at least three `## ` argument sections, and a final `## Sources` section
+- The body runs 900–1400 words of continuous prose — paragraphs, not bullet lists (list items belong only under `## Sources`)
+- The opening paragraph ends in an arguable thesis — a claim a reasonable reader could dispute, not a description of the topic
+- Every section advances the argument with at least one concrete particular (a scene, a study, a named object); no section restates another
+- The strongest objection to the thesis is stated fairly and answered in the body
+- `## Sources` names at least three real works (author and title), and each is invoked in the body where it carries weight, not just listed at the end
+- `node check.mjs` exits 0 in the workspace
