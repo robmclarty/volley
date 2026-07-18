@@ -163,6 +163,94 @@ function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): st
   ].join('\n');
 }
 
+/** What the `--dry-run` canary learned about the critic seat (D5, amended
+ * Q6/Q7): `ok` — the tool-bearing call came back; `degraded` — the tool-bearing
+ * call died on a provider stream error but a tool-less pass survived, so a real
+ * run will likely finish via the fallback ladder (`critic_degraded`);
+ * `failed` — even the tool-less pass died, so the combo would fail a real run
+ * degraded or not. */
+export type CanaryOutcome =
+  | { outcome: 'ok' }
+  | { outcome: 'degraded'; detail: string }
+  | { outcome: 'failed'; detail: string };
+
+/** The canary must *elicit a real tool call* (D5): the qwen3.6 death happens at
+ * tool-markup emission inside Ollama's server-side parser, so a call that never
+ * invokes a tool could not fail and would prove nothing. The target path need
+ * not exist — a tool error is fed back and the model answers anyway; entering
+ * the parser is the test. No token cap: the budget is behavioral (one tool call,
+ * then an immediate one-word verdict), because a hard `max_tokens` could
+ * truncate a thinking model mid-verdict and report `failed` for a combo that
+ * works. A model that skips the tool and just answers passes stochastically —
+ * acceptable per D5: the canary is early warning, the ladder is the guarantee. */
+const CANARY_PROMPT = [
+  'CANARY CHECK — a tiny wiring probe, not a real review.',
+  'First, call the read_file tool on the path "package.json".',
+  'Whatever the tool returns (content or an error), immediately answer with',
+  'verdict "approved", feedback exactly "canary", and empty unmet_criteria.',
+].join('\n');
+
+/** The canary's tool-less rung: same schema-constrained call, no tool ask. */
+const CANARY_TOOLLESS_PROMPT = [
+  'CANARY CHECK — a tiny wiring probe, not a real review.',
+  'Answer with verdict "approved", feedback exactly "canary", and empty',
+  'unmet_criteria.',
+].join('\n');
+
+function canary_detail(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The `--dry-run` critic-seat canary (D5): one tiny generate through the *real*
+ * production tool wiring (`critic_tool_options`) and `verdict_schema`, $0 on a
+ * local model. The caller (preflight) gates it to local critics only —
+ * `claude_cli` is proven and its calls cost real money (D2).
+ *
+ * A tool-bearing death is classified by the same discriminant as the run-time
+ * ladder (D8: typed `provider_error` only), then probed tool-less exactly as
+ * rung 2 would run, so the canary *predicts the ladder* instead of guessing:
+ * tool-less survives → `degraded` (warn — the combo completes a real run,
+ * marked); tool-less dies too → `failed` (the endpoint-down / model-missing
+ * class that earns exit 5 because not even degradation would save it).
+ */
+export async function critic_canary(
+  engine: Engine,
+  config: ResolvedConfig,
+  env: Record<string, string | undefined> = process.env,
+): Promise<CanaryOutcome> {
+  // Same cold-load guard as the real critic phase: without it a disk-cold model
+  // would die on the first-byte timeout and the canary would cry wolf.
+  if (config.critic_provider === 'ollama') {
+    await prewarm_ollama_model(resolve_ollama_base_url(env), config.critic_model);
+  }
+  const base: Omit<GenerateOptions<VerdictOutput>, 'prompt' | 'tools' | 'provider_options'> = {
+    provider: config.critic_provider,
+    model: config.critic_model,
+    system: resolve_critic_prompt(config),
+    schema: verdict_schema,
+  };
+  try {
+    await engine.generate({
+      ...base,
+      prompt: CANARY_PROMPT,
+      ...critic_tool_options(config),
+    });
+    return { outcome: 'ok' };
+  } catch (err) {
+    if (error_kind(err) !== 'provider_error') {
+      return { outcome: 'failed', detail: canary_detail(err) };
+    }
+    const tool_death = canary_detail(err);
+    try {
+      await engine.generate({ ...base, prompt: CANARY_TOOLLESS_PROMPT });
+      return { outcome: 'degraded', detail: tool_death };
+    } catch (fallback_err) {
+      return { outcome: 'failed', detail: canary_detail(fallback_err) };
+    }
+  }
+}
+
 export async function run_critic(
   deps: CriticDeps,
   state: LoopState,

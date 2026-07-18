@@ -55,3 +55,4 @@ you point at to say "I did that — the LLM helped, but those were my calls."
 `/pb-finish` reads this for the report; `plumbbob finish` commits it with the build
 folder, so it rides the branch into the PR.)*
 - 2026-07-18 — step 1 checkpointed · 5d0a5f8f0 — OQ-11: bounded critic retry on provider stream errors (1 drift, 9m)
+- 2026-07-18 — step 2 checkpointed · bb7fedac4 — OQ-12: tool-less critic fallback + `critic_degraded` marker (1 drift, 88m)

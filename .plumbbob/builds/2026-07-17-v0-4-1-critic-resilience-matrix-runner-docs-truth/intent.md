@@ -136,7 +136,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `src/critic/run.ts`, `src/types.ts`, `test/critic_retry.test.ts`
    - model: opus — error-path semantics with an existing phase_error contract to preserve
 
-2. [ ] OQ-12: tool-less critic fallback + `critic_degraded` marker — **done when:** a test simulating persistent tool-phase stream death still yields a schema-valid verdict, and `summary.json` (iteration + comparison block) carries `critic_degraded: true`
+2. [x] OQ-12: tool-less critic fallback + `critic_degraded` marker — **done when:** a test simulating persistent tool-phase stream death still yields a schema-valid verdict, and `summary.json` (iteration + comparison block) carries `critic_degraded: true`
    - seam: `src/critic/run.ts`, `src/summary.ts`, `src/types.ts`, `test/critic_fallback.test.ts`
    - model: opus — the degradation ladder is the build's core judgment call
 
