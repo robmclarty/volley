@@ -163,7 +163,7 @@ serially over one fixed config instead of hand-editing model flags per run:
 
 ```sh
 volley matrix \
-  --config ./examples/local-loop/volley.config.ts \
+  --config ./examples/essayist/volley.config.ts \
   --builders qwen3.6:latest \
   --critics qwen3:8b,gemma4:12b,glm-4.7-flash
 ```

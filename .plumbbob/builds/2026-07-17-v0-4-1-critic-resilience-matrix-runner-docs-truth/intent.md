@@ -164,9 +164,13 @@ volley matrix --builders a,b --critics c,d
    - seam: `examples/ladder/`
    - model: fable — authoring seven distinct probe tasks with planted defects and calibrated criteria is design work
 
-9. [ ] Dependency-wrangling online-only run recipe — **done when:** the ladder README replaces the vague "network opened to the registry" note with a concrete, `src/sandbox.ts`-accurate path to the registry — warm `slugify` into the `volley-pnpm-store` volume via `pnpm store add` then run under `--network none`; the Linux `DOCKER-USER` deny vs macOS/Windows egress reality; the uncontained fallback — and all seven ladder probes re-verify green on `--dry-run` against a freshly built `dist/` with the critic-seat canary actually firing (`critic canary: ok`); `pnpm check` green
+9. [x] Dependency-wrangling online-only run recipe — **done when:** the ladder README replaces the vague "network opened to the registry" note with a concrete, `src/sandbox.ts`-accurate path to the registry — warm `slugify` into the `volley-pnpm-store` volume via `pnpm store add` then run under `--network none`; the Linux `DOCKER-USER` deny vs macOS/Windows egress reality; the uncontained fallback — and all seven ladder probes re-verify green on `--dry-run` against a freshly built `dist/` with the critic-seat canary actually firing (`critic canary: ok`); `pnpm check` green
    - seam: `examples/ladder/README.md`
    - model: sonnet — docs refinement grounded in `src/sandbox.ts`
+
+10. [ ] Fix the main README matrix example config path — **done when:** the `volley matrix` example in `README.md`'s "Matrix sweep" section points `--config` at a real, committed example config (`./examples/essayist/volley.config.ts`) instead of the nonexistent `./examples/local-loop/`; `pnpm check` green (the `links` gate passes); resolves the 1 parked item (formally classified at `/pb-harvest`)
+   - seam: `README.md`
+   - model: sonnet — trivial mechanical path fix; any model fits
 
 ## Open questions
 
