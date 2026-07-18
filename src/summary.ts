@@ -70,6 +70,12 @@ export type ComparisonSummary = {
   final_verdict: Verdict | null;
   check_trajectory: CheckTrajectoryPoint[];
   local_salvage: SalvageStats;
+  /** Any iteration's critic verdict was rendered by the tool-less fallback
+   * (OQ-12/D3): the tool-bearing critique kept dying on the provider's stream, so
+   * the critic judged without read access — real, but shallower. The run's
+   * headline honesty flag, and the "degraded" column the matrix runner (step
+   * 4/D11) reads straight from this block. */
+  critic_degraded: boolean;
 };
 
 /** `RunResult` plus the comparison block; `.volley/summary.json` mirrors this. */
@@ -82,6 +88,7 @@ type IterationArchive = {
   iteration?: number;
   builder?: { tool_calls?: number; salvaged_tool_calls?: number } | null;
   check?: { ran?: boolean; ok?: boolean; failing_slots?: string[] } | null;
+  critic?: { critic_degraded?: boolean } | null;
 };
 
 /** Read the archived per-iteration summaries in order. A missing archive root
@@ -114,6 +121,13 @@ function check_trajectory(archives: IterationArchive[]): CheckTrajectoryPoint[] 
     ok: archive.check?.ok === true,
     failing_slots: archive.check?.failing_slots ?? [],
   }));
+}
+
+/** The run degraded if any archived iteration's critic verdict came from the
+ * tool-less fallback (OQ-12/D3). Reads the same on-disk archives as the other
+ * comparison metrics, so it grows with the run. */
+function any_critic_degraded(archives: IterationArchive[]): boolean {
+  return archives.some((archive) => archive.critic?.critic_degraded === true);
 }
 
 function salvage_stats(archives: IterationArchive[]): SalvageStats {
@@ -153,6 +167,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       final_verdict: result.final_verdict,
       check_trajectory: check_trajectory(archives),
       local_salvage: salvage_stats(archives),
+      critic_degraded: any_critic_degraded(archives),
     },
   };
 }

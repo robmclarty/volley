@@ -4,7 +4,7 @@
  * `.volley/feedback.md` and `.volley/verdict`.
  */
 import { z } from 'zod';
-import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
+import type { Engine, GenerateOptions, GenerateResult, StreamChunk } from 'fascicle';
 import type { RunContext } from 'fascicle';
 import { accumulate } from '../cost.js';
 import { resolve_ollama_base_url } from '../engine.js';
@@ -13,7 +13,7 @@ import { error_kind, phase_error } from '../types.js';
 import type { CauseKind, LoopState, ResolvedConfig } from '../types.js';
 import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
-import { read_only_tools } from './tools.js';
+import { read_only_tools, workspace_inventory } from './tools.js';
 
 export const CRITIC_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 
@@ -106,6 +106,63 @@ function retry_cause_kind_of(err: unknown): CauseKind {
   return cause === 'provider_5xx' || cause === 'network' ? cause : 'unknown';
 }
 
+/** Bookkeeping stamped onto a critic record by the degradation ladder: how many
+ * tool-bearing retries preceded this verdict, the last retry's cause, and — on the
+ * tool-less rung — the `critic_degraded` mark (D3/D8). */
+type LadderMark = {
+  retries: number;
+  retry_cause_kind: CauseKind | undefined;
+  critic_degraded?: boolean;
+};
+
+/** Fold a successful critic `generate` result into loop state, stamping the
+ * ladder bookkeeping onto the critic record. Shared by the tool-bearing path and
+ * the tool-less fallback so both shape the record identically (the fallback just
+ * adds `critic_degraded: true`). */
+function finalize_critic(
+  state: LoopState,
+  result: GenerateResult<VerdictOutput>,
+  model: string,
+  mark: LadderMark,
+): LoopState {
+  const next = accumulate(state, 'critic', result, model);
+  return {
+    ...next,
+    critic:
+      next.critic === null
+        ? null
+        : {
+            ...next.critic,
+            retries: mark.retries,
+            ...(mark.retry_cause_kind !== undefined
+              ? { retry_cause_kind: mark.retry_cause_kind }
+              : {}),
+            ...(mark.critic_degraded === true ? { critic_degraded: true } : {}),
+          },
+    verdict: result.content.verdict,
+    feedback: result.content.feedback,
+    unmet_criteria: result.content.unmet_criteria,
+  };
+}
+
+/** The tool-less fallback's prompt: the normal critic prompt plus a notice that
+ * read tools are gone this pass and a paths+sizes workspace inventory (D4/D9), so
+ * the critic still judges from the criteria, the raw check artifacts already in
+ * the prompt, and the file layout — grounded, just shallower. */
+function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): string {
+  return [
+    tool_prompt,
+    '',
+    'NOTE: file-read tools are unavailable for this review. Judge from the',
+    'acceptance criteria, the deterministic check output above, and the workspace',
+    'file inventory below (paths and sizes only — file contents are not shown).',
+    '',
+    'WORKSPACE FILE INVENTORY',
+    '------------------------',
+    workspace_inventory(build_root(config.workspace, config.worktree)),
+  ].join('\n');
+}
+
 export async function run_critic(
   deps: CriticDeps,
   state: LoopState,
@@ -115,6 +172,7 @@ export async function run_critic(
   if (state.check === null) {
     throw phase_error('critic', state.iteration, new Error('check phase did not run'));
   }
+  const check = state.check;
   try {
     // Same cold-load guard as the builder: pre-load an Ollama critic model so
     // a cold multi-GB load doesn't blow the real call's first-byte timeout.
@@ -126,52 +184,62 @@ export async function run_critic(
         ctx.abort,
       );
     }
-    // Retry a local critic's stochastic stream death once (D1) before the
-    // tool-less fallback (OQ-12) trades read access for survival. `attempt` is
-    // also the retry count folded into the record: 0 on a first-try success.
+    // Shared across every rung of the ladder; only the prompt and the tool
+    // wiring differ between the tool-bearing attempts and the tool-less fallback.
+    const base: Omit<GenerateOptions<VerdictOutput>, 'prompt' | 'tools' | 'provider_options'> = {
+      provider: config.critic_provider,
+      model: config.critic_model,
+      system: resolve_critic_prompt(config),
+      schema: verdict_schema,
+      abort: ctx.abort,
+      trajectory: ctx.trajectory,
+      on_chunk: deps.on_chunk,
+    };
+    const tool_prompt = compose_critic_prompt({
+      criteria: config.criteria,
+      iteration: state.iteration,
+      check,
+    });
+
+    // Rung 1 (D1/OQ-11): retry a local critic's stochastic tool-phase stream
+    // death once before the fallback trades read access for survival. `attempt`
+    // is also the retry count folded into the record: 0 on a first-try success.
+    // A non-retryable failure (schema, abort, claude_cli) throws straight through
+    // to `phase_error`; a retryable one exhausted at the last attempt falls out of
+    // the loop to rung 2 rather than throwing.
     let retry_cause_kind: CauseKind | undefined;
     for (let attempt = 0; attempt <= MAX_CRITIC_RETRIES; attempt += 1) {
       try {
         const result = await engine.generate({
-          provider: config.critic_provider,
-          model: config.critic_model,
-          system: resolve_critic_prompt(config),
-          prompt: compose_critic_prompt({
-            criteria: config.criteria,
-            iteration: state.iteration,
-            check: state.check,
-          }),
-          schema: verdict_schema,
-          abort: ctx.abort,
-          trajectory: ctx.trajectory,
-          on_chunk: deps.on_chunk,
+          ...base,
+          prompt: tool_prompt,
           ...critic_tool_options(config),
         });
-        const next = accumulate(state, 'critic', result, config.critic_model);
-        return {
-          ...next,
-          critic:
-            next.critic === null
-              ? null
-              : {
-                  ...next.critic,
-                  retries: attempt,
-                  ...(retry_cause_kind !== undefined ? { retry_cause_kind } : {}),
-                },
-          verdict: result.content.verdict,
-          feedback: result.content.feedback,
-          unmet_criteria: result.content.unmet_criteria,
-        };
+        return finalize_critic(state, result, config.critic_model, {
+          retries: attempt,
+          retry_cause_kind,
+        });
       } catch (err) {
-        if (attempt === MAX_CRITIC_RETRIES || !is_retryable_critic_error(config, ctx, err)) {
-          throw err;
-        }
+        if (!is_retryable_critic_error(config, ctx, err)) throw err;
         retry_cause_kind = retry_cause_kind_of(err);
       }
     }
-    // The loop returns on success or throws on the last attempt; this line only
-    // satisfies the type checker's need for a terminal statement.
-    throw new Error('unreachable: critic retry loop exited without a result');
+
+    // Rung 2 (D3/D4/D9/OQ-12): every tool-bearing attempt died on a retryable
+    // local provider stream error, so run one tool-less pass — no tools enter
+    // Ollama's broken parser, constrained decode (`schema`) still guarantees the
+    // verdict, and the workspace inventory keeps it grounded. Marked
+    // `critic_degraded`. A death here throws → the outer catch → `phase_error`,
+    // so exit-6 semantics are preserved (C4).
+    const result = await engine.generate({
+      ...base,
+      prompt: toolless_critic_prompt(config, tool_prompt),
+    });
+    return finalize_critic(state, result, config.critic_model, {
+      retries: MAX_CRITIC_RETRIES,
+      retry_cause_kind,
+      critic_degraded: true,
+    });
   } catch (err) {
     throw phase_error('critic', state.iteration, err);
   }

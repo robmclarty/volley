@@ -92,14 +92,17 @@ describe('run_critic local retry (OQ-11)', () => {
     }
   });
 
-  it('fails with a critic phase_error once the single retry is exhausted', async () => {
+  it('fails with a critic phase_error once the whole ladder is exhausted', async () => {
     const { engine, invoke, cleanup } = make(() => err_reply(stream_death('network')));
     try {
       const err = await invoke().then(
         () => null,
         (e: unknown) => e,
       );
-      expect(engine.calls).toHaveLength(MAX_CRITIC_RETRIES + 1);
+      // rung 1's tool-bearing attempts (initial + retry) plus rung 2's tool-less
+      // fallback (OQ-12) — the fallback dies here too, so the run still ends in a
+      // critic phase_error. The degraded-verdict path is covered in critic_fallback.
+      expect(engine.calls).toHaveLength(MAX_CRITIC_RETRIES + 2);
       expect(error_kind(err)).toBe('phase_error');
       expect((err as PhaseError).phase).toBe('critic');
       // The cause survives as fascicle's typed provider_error → still exit 6.

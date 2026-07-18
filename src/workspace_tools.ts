@@ -190,3 +190,26 @@ export function read_only_tools(workspace: string): Tool[] {
 
   return [read_file, search_files, list_files];
 }
+
+/** A `paths + sizes` listing of the workspace tree, no file contents — the
+ * grounding a tool-less critic gets when its provider's tool parser died and the
+ * degradation ladder (OQ-12/D9) traded read access for survival. Reuses the same
+ * `walk` + `IGNORED_DIRS` traversal as the read tools, so the inventory matches
+ * what a working `list_files` would have surfaced; caps at `limit` entries. */
+export function workspace_inventory(root: string, limit: number = LIST_MAX_ENTRIES): string {
+  const base = resolve(root);
+  const files = walk(base, base, limit);
+  if (files.length === 0) return 'no files';
+  const lines = files.map((file) => {
+    let size: number;
+    try {
+      size = statSync(file.abs).size;
+    } catch {
+      size = 0;
+    }
+    return `${file.rel} (${String(size)} bytes)`;
+  });
+  const capped =
+    files.length >= limit ? `\n… [capped at ${String(limit)} entries]` : '';
+  return `${lines.join('\n')}${capped}`;
+}

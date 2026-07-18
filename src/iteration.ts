@@ -59,6 +59,16 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
     // tool-call encoding is drifting from its runtime's parser (pin them as one
     // unit). 0 when the phase made no tool calls (the CLI builder's own loop).
     salvage_rate: record.tool_calls === 0 ? 0 : record.salvaged_tool_calls / record.tool_calls,
+    // Degradation-ladder bookkeeping (OQ-11/OQ-12), critic-only: the provider-error
+    // retries that preceded this verdict, their cause, and whether it was rendered
+    // by the tool-less fallback. Emitted only when set, so the builder record and
+    // old summary consumers are untouched (C5). `critic_degraded` is the on-disk
+    // half of the done-when — the comparison block reads it back from here.
+    ...(record.retries !== undefined ? { retries: record.retries } : {}),
+    ...(record.retry_cause_kind !== undefined
+      ? { retry_cause_kind: record.retry_cause_kind }
+      : {}),
+    ...(record.critic_degraded === true ? { critic_degraded: true } : {}),
   };
 }
 

@@ -159,6 +159,14 @@ export type PhaseRecord = {
   /** The `cause_kind` of the retried provider error, recorded with `retries`
    * (D8). Absent when no retry happened. */
   retry_cause_kind?: CauseKind;
+  /** This local-critic verdict was rendered by the tool-less fallback rung
+   * (OQ-12/D3): the tool-bearing critique kept dying on the provider's stream
+   * even after the bounded retry, so the critic judged with no read access —
+   * grounded only by the criteria, the raw check artifacts, and a workspace file
+   * inventory (D9). Set (true) on a degraded critic record; absent on a full
+   * critique and on the builder. Additive (C5), and a degraded verdict is *always*
+   * marked so it never passes silently as a full one (D3). */
+  critic_degraded?: boolean;
 };
 
 export type HaltReason = 'cost_cap' | null;

@@ -13,4 +13,5 @@ export {
   SEARCH_MAX_MATCHES,
   contain,
   read_only_tools,
+  workspace_inventory,
 } from '../workspace_tools.js';

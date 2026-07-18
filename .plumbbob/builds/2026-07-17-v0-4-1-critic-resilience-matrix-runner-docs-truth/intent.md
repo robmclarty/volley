@@ -132,7 +132,7 @@ volley matrix --builders a,b --critics c,d
 
 ## Steps
 
-1. [ ] OQ-11: bounded critic retry on provider stream errors — **done when:** a unit test simulating a stream-death on the first critic call and success on the second sees the iteration complete, with the retry counted in the iteration summary
+1. [x] OQ-11: bounded critic retry on provider stream errors — **done when:** a unit test simulating a stream-death on the first critic call and success on the second sees the iteration complete, with the retry counted in the iteration summary
    - seam: `src/critic/run.ts`, `src/types.ts`, `test/critic_retry.test.ts`
    - model: opus — error-path semantics with an existing phase_error contract to preserve
 
