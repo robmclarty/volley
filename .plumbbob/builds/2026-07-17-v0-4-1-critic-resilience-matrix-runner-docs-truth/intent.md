@@ -38,6 +38,8 @@
   - Filing the Ollama issue — the build drafts the text; filing is the human's
     external action.
   - The plumbbob build-slot agent integration (separate future build).
+  - Builder-phase retry on stream errors (Q5 verdict: critic-only this build;
+    a builder stream death leaves a half-written workspace — parked).
 
 ## Architecture sketch
 
@@ -75,10 +77,39 @@ volley matrix --builders a,b --critics c,d
   enforcement is the part that works; only the tool surface enters Ollama's
   broken parser path, and the critic prompt already carries criteria + raw
   check artifacts, so a tool-less verdict is grounded, just shallower.
-- D5: **The `--dry-run` canary runs only for a local critic and costs $0** — a
-  ~1-token `generate` through the *real* tool wiring + `verdict_schema` —
-  *because* that exact combination is what kills qwen3.6, and preflight's
-  contract is truthful refusal before spend (exit 5).
+- D5 *(amended per Q6/Q7)*: **The `--dry-run` canary runs only for a local
+  critic, costs $0, and must elicit a real tool call** — a short `generate`
+  through the *real* tool wiring + `verdict_schema` whose prompt instructs the
+  model to invoke a read tool before answering (a 1-token call would never
+  enter Ollama's tool parser and could not fail) — *because* the qwen3.6 death
+  happens at tool-markup emission. **Canary failure warns and predicts
+  degradation; it does not exit 5** — the fallback ladder means the combo
+  survives a real run, so refusing it would contradict step 2. Exit 5 remains
+  for failures that would fail even degraded (endpoint down, model missing). A
+  stochastic canary pass is acceptable: the canary is early warning, the ladder
+  is the guarantee.
+- D8: **The ladder triggers on fascicle's typed `provider_error` only**
+  (`err.kind === 'provider_error'`, guarded by `!abort.aborted`) — *because*
+  fascicle exposes typed error classes (spiked 2026-07-17):
+  `schema_validation_error` stays exit-6, aborts stay exit-130, and no string
+  matching is needed. `cause_kind` (`provider_5xx`/`network`/`unknown`) is
+  recorded with the retry count.
+- D9: **The tool-less fallback prompt carries a workspace file inventory**
+  (paths + sizes, no contents) — *because* under `check: 'none'` a tool-less
+  critic would otherwise judge blind; a few lines of code keeps the degraded
+  verdict minimally grounded.
+- D10: **Example gates stay dependency-free**: the essayist check is a plain
+  node script (word count / structure / citations-present), not vale; the
+  dependency-wrangling ladder probe is disclosed **online-only** in the ladder
+  README — *because* the sandbox's egress posture is deny-by-default (allowlist
+  to host Ollama only, or `--network none`), so an in-sandbox `pnpm add` cannot
+  reach the npm registry.
+- D11: **`volley matrix` requires a git-repo workspace and forces `--worktree`
+  per combo** — *because* the existing worktree teardown gives clean per-combo
+  resets with zero new reset machinery. Per-combo `summary.json` is copied to
+  `.volley-matrix/<builder>__<critic>/` before teardown; the sweep exits 0 when
+  every combo produced a summary (a non-converging combo is a *result*, shown
+  in the table), nonzero only when the sweep itself broke.
 - D6: **Matrix runner is a `volley matrix` subcommand, serial execution** —
   *because* a subcommand reuses `resolve_config`/worktree reset instead of
   reimplementing them in bash, and local models share one GPU: parallel combos
@@ -135,7 +166,8 @@ volley matrix --builders a,b --critics c,d
 
 ## Open questions
 
-*(none open — see Verdicts)*
+*(none open — Q1–Q3 resolved at the plan pause, Q4–Q10 resolved through
+/pb-refine; see Verdicts.)*
 
 ## Verdicts
 
@@ -147,3 +179,20 @@ volley matrix --builders a,b --critics c,d
 - 2026-07-17 — Q3 (`--no-critic-fallback` opt-out) → **no flag**; the
   `critic_degraded` marker makes degradation visible and downstream consumers
   can treat it as failure themselves.
+- 2026-07-17 — Q4 (error classification) → **spiked fascicle 0.9.5's error
+  surface**: typed `provider_error` class with `kind` discriminant and
+  `cause_kind` (`provider_5xx`/`network`/`unknown`); `schema_validation_error`
+  and aborts are distinct classes/signals → D8, no string matching.
+- 2026-07-17 — Q5 (builder retry) → **critic-only this build**; a builder
+  stream death leaves a half-written workspace with state implications the
+  critic doesn't have. Builder-phase retry parked as a follow-up OQ.
+- 2026-07-17 — Q6 (canary design) → **canary must elicit a real tool call**;
+  D5 amended, exact prompt/token budget decided at step 3.
+- 2026-07-17 — Q7 (canary refuse vs warn) → **warn-and-predict**; exit 5 only
+  for would-fail-even-degraded conditions → D5 amended.
+- 2026-07-17 — Q9 (blind fallback) → **inject file inventory** (paths + sizes)
+  into the tool-less fallback prompt → D9.
+- 2026-07-17 — Q10 (example gates) → **no vale; plain node script gate** for
+  the essayist; dependency-wrangling probe disclosed online-only → D10.
+- 2026-07-17 — Q8 (matrix mechanics) → **git + forced `--worktree` per combo,
+  summaries copied to `.volley-matrix/`, sweep-level exit semantics** → D11.
