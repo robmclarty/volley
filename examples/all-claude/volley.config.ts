@@ -8,7 +8,7 @@
 // transport (verification §4).
 //
 // Run (host, no Docker):
-//   pnpm add -D checkride vitest typescript   # once, inside ./workspace
+//   pnpm install --ignore-workspace           # once, inside ./workspace
 //   volley --config examples/all-claude/volley.config.ts
 //
 // The workspace ships a minimal checkride.config.json (types + test), so

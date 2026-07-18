@@ -27,6 +27,8 @@ is done only after a checkpoint — check green + checkpoint taken, via `/pb-ver
 > Mid-step, every new problem / idea / "ooh what if" lands HERE, untouched, and you
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/pb-park` composes it). Harvest happens only at the boundary.
+- [ ] OQ-11: Phase-level bounded retry on provider stream errors (qwen3.6 critic syntax slip is stochastic; retry may succeed; gate on repeats to avoid infinite loops)
+- [ ] OQ-12: Tool-less critic fallback (after N tool-phase deaths, re-run critic with no tools; it already receives criteria + check artifacts in its prompt, render degraded verdict)
 
 ## Harvest  *(run `/pb-harvest` at each step boundary, after green)*
 
@@ -68,3 +70,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-16 — step 12 checkpointed · 55659b153 — Network policy: default-deny egress (s2 D6; D12) (1 drift, 436m)
 - 2026-07-16 — step 13 checkpointed · 20bbb3a3e — Whole-process containment: run volley in-container + retire the host-orchestrated exec (1 drift, 22m)
 - 2026-07-16 — step 14 checkpointed · fc90e3fac — `--sandbox` = require-containment gate + `--dry-run` preflight (s2 D1/D6/D7/D10; D9, B′) (1 drift, 25m)
+- 2026-07-16 — step 15 checkpointed · dda697b15 — The two blessed examples + `summary.json` comparison fields (s2 D9/D10) (1 drift, 15m)

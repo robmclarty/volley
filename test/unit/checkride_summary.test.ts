@@ -5,6 +5,7 @@ import {
   CHECK_ARTIFACT_MAX_CHARS,
   failing_checks,
   parse_checkride_summary,
+  parse_summary_with_fallback,
   read_failing_artifacts,
 } from '../../src/check/checkride.js';
 import { error_kind } from '../../src/types.js';
@@ -75,6 +76,13 @@ describe('parse_checkride_summary', () => {
     expect(warning).toMatch(/schema_version 2/);
   });
 
+  it('parses through pnpm exec chatter around the JSON (pnpm 11 dep-verify)', () => {
+    const wrapped = `Already up to date\nDone in 249ms using pnpm v11.1.2\n${JSON.stringify(summary_fixture())}\n`;
+    const { summary, warning } = parse_checkride_summary(wrapped);
+    expect(summary.ok).toBe(true);
+    expect(warning).toBeNull();
+  });
+
   it('throws check_error on unparseable stdout', () => {
     try {
       parse_checkride_summary('not json');
@@ -90,6 +98,32 @@ describe('parse_checkride_summary', () => {
       expect.unreachable('should have thrown');
     } catch (err) {
       expect(error_kind(err)).toBe('check_error');
+    }
+  });
+});
+
+describe('parse_summary_with_fallback', () => {
+  it('falls back to the on-disk .check/summary.json when stdout carries no JSON', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      mkdirSync(join(workspace, '.check'));
+      writeFileSync(join(workspace, '.check', 'summary.json'), JSON.stringify(summary_fixture()));
+      const { summary } = parse_summary_with_fallback('no json here', workspace);
+      expect(summary.ok).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('rethrows when stdout is unparseable and no summary file exists', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      parse_summary_with_fallback('no json here', workspace);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(error_kind(err)).toBe('check_error');
+    } finally {
+      cleanup();
     }
   });
 });

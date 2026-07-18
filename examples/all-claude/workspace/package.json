@@ -1,0 +1,10 @@
+{
+  "name": "all-claude-workspace",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "checkride": "0.4.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

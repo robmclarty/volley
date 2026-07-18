@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
@@ -68,6 +68,24 @@ describe('create_worktree', () => {
       expect(branch_names(workspace)).toContain('volley/run1');
       // HEAD of the new worktree is the per-run branch.
       expect(git_out(handle.path, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()).toBe('volley/run1');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('links the workspace node_modules into the fresh worktree (toolchain rides along)', () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      // node_modules is untracked, so the checkout alone would leave the
+      // worktree toolchain-less; create_worktree links the workspace's in.
+      mkdirSync(join(workspace, 'node_modules', '.bin'), { recursive: true });
+      writeFileSync(join(workspace, 'node_modules', '.bin', 'tool'), '#!/bin/sh\n');
+
+      const handle = create_worktree({ workspace, branch: worktree_branch('run1') });
+
+      const linked = join(handle.path, 'node_modules');
+      expect(lstatSync(linked).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(linked, '.bin', 'tool'))).toBe(true);
     } finally {
       cleanup();
     }

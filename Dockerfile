@@ -42,7 +42,9 @@ RUN corepack enable \
 # first for a cached dependency layer, then the source + build. `a+rX` so any
 # `--user`-mapped uid can read and execute it under the read-only rootfs.
 WORKDIR /opt/volley
-COPY package.json pnpm-lock.yaml ./
+# pnpm-workspace.yaml rides along for its `allowBuilds` approvals — without
+# them pnpm 11 hard-fails the install on the ignored build scripts.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build \

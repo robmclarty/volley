@@ -186,6 +186,36 @@ describe('orchestrator worktree lifecycle (config.worktree)', () => {
   });
 });
 
+describe('check at the build root (s2 D3, step 8 deferral landed)', () => {
+  it('gates the check on the worktree tree, not the workspace', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      // The builder writes out.txt into its containment root (the worktree);
+      // the command check only passes where that file exists, so a green run
+      // proves the check executed at the build root — not the workspace,
+      // which stays clean.
+      const config = test_config({
+        workspace,
+        worktree: true,
+        builder_provider: 'ollama',
+        builder_model: 'qwen3-coder:30b',
+        allow_unsandboxed_builder: true,
+        check: 'test -f out.txt',
+        check_resolved: 'command',
+      });
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine: writing_builder(),
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      expect(existsSync(join(workspace, 'out.txt'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('worktree-branch checkpoints + integration (D13, step 9)', () => {
   it('checkpoints on the worktree branch and squash-integrates onto the workspace branch on success', async () => {
     const { workspace, cleanup } = temp_git_workspace();

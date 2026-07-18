@@ -2,17 +2,17 @@
 # ship source + manifests, never host-built artifacts or run state. node_modules
 # and dist are rebuilt in-image (`pnpm install` / `pnpm build`); the rest is
 # host-only bookkeeping the in-container builder must not inherit.
-node_modules
+**/node_modules
 dist
-*.tsbuildinfo
-.git
+**/*.tsbuildinfo
+**/.git
 .plumbbob
-.check
+**/.check
 .fallow
 .firecrawl
-.volley
-.volley.bak.*
-*.worktree
-*.log
-.DS_Store
+**/.volley
+**/.volley.bak.*
+**/*.worktree
+**/*.log
+**/.DS_Store
 .env

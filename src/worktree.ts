@@ -10,7 +10,7 @@
  * later steps. This module owns the create / rotate / teardown mechanics they
  * build on.
  */
-import { existsSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check_error, config_error } from './types.js';
@@ -120,6 +120,17 @@ export function create_worktree(options: {
   }
 
   git_ok(repo, ['worktree', 'add', '-b', options.branch, path, base]);
+
+  // The toolchain rides along: `node_modules` is untracked, so a fresh
+  // checkout has none — link the workspace's install in so the deterministic
+  // check (which runs at the build root, s2 D3) and the builder's `bash` can
+  // run the project toolchain without a per-run re-install.
+  const modules = join(repo, 'node_modules');
+  if (existsSync(modules) && !existsSync(join(path, 'node_modules'))) {
+    symlinkSync(modules, join(path, 'node_modules'), 'dir');
+    log(`worktree: linked node_modules from ${repo}`);
+  }
+
   return { path, branch: options.branch };
 }
 

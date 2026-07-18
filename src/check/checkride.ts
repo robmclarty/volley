@@ -74,12 +74,19 @@ export type ParsedSummary = {
   warning: string | null;
 };
 
-/** Best-effort parse of the summary contract. An unexpected schema_version
- * warns and still parses; malformed JSON is a harness error (exit 4). */
+/** Best-effort parse of the summary contract. `pnpm exec` talks over the
+ * command's stdout (pnpm 11's dep-verify prints an "Already up to date"
+ * install line ahead of the JSON), so the object is extracted between the
+ * first `{` and the last `}` rather than parsed from byte 0. An unexpected
+ * schema_version warns and still parses; no JSON object at all is a harness
+ * error (exit 4). */
 export function parse_checkride_summary(stdout: string): ParsedSummary {
+  const start = stdout.indexOf('{');
+  const end = stdout.lastIndexOf('}');
   let raw: unknown;
   try {
-    raw = JSON.parse(stdout);
+    if (start === -1 || end < start) throw new Error('no JSON object in stdout');
+    raw = JSON.parse(stdout.slice(start, end + 1));
   } catch {
     throw check_error('checkride --json produced unparseable stdout');
   }
@@ -92,6 +99,19 @@ export function parse_checkride_summary(stdout: string): ParsedSummary {
       ? null
       : `checkride summary schema_version ${String(summary.schema_version)} != ${String(CHECKRIDE_SCHEMA_VERSION)}; parsing best-effort`;
   return { summary, warning };
+}
+
+/** Parse the summary from stdout, falling back to the on-disk contract:
+ * `.check/summary.json` is what checkride documents; stdout is its mirror and
+ * wrappers may talk over it beyond what the tolerant slice can recover. */
+export function parse_summary_with_fallback(stdout: string, workspace: string): ParsedSummary {
+  try {
+    return parse_checkride_summary(stdout);
+  } catch (err) {
+    const file = join(workspace, '.check', 'summary.json');
+    if (!existsSync(file)) throw err;
+    return parse_checkride_summary(readFileSync(file, 'utf8'));
+  }
 }
 
 export function failing_checks(summary: CheckrideSummary): CheckrideSummaryCheck[] {
@@ -136,7 +156,7 @@ export async function run_checkride(opts: CheckrideOpts): Promise<CheckResult> {
   if (proc.exit_code === 2) {
     throw check_error(`checkride harness error: ${proc.stderr.trim()}`);
   }
-  const { summary } = parse_checkride_summary(proc.stdout);
+  const { summary } = parse_summary_with_fallback(proc.stdout, opts.workspace);
   const failing = failing_checks(summary);
   return {
     ran: true,

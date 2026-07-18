@@ -308,7 +308,7 @@ Session 2 (containment, shape B′ — the whole volley builder runs in one hard
     **never exits 5 on the all-Claude path**.
     - seam: `src/config.ts`, `src/cli.ts`, new preflight module
     - model: opus — safety-gate reframe (create → require containment) + preflight exit-code contract
-15. [ ] The two blessed examples + `summary.json` comparison fields (s2 D9/D10) — **done
+15. [x] The two blessed examples + `summary.json` comparison fields (s2 D9/D10) — **done
     when:** `examples/all-claude/` (`claude_cli` builder+critic, no Docker) and
     `examples/all-local/` (`ollama` builder+critic, ai_sdk transport, checkride gate, Docker
     sandbox + worktree, `fetch` enabled, targeting $0/offline) both exist and run the **same

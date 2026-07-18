@@ -82,11 +82,14 @@ async function execute_check(
   config: ResolvedConfig,
   abort: AbortSignal,
 ): Promise<CheckResult> {
+  // The check gates the tree the builder actually wrote (s2 D3): the worktree
+  // under `--worktree`, else the workspace — the re-point step 8 deferred.
+  const root = build_root(config.workspace, config.worktree);
   if (config.check_resolved === 'checkride') {
-    return run_checkride({ workspace: config.workspace, abort });
+    return run_checkride({ workspace: root, abort });
   }
   if (config.check_resolved === 'command') {
-    return run_command_check({ command: config.check, workspace: config.workspace, abort });
+    return run_command_check({ command: config.check, workspace: root, abort });
   }
   return skipped_check('none');
 }

@@ -18,10 +18,13 @@ one.
 
 ```
 cd examples/all-claude/workspace
-pnpm add -D checkride vitest typescript   # once, so `check: 'auto'` can gate
+pnpm install --ignore-workspace   # once — the workspace ships a pinned manifest
 cd -
 volley --config examples/all-claude/volley.config.ts
 ```
+
+(`--ignore-workspace` keeps the repo's own `pnpm-workspace.yaml` from capturing
+the install.)
 
 The workspace ships a minimal `checkride.config.json` (types + test). `check:
 'auto'` detects it and gates each builder iteration on `tsc` + `vitest`; the
