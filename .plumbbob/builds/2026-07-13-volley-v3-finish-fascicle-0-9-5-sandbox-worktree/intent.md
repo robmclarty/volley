@@ -317,7 +317,7 @@ Session 2 (containment, shape B′ — the whole volley builder runs in one hard
     wall-clock, cost, verdict, check trajectory, local salvage rate, and transport used.
     - seam: new `examples/all-claude/`, new `examples/all-local/`, summary writer (`src/summary.ts`)
     - model: opus — example design + summary schema
-16. [ ] Run both examples + write up the finding (verification §4) — **done when:** both
+16. [x] Run both examples + write up the finding (verification §4) — **done when:** both
     examples run to completion, and a written finding records **where the local model got
     stuck and whether it was the model or the transport**, disclosing the confounds honestly
     (containment mechanisms differ: fascicle `claude_cli` bwrap/greywall vs volley Docker;

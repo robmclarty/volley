@@ -27,8 +27,8 @@ is done only after a checkpoint — check green + checkpoint taken, via `/pb-ver
 > Mid-step, every new problem / idea / "ooh what if" lands HERE, untouched, and you
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/pb-park` composes it). Harvest happens only at the boundary.
-- [ ] OQ-11: Phase-level bounded retry on provider stream errors (qwen3.6 critic syntax slip is stochastic; retry may succeed; gate on repeats to avoid infinite loops)
-- [ ] OQ-12: Tool-less critic fallback (after N tool-phase deaths, re-run critic with no tools; it already receives criteria + check artifacts in its prompt, render degraded verdict)
+- [x] OQ-11: Phase-level bounded retry on provider stream errors (qwen3.6 critic syntax slip is stochastic; retry may succeed; gate on repeats to avoid infinite loops)
+- [x] OQ-12: Tool-less critic fallback (after N tool-phase deaths, re-run critic with no tools; it already receives criteria + check artifacts in its prompt, render degraded verdict)
 
 ## Harvest  *(run `/pb-harvest` at each step boundary, after green)*
 
@@ -46,7 +46,8 @@ from sprawling across branches.
 
 Harvest results this boundary:
 
-- (none yet)
+- 2026-07-17 — OQ-11 (phase-level bounded retry on provider stream errors) → **tangent, deferred** — the v3 plan completed without it; the failure it addresses is an upstream model×server seam (qwen3.6 tool-XML × Ollama `qwen35.go`), disclosed in `research/v3-comparison-finding.md` with a working route-around (split critic roles). Seed for a future robustness increment, weighed against OQ-12.
+- 2026-07-17 — OQ-12 (tool-less critic fallback) → **tangent, deferred** — a design *alternative* to OQ-11 (retry masks the slip; dropping critic tools removes the failure surface); neither blocks the shipped comparison. Decide between them (or pair them) when a robustness increment is planned, alongside a possible upstream Ollama report.
 
 ## Log
 
@@ -71,3 +72,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-16 — step 13 checkpointed · 20bbb3a3e — Whole-process containment: run volley in-container + retire the host-orchestrated exec (1 drift, 22m)
 - 2026-07-16 — step 14 checkpointed · fc90e3fac — `--sandbox` = require-containment gate + `--dry-run` preflight (s2 D1/D6/D7/D10; D9, B′) (1 drift, 25m)
 - 2026-07-16 — step 15 checkpointed · dda697b15 — The two blessed examples + `summary.json` comparison fields (s2 D9/D10) (1 drift, 15m)
+- 2026-07-18 — step 16 checkpointed · 08998144a — Run both examples + write up the finding (verification §4) (1 drift, 1431m)
