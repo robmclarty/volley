@@ -168,7 +168,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `examples/ladder/README.md`
    - model: sonnet — docs refinement grounded in `src/sandbox.ts`
 
-10. [ ] Fix the main README matrix example config path — **done when:** the `volley matrix` example in `README.md`'s "Matrix sweep" section points `--config` at a real, committed example config (`./examples/essayist/volley.config.ts`) instead of the nonexistent `./examples/local-loop/`; `pnpm check` green (the `links` gate passes); resolves the 1 parked item (formally classified at `/pb-harvest`)
+10. [x] Fix the main README matrix example config path — **done when:** the `volley matrix` example in `README.md`'s "Matrix sweep" section points `--config` at a real, committed example config (`./examples/essayist/volley.config.ts`) instead of the nonexistent `./examples/local-loop/`; `pnpm check` green (the `links` gate passes); resolves the 1 parked item (formally classified at `/pb-harvest`)
    - seam: `README.md`
    - model: sonnet — trivial mechanical path fix; any model fits
 

@@ -27,7 +27,7 @@ is done only after a checkpoint — check green + checkpoint taken, via `/pb-ver
 > Mid-step, every new problem / idea / "ooh what if" lands HERE, untouched, and you
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/pb-park` composes it). Harvest happens only at the boundary.
-- [ ] README matrix example references nonexistent ./examples/local-loop/volley.config.ts — point it at examples/essayist/ (or another real example) next docs pass
+- [x] README matrix example references nonexistent ./examples/local-loop/volley.config.ts — point it at examples/essayist/ (or another real example) next docs pass → classified **tangent** (docs defect, not a plan flaw); folded into the plan as step 10 and shipped (7d6496710)
 
 ## Harvest  *(run `/pb-harvest` at each step boundary, after green)*
 
@@ -45,7 +45,11 @@ from sprawling across branches.
 
 Harvest results this boundary:
 
-- (none yet)
+- **tangent** — README matrix example pointed `--config` at the nonexistent
+  `./examples/local-loop/`. Not a plan flaw, just docs drift caught mid-build; rather
+  than defer it, folded into the plan as step 10 and shipped (repoint to the real,
+  committed `./examples/essayist/volley.config.ts`; `links` gate green). Nothing left
+  dangling.
 
 ## Log
 
@@ -64,3 +68,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-18 — step 7 checkpointed · 9ea0881fb — Essayist example (19m)
 - 2026-07-18 — step 8 checkpointed · 57db30e63 — Capability-ladder examples (4m)
 - 2026-07-18 — step 9 checkpointed · 01890538a — Dependency-wrangling online-only run recipe (3m)
+- 2026-07-18 — step 10 checkpointed · 7d6496710 — Fix the main README matrix example config path (2m)
