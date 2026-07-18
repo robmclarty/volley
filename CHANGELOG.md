@@ -3,12 +3,12 @@
 ## v0.4.0 — 2026-07-17
 
 ### Added
-- **Sandboxed local builds.** A local-model builder now runs as the whole volley process inside one hardened Docker container (`--sandbox`, default-on for local providers) over a per-run git worktree (`--worktree`) — its effects land on a throwaway phase branch and squash-merge onto the workspace only on success. Ships a default image and `Dockerfile` (`--sandbox-image` to override), default-deny network egress with a host-gateway allowlist, and a `--dry-run` preflight that verifies the toolchain, worktree, and host LLM endpoint before any model spend (exit 5 on failure). `claude_cli` builds stay on the host, Docker-free.
+- **Sandboxed local builds.** A local-model builder now runs as the whole volley process inside one hardened Docker container that volley *detects* it is inside (the `VOLLEY_CONTAINED=1` marker its image bakes in — volley does not start the container itself) over a per-run git worktree (`--worktree`) — its effects land on a throwaway phase branch and squash-merge onto the workspace only on a successful `--worktree --git` run. Ships a default image and `Dockerfile` (`--sandbox-image` / `VOLLEY_SANDBOX_IMAGE` to override), default-deny network egress with a host-gateway allowlist, and a `--dry-run` preflight that verifies the toolchain, worktree, and host LLM endpoint before any model spend (exit 5 on failure). `claude_cli` builds stay on the host, Docker-free.
 - **v3 comparison examples.** `examples/all-claude` and `examples/all-local` run an identical task, criteria, check gate, and caps so their `.volley/summary.json` `comparison` block (iterations-to-converge, wall-clock, cost, verdict, check trajectory, local salvage rate, transport) isolates model-vs-transport; the finding is written up under `research/`.
 
 ### Changed
 - **Upgraded to fascicle 0.9.5 on AI SDK v7** (`ai@^7`, `ai-sdk-ollama@^4`), moving the local-provider peer set forward together on the `ai_sdk` transport (the native Ollama transport is documented as a one-line future flip). Resolves the v0.3.1 local-builder peer-major mismatch by construction.
-- **`--sandbox` became a require-containment gate:** a local builder is admitted when volley detects it is running inside its container (or `--allow-unsandboxed-builder` is set), and is forbidden/no-op for `claude_cli`.
+- **A require-containment gate for local builders:** a local builder is admitted only when volley detects it is running inside its container (`VOLLEY_CONTAINED=1`) or `--allow-unsandboxed-builder` (`VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`) is set; `claude_cli` is exempt. A *contained* `claude_cli` role must use API-key auth (`VOLLEY_AUTH_MODE=api_key`) — its subscription/OAuth token does not survive containerization.
 - Upgraded checkride 0.2.1 → 0.4.1 (atomic summary writes, stale-artifact clearing, and a `checks_run` vacuous-green signal).
 
 ### Fixed

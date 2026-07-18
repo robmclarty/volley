@@ -144,7 +144,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `src/preflight.ts`, `src/critic/run.ts`, `test/preflight.test.ts`
    - model: opus — must reuse the exact production tool wiring or the canary lies
 
-4. [ ] `volley matrix` subcommand — **done when:** `volley matrix --builders a,b --critics c,d --config …` runs the cross product serially, writes per-combo run state, and prints one aggregate table (iterations, wall clock, salvage rate, degraded flag) sourced from the `comparison` blocks; unit-tested with stubbed runs
+4. [x] `volley matrix` subcommand — **done when:** `volley matrix --builders a,b --critics c,d --config …` runs the cross product serially, writes per-combo run state, and prints one aggregate table (iterations, wall clock, salvage rate, degraded flag) sourced from the `comparison` blocks; unit-tested with stubbed runs
    - seam: `src/cli.ts`, `src/matrix.ts`, `test/matrix.test.ts`, `README.md`
    - model: opus — new subcommand surface over existing orchestration
 

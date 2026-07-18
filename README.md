@@ -98,7 +98,9 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--max-iterations` | `10` | Hard iteration cap. |
 | `--max-cost-usd` | none | Hard USD ceiling. Set it. |
 | `--git` | off | Commit after each phase (workspace must be a git repo). |
-| `--dry-run` | off | Validate config, run `checkride doctor`, exit. |
+| `--worktree` | off | Isolate the builder run in a per-run git worktree (workspace must be a git repo). |
+| `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
+| `--dry-run` | off | Validate config, run `checkride doctor` and (for a local critic) the critic-seat canary, then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
 | `--json` | off | Machine mode: one summary JSON document on stdout. |
 | `--verbose` | off | Full tool inputs/outputs (truncated at 4000 chars). |
@@ -166,6 +168,16 @@ volley matrix \
   --critics qwen3:8b,gemma4:12b,glm-4.7-flash
 ```
 
+| Matrix flag | Description |
+|---|---|
+| `--config` | Base `VolleyConfig` (TS/JS): the task, workspace, providers, and caps held fixed. Required. |
+| `--builders` | Comma-separated builder models to sweep. |
+| `--critics` | Comma-separated critic models to sweep. |
+| `--workspace` | Override the base config's workspace. |
+| `--json` | Machine mode: the aggregate as JSON on stdout, no table. |
+| `--verbose` | Show full builder/critic streams per combo. |
+| `--quiet` | Per-combo phase transitions and the final table only. |
+
 `--builders` and `--critics` are comma-separated model lists; every combination
 runs once (`--builder-model` × `--critic-model`), in series — the local
 providers share one GPU, so parallel combos would thrash the model loader. Each
@@ -229,6 +241,19 @@ read-only, so a weaker local model can only mis-judge, never mis-edit. A local
 *builder* is also supported ([below](#local-builder)) but asks more of you — it
 gets a real host bash, so it is refused until you opt in.
 
+**A caveat on the critic model.** The critic seat is the one place volley pairs a
+tool surface with a constrained structured verdict, and not every local model
+survives that combination. `qwen3.6:latest` in the critic seat reproducibly dies
+on Ollama's server-side tool-call XML parser (`qwen35.go` / `qwen3coder.go`) —
+the *same* model drives the builder tool loop fine, so the defect is specific to
+the constrained-verdict path. volley no longer lets that kill a run: the critic
+phase degrades (a bounded retry, then a tool-less fallback that keeps the
+schema), marks the verdict `critic_degraded: true`, and `--dry-run` predicts the
+doomed combo up front with a critic-seat canary. Even so, prefer a critic whose
+tool-call encoding Ollama parses cleanly — `qwen3:8b`, `gemma4:12b`, and
+`glm-4.7-flash` all pass. The full model-vs-transport write-up is in
+[`research/v3-comparison-finding.md`](./research/v3-comparison-finding.md).
+
 ## Local builder
 
 `--builder-provider ollama|lmstudio` runs the builder on a local model too. A
@@ -247,15 +272,31 @@ volley \
   --check "pnpm check"
 ```
 
-**A local builder runs unsandboxed and is refused by default.** Unlike the
-read-only critic, the builder gets a real host `bash` (write + exec) in your
-workspace, and volley has no container sandbox yet. So a local builder is
-refused *before any model spend* unless you opt in with
+**A local builder gets a real host `bash`, so it is refused unless contained.**
+Unlike the read-only critic, the builder gets a real `bash` (write + exec) in
+your workspace. So a local builder is refused *before any model spend* unless
+volley detects it is running *inside* its own hardened sandbox container — the
+operator launches volley there with `docker run <hardened flags>
+volley-sandbox:latest volley …`, which sets `VOLLEY_CONTAINED=1` (baked into the
+image; volley detects containment, it does not start the container itself). The
+container gives default-deny network egress with a host-gateway allowlist; the
+hardened `docker run` spec lives in `src/sandbox.ts`, and `--sandbox-image` /
+`VOLLEY_SANDBOX_IMAGE` overrides the default `volley-sandbox:latest`. Inside the
+container, `claude_cli`'s subscription/OAuth token does not survive — it is
+mangled crossing the boundary — so a *contained* Claude role must drive by API
+key (`VOLLEY_AUTH_MODE=api_key` with `ANTHROPIC_API_KEY`); the all-Claude
+subscription path stays on the host, Docker-free.
+
+To run a local builder uncontained on the host anyway, opt out with
 `--allow-unsandboxed-builder` (or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`), which
-prints a one-time warning. Only point it at a workspace you are willing to let a
-local model run shell commands in. A container sandbox arrives in a later
-session; this opt-out then becomes the "I already run in a devcontainer" escape
-hatch.
+prints a one-time warning — only point it at a workspace you are willing to let a
+local model run shell commands in.
+
+Independently of the sandbox, `--worktree` isolates a run in a per-run git
+worktree (the workspace must be a git repo). A successful `--worktree --git` run
+squash-merges the phase branch onto the workspace branch before teardown; any
+other outcome (cost cap, interrupt, error) is discarded wholesale, so the
+builder's effects never touch your working tree until the loop converges.
 
 Provider setup is the same as the [local critic](#local-critic) table
 (`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, same peer dependencies). At
