@@ -9,8 +9,8 @@ import type { RunContext } from 'fascicle';
 import { accumulate } from '../cost.js';
 import { resolve_ollama_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
-import { phase_error } from '../types.js';
-import type { LoopState, ResolvedConfig } from '../types.js';
+import { error_kind, phase_error } from '../types.js';
+import type { CauseKind, LoopState, ResolvedConfig } from '../types.js';
 import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
 import { read_only_tools } from './tools.js';
@@ -78,6 +78,34 @@ function critic_tool_options(
   return { tools: read_only_tools(build_root(config.workspace, config.worktree)) };
 }
 
+/** Degradation ladder rung 1 (D1/OQ-11): how many times a local critic's call
+ * is retried on a provider stream death before the ladder moves on. Capped at
+ * one — the qwen3.6/Ollama tool-XML parser death is stochastic, so a same-call
+ * retry often passes; past one attempt the failure is not transient and the
+ * tool-less fallback (OQ-12) must take over. */
+export const MAX_CRITIC_RETRIES = 1;
+
+/** Is this critic failure the transient local-provider stream death the ladder
+ * retries? Local providers only (D2 — the `claude_cli` path is proven and its
+ * retries cost real money), fascicle's typed `provider_error` only (D8 — no
+ * message string-matching), and never a user abort, which must stay exit-130. */
+function is_retryable_critic_error(
+  config: ResolvedConfig,
+  ctx: RunContext,
+  err: unknown,
+): boolean {
+  if (config.critic_provider === 'claude_cli') return false;
+  if (ctx.abort.aborted) return false;
+  return error_kind(err) === 'provider_error';
+}
+
+/** fascicle's `provider_error.cause_kind` is `... | undefined`; fold the
+ * missing case into `'unknown'` so a recorded retry always names a cause (D8). */
+function retry_cause_kind_of(err: unknown): CauseKind {
+  const cause = (err as { cause_kind?: unknown }).cause_kind;
+  return cause === 'provider_5xx' || cause === 'network' ? cause : 'unknown';
+}
+
 export async function run_critic(
   deps: CriticDeps,
   state: LoopState,
@@ -98,27 +126,52 @@ export async function run_critic(
         ctx.abort,
       );
     }
-    const result = await engine.generate({
-      provider: config.critic_provider,
-      model: config.critic_model,
-      system: resolve_critic_prompt(config),
-      prompt: compose_critic_prompt({
-        criteria: config.criteria,
-        iteration: state.iteration,
-        check: state.check,
-      }),
-      schema: verdict_schema,
-      abort: ctx.abort,
-      trajectory: ctx.trajectory,
-      on_chunk: deps.on_chunk,
-      ...critic_tool_options(config),
-    });
-    return {
-      ...accumulate(state, 'critic', result, config.critic_model),
-      verdict: result.content.verdict,
-      feedback: result.content.feedback,
-      unmet_criteria: result.content.unmet_criteria,
-    };
+    // Retry a local critic's stochastic stream death once (D1) before the
+    // tool-less fallback (OQ-12) trades read access for survival. `attempt` is
+    // also the retry count folded into the record: 0 on a first-try success.
+    let retry_cause_kind: CauseKind | undefined;
+    for (let attempt = 0; attempt <= MAX_CRITIC_RETRIES; attempt += 1) {
+      try {
+        const result = await engine.generate({
+          provider: config.critic_provider,
+          model: config.critic_model,
+          system: resolve_critic_prompt(config),
+          prompt: compose_critic_prompt({
+            criteria: config.criteria,
+            iteration: state.iteration,
+            check: state.check,
+          }),
+          schema: verdict_schema,
+          abort: ctx.abort,
+          trajectory: ctx.trajectory,
+          on_chunk: deps.on_chunk,
+          ...critic_tool_options(config),
+        });
+        const next = accumulate(state, 'critic', result, config.critic_model);
+        return {
+          ...next,
+          critic:
+            next.critic === null
+              ? null
+              : {
+                  ...next.critic,
+                  retries: attempt,
+                  ...(retry_cause_kind !== undefined ? { retry_cause_kind } : {}),
+                },
+          verdict: result.content.verdict,
+          feedback: result.content.feedback,
+          unmet_criteria: result.content.unmet_criteria,
+        };
+      } catch (err) {
+        if (attempt === MAX_CRITIC_RETRIES || !is_retryable_critic_error(config, ctx, err)) {
+          throw err;
+        }
+        retry_cause_kind = retry_cause_kind_of(err);
+      }
+    }
+    // The loop returns on success or throws on the last attempt; this line only
+    // satisfies the type checker's need for a terminal statement.
+    throw new Error('unreachable: critic retry loop exited without a result');
   } catch (err) {
     throw phase_error('critic', state.iteration, err);
   }

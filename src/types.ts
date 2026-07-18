@@ -32,6 +32,11 @@ export type CheckRunnerKind = 'checkride' | 'command' | 'none';
 
 export type CostSource = 'provider_reported' | 'engine_derived' | 'unknown';
 
+/** Fascicle's `provider_error.cause_kind` discriminant — why a provider call
+ * died. Recorded alongside a critic retry (OQ-11/D8) so a degraded run says
+ * *what* failed, not just that it retried. */
+export type CauseKind = 'provider_5xx' | 'network' | 'unknown';
+
 export type RunStatus =
   | 'running'
   | 'success'
@@ -145,6 +150,15 @@ export type PhaseRecord = {
    * counts behind the salvage-rate health metric. */
   tool_calls: number;
   salvaged_tool_calls: number;
+  /** Provider-error retries that preceded this phase's successful call
+   * (OQ-11/D8) — the local-critic degradation ladder's first rung: a stochastic
+   * Ollama stream death is retried once before falling back. Set on the critic
+   * record (0 when the first call succeeded); absent on the builder, which is
+   * not retried this build (Q5). Additive — old summary consumers ignore it (C5). */
+  retries?: number;
+  /** The `cause_kind` of the retried provider error, recorded with `retries`
+   * (D8). Absent when no retry happened. */
+  retry_cause_kind?: CauseKind;
 };
 
 export type HaltReason = 'cost_cap' | null;
