@@ -140,7 +140,7 @@ volley matrix --builders a,b --critics c,d
    - seam: `src/critic/run.ts`, `src/summary.ts`, `src/types.ts`, `test/critic_fallback.test.ts`
    - model: opus — the degradation ladder is the build's core judgment call
 
-3. [ ] Critic-seat canary in `--dry-run` — **done when:** with a local critic configured, `--dry-run` issues one tiny generate through the real tool wiring + `verdict_schema` and exits 5 naming model×seat on failure; a faked-engine unit test covers both outcomes; the claude_cli critic path provably skips it
+3. [x] Critic-seat canary in `--dry-run` — **done when:** with a local critic configured, `--dry-run` issues one tiny generate through the real tool wiring + `verdict_schema` and exits 5 naming model×seat on failure; a faked-engine unit test covers both outcomes; the claude_cli critic path provably skips it
    - seam: `src/preflight.ts`, `src/critic/run.ts`, `test/preflight.test.ts`
    - model: opus — must reuse the exact production tool wiring or the canary lies
 

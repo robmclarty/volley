@@ -78,6 +78,7 @@ pnpm add -g volley
 volley [options]
 volley --config <path>
 volley resume <run-id>
+volley matrix --builders <models> --critics <models> --config <path>
 ```
 
 | Flag | Default | Description |
@@ -151,6 +152,40 @@ volley resume <run-id> --workspace ./my-project
 
 Continues from the last completed iteration with the saved feedback and cost
 totals. An iteration interrupted mid-phase is discarded and re-run.
+
+### Matrix sweep
+
+Finding the best builder×critic pairing means running the same task against
+several model combos and comparing. `volley matrix` sweeps the cross product
+serially over one fixed config instead of hand-editing model flags per run:
+
+```sh
+volley matrix \
+  --config ./examples/local-loop/volley.config.ts \
+  --builders qwen3.6:latest \
+  --critics qwen3:8b,gemma4:12b,glm-4.7-flash
+```
+
+`--builders` and `--critics` are comma-separated model lists; every combination
+runs once (`--builder-model` × `--critic-model`), in series — the local
+providers share one GPU, so parallel combos would thrash the model loader. Each
+combo forces `--worktree` for a clean per-combo reset, so the **workspace must
+be a git repository**. Per-combo run state is written to
+`.volley-matrix/<builder>__<critic>/summary.json`, and the sweep prints one
+aggregate table to stderr, sourced from each run's `comparison` block:
+
+```
+builder         critic         status   iters  wall     salvage  degraded
+──────────────  ─────────────  ───────  ─────  ───────  ───────  ────────
+qwen3.6:latest  qwen3:8b       success  1      403.4s   0%       no
+qwen3.6:latest  gemma4:12b     success  1      512.0s   0%       no
+qwen3.6:latest  glm-4.7-flash  success  1      184.0s   0%       no
+```
+
+A combo that runs but does not converge (budget/cost cap) is a *result*, shown
+in the table; the sweep exits 0 as long as every combo produced a summary, and
+nonzero only when a combo produced none at all (`status: broke`). Pass `--json`
+for the aggregate as a machine document on stdout instead of the table.
 
 ## Local critic
 

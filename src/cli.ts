@@ -3,6 +3,7 @@
  * CLI entry point (spec §5): cac argv parsing, dispatch, exit-code mapping.
  * Human progress goes to stderr; stdout carries machine output only.
  */
+import { join } from 'node:path';
 import { cac } from 'cac';
 import {
   DEFAULT_CHECK,
@@ -13,6 +14,7 @@ import {
 import { resolve_check_runner } from './check/detect.js';
 import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
 import { load_resume_state } from './iteration.js';
+import { EXIT_MATRIX_INCOMPLETE, parse_model_list, run_matrix } from './matrix.js';
 import { run_volley } from './orchestrator.js';
 import { preflight } from './preflight.js';
 import { colors_enabled } from './render/format.js';
@@ -52,6 +54,16 @@ type CliFlags = {
   verbose?: boolean;
   quiet?: boolean;
   thinking?: boolean;
+};
+
+type MatrixFlags = {
+  config?: string;
+  builders?: string;
+  critics?: string;
+  workspace?: string;
+  json?: boolean;
+  verbose?: boolean;
+  quiet?: boolean;
 };
 
 function render_mode(config: ResolvedConfig): RenderMode {
@@ -231,6 +243,48 @@ async function main(argv: string[]): Promise<number> {
       );
       const result = await run_volley(config, { renderer }, resume.state);
       exit_code = emit_result(config, result, renderer);
+    });
+
+  cli
+    .command('matrix', 'Sweep builder×critic model combos serially over one config')
+    .option('--config <path>', 'Base VolleyConfig (TS/JS): the task, workspace, providers, and caps held fixed')
+    .option('--builders <models>', 'Comma-separated builder models to sweep')
+    .option('--critics <models>', 'Comma-separated critic models to sweep')
+    .option('--workspace <path>', 'Override the base config workspace')
+    .option('--json', 'Machine mode: aggregate JSON on stdout, no table')
+    .option('--verbose', 'Show full builder/critic streams per combo')
+    .option('--quiet', 'Per-combo phase transitions and the final table only')
+    .action(async (flags: MatrixFlags) => {
+      if (flags.config === undefined) {
+        throw config_error('volley matrix requires --config <path> (the base task to sweep)');
+      }
+      const builders = parse_model_list(flags.builders, '--builders');
+      const critics = parse_model_list(flags.critics, '--critics');
+      const base = await load_config_file(flags.config);
+      const merged = merge_flags(base, {
+        ...(flags.workspace !== undefined ? { workspace: flags.workspace } : {}),
+        ...(flags.json === true ? { json: true } : {}),
+        ...(flags.verbose === true ? { verbose: true } : {}),
+        ...(flags.quiet === true ? { quiet: true } : {}),
+      });
+      // Resolve once with the forced worktree (D11) to validate the git repo,
+      // providers, and task up front — before any combo spends — and to build
+      // the renderer and locate the workspace-level `.volley-matrix/` output.
+      const base_config = resolve_config({ ...merged, worktree: true });
+      const renderer = make_renderer(base_config);
+      warn_api_key_meter(renderer);
+      warn_unsandboxed_builder(base_config, renderer);
+      const outcome = await run_matrix({
+        base: merged,
+        builders,
+        critics,
+        matrix_dir: join(base_config.workspace, '.volley-matrix'),
+        renderer,
+      });
+      if (base_config.json) {
+        process.stdout.write(`${JSON.stringify({ combos: outcome.rows }, null, 2)}\n`);
+      }
+      exit_code = outcome.ok ? EXIT_SUCCESS : EXIT_MATRIX_INCOMPLETE;
     });
 
   cli.help();
