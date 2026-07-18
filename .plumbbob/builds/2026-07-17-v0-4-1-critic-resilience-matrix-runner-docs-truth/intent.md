@@ -160,9 +160,13 @@ volley matrix --builders a,b --critics c,d
    - seam: `examples/essayist/`, `src/builder/presets/`
    - model: fable — the rubric/critic prompt is creative-judgment work
 
-8. [ ] Capability-ladder examples — **done when:** `examples/ladder/` holds the seven probe workspaces — brownfield-bugfix (planted bugs + failing tests), feedback-convergence (vague prompt, strict criteria), cross-file-refactor, step-cap-pressure, dependency-wrangling, spec-compliance-parser, test-writing-seat — each with its own workspace seed, `volley.config.ts`, criteria, and check gate; each passes `--dry-run`; a ladder README states what each probes and the matrix line to sweep it
+8. [x] Capability-ladder examples — **done when:** `examples/ladder/` holds the seven probe workspaces — brownfield-bugfix (planted bugs + failing tests), feedback-convergence (vague prompt, strict criteria), cross-file-refactor, step-cap-pressure, dependency-wrangling, spec-compliance-parser, test-writing-seat — each with its own workspace seed, `volley.config.ts`, criteria, and check gate; each passes `--dry-run`; a ladder README states what each probes and the matrix line to sweep it
    - seam: `examples/ladder/`
    - model: fable — authoring seven distinct probe tasks with planted defects and calibrated criteria is design work
+
+9. [ ] Dependency-wrangling online-only run recipe — **done when:** the ladder README replaces the vague "network opened to the registry" note with a concrete, `src/sandbox.ts`-accurate path to the registry — warm `slugify` into the `volley-pnpm-store` volume via `pnpm store add` then run under `--network none`; the Linux `DOCKER-USER` deny vs macOS/Windows egress reality; the uncontained fallback — and all seven ladder probes re-verify green on `--dry-run` against a freshly built `dist/` with the critic-seat canary actually firing (`critic canary: ok`); `pnpm check` green
+   - seam: `examples/ladder/README.md`
+   - model: sonnet — docs refinement grounded in `src/sandbox.ts`
 
 ## Open questions
 

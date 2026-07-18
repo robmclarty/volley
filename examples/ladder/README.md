@@ -103,7 +103,7 @@ volley matrix --config examples/ladder/cross-file-refactor/volley.config.ts \
 volley matrix --config examples/ladder/step-cap-pressure/volley.config.ts \
   --builders qwen3.6:latest,qwen2.5-coder:7b,qwen3:8b --critics glm-4.7-flash:latest
 
-# dependency-wrangling — ONLINE ONLY: run with the sandbox network opened to the registry
+# dependency-wrangling — ONLINE ONLY (see "The online-only probe" below for how to reach the registry)
 volley matrix --config examples/ladder/dependency-wrangling/volley.config.ts \
   --builders qwen3.6:latest,qwen2.5-coder:7b --critics glm-4.7-flash:latest
 
@@ -118,3 +118,39 @@ volley matrix --config examples/ladder/test-writing-seat/volley.config.ts \
 
 A non-converging combo is a **result**, not a crash — it shows up in the table. That
 is the ladder doing its job: telling you where each model falls off.
+
+## The online-only probe (dependency-wrangling)
+
+Six of the seven rungs are fully dependency-free and run under the sandbox's
+default deny-by-default egress (allowlist to host Ollama only, or `--network
+none`). `dependency-wrangling` is the exception on purpose: its whole point is
+that the builder must pull `slugify` off the npm registry, so its check gate
+fails until the package is declared **and** installed. Its `--dry-run` still
+passes offline (dry-run never executes the gate) — the registry requirement bites
+only on a real run. Three ways to satisfy it, most-contained first:
+
+1. **Warm the dependency into the pnpm store, then run offline (recommended).**
+   This is volley's "warm-then-offline" pattern (see `examples/all-local/README.md`
+   for the `volley-pnpm-store` volume). Populate the store once, with egress, then
+   the in-sandbox `pnpm add slugify` resolves from the warm store under
+   `--network none`:
+
+   ```sh
+   # `pnpm store add` populates the store directly, touching no project files
+   docker run --rm -v volley-pnpm-store:/home/node/.local/share/pnpm/store \
+     --entrypoint pnpm volley-sandbox:latest store add slugify
+   ```
+
+2. **Open registry egress for the run.** On **Linux** the L3/L4 egress deny is the
+   `DOCKER-USER` rule scoped to `volley-sandbox-net` (`src/sandbox.ts`) — add a
+   registry allowlist entry, or run the combo on a plain `--network bridge`. On
+   **macOS/Windows** that kernel-level deny isn't enforced (only the in-process
+   SSRF deny-list is), so the default `volley-sandbox-net` already reaches the
+   registry and `pnpm add` just works.
+
+3. **Run uncontained on a networked host** (least isolated) —
+   `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`, where `pnpm add slugify` hits the registry
+   directly. Fine for a quick local sweep; not for untrusted builder output.
+
+However you get the package in, the gate is the same: `slugify` in `package.json`
+`dependencies` and resolvable in `node_modules`, with `slug.mjs` using it.

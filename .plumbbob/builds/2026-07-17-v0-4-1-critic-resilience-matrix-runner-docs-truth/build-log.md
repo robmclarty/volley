@@ -62,3 +62,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-07-18 — step 5 checkpointed · 38436fa92 — README refresh to v0.4.0 truth (7m)
 - 2026-07-18 — step 6 checkpointed · f475bc3a7 — Draft the upstream Ollama report (4m)
 - 2026-07-18 — step 7 checkpointed · 9ea0881fb — Essayist example (19m)
+- 2026-07-18 — step 8 checkpointed · 57db30e63 — Capability-ladder examples (4m)
