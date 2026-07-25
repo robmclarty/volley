@@ -1,13 +1,23 @@
 # Changelog
 
-## Unreleased
+## v0.4.1 — 2026-07-24
+
+### Added
+- **`volley matrix`**: sweep builder×critic model combos serially over one otherwise-fixed config and aggregate every run's `comparison` block into a single table (per-combo state under `.volley-matrix/<builder>__<critic>/summary.json`; `--json` for the aggregate). Serial by design — the local providers share one GPU, so parallel combos would thrash the model loader. A combo that runs without converging is a *result* row; the sweep exits nonzero only when a combo yields no summary at all.
+- **Critic-seat canary in `--dry-run`**: for a local critic, one tiny $0 generate through the real critic tool wiring before any builder spend. A degradable death warns and predicts `critic_degraded`; only a would-fail-even-degraded combo exits 5, named model×seat. The `claude_cli` critic path never runs it.
+- **`--discard-worktree`**: throw a `--worktree` run's effects away at teardown instead of keeping them on the run branch — "isolate the effects, I only want the verdicts". `volley matrix` forces it for every seat, so a sweep leaves neither a branch nor a squash commit per combo. Refused without `--worktree`; `--git` still wins, so `--worktree --git` integrates exactly as before.
+- **Two example families for probing a local model's real ceiling**: `examples/essayist` (a non-code task with a custom critic prompt, rubric, and JS check gate) and `examples/ladder` (seven capability rungs from greenfield through brownfield bugfix and cross-file refactor, plus an online-only dependency-wrangling run recipe).
+- An upstream-ready write-up of the Ollama qwen tool-call parser failure that kills `qwen3.6` in the critic seat (`research/ollama-qwen-parser-issue.md`).
+
+### Changed
+- **A local critic now degrades instead of dying.** A provider stream error is retried once (recorded on the critic record as `retries` / `retry_cause_kind`), and a critique that keeps dying with tools attached falls back to a tool-less verdict grounded in the criteria, the raw check artifacts, and a workspace file inventory. A fallback verdict is *always* marked `critic_degraded` — in the iteration summary, the run's `comparison` block, and the matrix table — so a shallower critique never passes silently as a full one.
 
 ### Fixed
 - **`--worktree` without `--git` no longer destroys a successful run's work.** With `worktree: true` and git checkpoints off (the default), a fully green run — check passed, critic approved — ended in `git branch -D` plus a forced worktree removal: the builder's uncommitted work deleted, the workspace untouched, nothing said before or after. Teardown now *salvages* that case instead — it commits the worktree's state onto the run branch (`volley/<run id>`), keeps the branch, removes only the checkout, and reports the branch as `salvaged_branch` in `.volley/summary.json` and `--json` output, so the work is recoverable with `git switch` / `git cherry-pick`. If the salvage commit itself cannot land (no git identity, a stale index lock), the checkout is left standing rather than deleted. Runs that did not converge, and `--worktree --git` runs whose work was squash-merged, still discard wholesale; the documented integrate path is unchanged.
 - **A `--worktree` run's fate is now predicted before any model spend.** `--dry-run` and run start each print one line saying what a successful run will do with its effects — squash-merge onto the workspace branch (`--git`), leave them on the run branch (`--worktree` alone; a warning, since nothing is integrated), or throw them away (`--discard-worktree`) — alongside the existing critic-seat canary and `num_ctx` predictions.
 
-### Added
-- **`--discard-worktree`**: throw a `--worktree` run's effects away at teardown instead of keeping them on the run branch — "isolate the effects, I only want the verdicts". `volley matrix` forces it for every seat, so a sweep leaves neither a branch nor a squash commit per combo. Refused without `--worktree`; `--git` still wins, so `--worktree --git` integrates exactly as before.
+### Internal
+- README refreshed to v0.4.0 truth, and the matrix example's `--config` path corrected.
 
 ## v0.4.0 — 2026-07-17
 
