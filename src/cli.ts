@@ -16,7 +16,7 @@ import {
 import { resolve_check_runner } from './check/detect.js';
 import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
 import { load_resume_state } from './iteration.js';
-import { EXIT_MATRIX_INCOMPLETE, parse_model_list, run_matrix } from './matrix.js';
+import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
 import { run_volley } from './orchestrator.js';
 import { preflight } from './preflight.js';
 import { colors_enabled } from './render/format.js';
@@ -66,6 +66,7 @@ type MatrixFlags = {
   builders?: string;
   critics?: string;
   workspace?: string;
+  repeat?: number;
   json?: boolean;
   verbose?: boolean;
   quiet?: boolean;
@@ -300,6 +301,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--builders <models>', 'Comma-separated builder models to sweep')
     .option('--critics <models>', 'Comma-separated critic models to sweep')
     .option('--workspace <path>', 'Override the base config workspace')
+    .option('--repeat <n>', 'Attempts per seat (default: 1); a pass rate needs more than one')
     .option('--json', 'Machine mode: aggregate JSON on stdout, no table')
     .option('--verbose', 'Show full builder/critic streams per combo')
     .option('--quiet', 'Per-combo phase transitions and the final table only')
@@ -309,6 +311,7 @@ async function main(argv: string[]): Promise<number> {
       }
       const builders = parse_model_list(flags.builders, '--builders');
       const critics = parse_model_list(flags.critics, '--critics');
+      const repeat = parse_repeat(flags.repeat);
       const base = await load_config_file(flags.config);
       const merged = merge_flags(base, {
         ...(flags.workspace !== undefined ? { workspace: flags.workspace } : {}),
@@ -330,6 +333,7 @@ async function main(argv: string[]): Promise<number> {
         critics,
         matrix_dir: join(base_config.workspace, '.volley-matrix'),
         renderer,
+        repeat,
       });
       if (base_config.json) {
         process.stdout.write(`${JSON.stringify({ combos: outcome.rows }, null, 2)}\n`);

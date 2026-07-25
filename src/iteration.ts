@@ -126,6 +126,10 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
     // Null when the build root is not a git repository. Additive (C5).
     changes: state.changes,
     verdict: state.verdict,
+    // The criteria the critic judged unmet, verbatim. The run-level summary
+    // reads the last iteration's list, so a non-converged run says what it was
+    // still missing when it stopped instead of only that it stopped. Additive (C5).
+    unmet_criteria: state.unmet_criteria,
     iteration_cost_usd: state.iteration_cost_usd,
     iteration_total_cost_usd: state.total_cost_usd,
   });

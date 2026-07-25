@@ -170,7 +170,8 @@ serially over one fixed config instead of hand-editing model flags per run:
 volley matrix \
   --config ./examples/essayist/volley.config.ts \
   --builders qwen3.6:latest \
-  --critics qwen3:8b,gemma4:12b,glm-4.7-flash
+  --critics qwen3:8b,gemma4:12b,glm-4.7-flash \
+  --repeat 3
 ```
 
 | Matrix flag | Description |
@@ -178,33 +179,52 @@ volley matrix \
 | `--config` | Base `VolleyConfig` (TS/JS): the task, workspace, providers, and caps held fixed. Required. |
 | `--builders` | Comma-separated builder models to sweep. |
 | `--critics` | Comma-separated critic models to sweep. |
+| `--repeat` | Attempts per seat (default 1). A pass *rate* needs more than one. |
 | `--workspace` | Override the base config's workspace. |
 | `--json` | Machine mode: the aggregate as JSON on stdout, no table. |
 | `--verbose` | Show full builder/critic streams per combo. |
 | `--quiet` | Per-combo phase transitions and the final table only. |
 
 `--builders` and `--critics` are comma-separated model lists; every combination
-runs once (`--builder-model` × `--critic-model`), in series — the local
-providers share one GPU, so parallel combos would thrash the model loader. Each
-combo forces `--worktree --discard-worktree` for a clean per-combo reset — a
+runs `--repeat` times (`--builder-model` × `--critic-model`), in series — the
+local providers share one GPU, so parallel combos would thrash the model loader.
+Each run forces `--worktree --discard-worktree` for a clean per-run reset — a
 sweep wants verdicts, so each seat's effects are isolated and then thrown away,
 leaving neither a branch nor a commit behind — so the **workspace must be a git
-repository**. Per-combo run state is written to
-`.volley-matrix/<builder>__<critic>/summary.json`, and the sweep prints one
-aggregate table to stderr, sourced from each run's `comparison` block:
+repository**. Every attempt's run state is written to
+`.volley-matrix/<builder>__<critic>/run-NN/summary.json`, the whole sweep to
+`.volley-matrix/matrix.json`, and one aggregate table goes to stderr:
 
 ```
-builder         critic         status   iters  wall     salvage  degraded
-──────────────  ─────────────  ───────  ─────  ───────  ───────  ────────
-qwen3.6:latest  qwen3:8b       success  1      403.4s   0%       no
-qwen3.6:latest  gemma4:12b     success  1      512.0s   0%       no
-qwen3.6:latest  glm-4.7-flash  success  1      184.0s   0%       no
+builder         critic         pass  iters  wall     cost   salvage  flags  why
+──────────────  ─────────────  ────  ─────  ───────  ─────  ───────  ─────  ──────────────────
+qwen3.6:latest  qwen3:8b       3/3   1.0    403.4s   $0.00  0%       —      —
+qwen3.6:latest  gemma4:12b     2/3   1.5    512.0s   $0.00  0%       —      unmet: 2 criteria
+qwen3.6:latest  glm-4.7-flash  0/3   —      184.0s   $0.00  12%      deg    check: types, test
 ```
 
-A combo that runs but does not converge (budget/cost cap) is a *result*, shown
-in the table; the sweep exits 0 as long as every combo produced a summary, and
-nonzero only when a combo produced none at all (`status: broke`). Pass `--json`
-for the aggregate as a machine document on stdout instead of the table.
+**Why `--repeat`.** One run answers "did this pairing converge that time", and
+that is all n=1 can honestly answer: local runs are stochastic. A single sample
+supports a *hard* failure (the qwen3.6 critic death reproduced 2/2 in
+[`research/v3-comparison-finding.md`](./research/v3-comparison-finding.md)) and
+nothing else — not iterations-to-converge, not wall clock. With `--repeat` the
+`pass` column is a rate, and the averages behind it are over the attempts that
+can support them: `iters` averages the *converged* attempts only, `wall` and
+`cost` average every attempt that reported one, and `salvage` is a ratio of
+totals rather than a mean of ratios.
+
+**Why a seat fell off** is the `why` column — the point of a ladder sweep.
+`budget_exhausted` is a status, not a diagnosis, so the row instead names the
+failing check slots, the criteria the critic still judged unmet, a cost cap, a
+gate edit, or the error that broke the run. `flags` carries what qualifies a
+pass rather than explaining a failure: `deg` for a degraded critic verdict,
+`gate` for a builder that edited the gate. Every attempt's full detail —
+statuses, verdicts, failing slots, unmet criteria, gate edits — is in the
+`--json` aggregate and in `matrix.json`.
+
+A run that does not converge is a *result*, shown in the table; the sweep exits
+0 as long as every attempt produced a summary, and nonzero only when one
+produced none at all (`status: broke`).
 
 ## Local critic
 

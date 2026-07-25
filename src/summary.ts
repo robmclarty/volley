@@ -80,6 +80,11 @@ export type ComparisonSummary = {
    * making routine: a green check plus an empty list is worth more than a green
    * check alone. Sorted and de-duplicated across iterations. */
   gate_edits: string[];
+  /** What the critic still judged unmet when the run stopped — the last
+   * iteration's `unmet_criteria`, verbatim. Empty on a converged run. This is the
+   * "why not" a non-success status alone cannot give: `budget_exhausted` says the
+   * run ran out of iterations, not what it was still missing. */
+  unmet_criteria: string[];
   /** Any iteration's critic verdict was rendered by the tool-less fallback
    * (OQ-12/D3): the tool-bearing critique kept dying on the provider's stream, so
    * the critic judged without read access — real, but shallower. The run's
@@ -100,6 +105,7 @@ type IterationArchive = {
   check?: { ran?: boolean; ok?: boolean; failing_slots?: string[] } | null;
   changes?: { gate_edits?: string[] } | null;
   critic?: { critic_degraded?: boolean } | null;
+  unmet_criteria?: string[];
 };
 
 /** Read the archived per-iteration summaries in order. A missing archive root
@@ -189,6 +195,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       final_verdict: result.final_verdict,
       check_trajectory: check_trajectory(archives),
       gate_edits: all_gate_edits(archives),
+      unmet_criteria: archives.at(-1)?.unmet_criteria ?? [],
       local_salvage: salvage_stats(archives),
       critic_degraded: any_critic_degraded(archives),
     },

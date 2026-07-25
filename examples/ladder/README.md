@@ -83,8 +83,11 @@ for d in examples/ladder/*/workspace; do
 done
 ```
 
-Then sweep the seat that rung probes (hold the other fixed). One aggregate table —
-iterations, wall clock, salvage rate, degraded flag — comes back per combo:
+Then sweep the seat that rung probes (hold the other fixed). One aggregate table
+comes back — pass rate, iterations, wall clock, cost, salvage, and *why* each seat
+fell off. Add `--repeat 3` (or more) to every line below if you intend to compare
+seats rather than smoke-test them: a rung's answer is "how often does this pairing
+clear it", and a single run cannot report a rate.
 
 ```sh
 # brownfield-bugfix — which builder localizes and fixes?
@@ -116,8 +119,10 @@ volley matrix --config examples/ladder/test-writing-seat/volley.config.ts \
   --builders qwen3.6:latest,qwen2.5-coder:7b,qwen3:8b --critics glm-4.7-flash:latest
 ```
 
-A non-converging combo is a **result**, not a crash — it shows up in the table. That
-is the ladder doing its job: telling you where each model falls off.
+A non-converging combo is a **result**, not a crash — it shows up in the table with
+the reason it did not converge (the failing check slots, the criteria still unmet, a
+cost cap, a gate edit). That is the ladder doing its job: telling you where each
+model falls off, and how.
 
 ## The online-only probe (dependency-wrangling)
 
