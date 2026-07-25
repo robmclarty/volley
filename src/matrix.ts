@@ -8,9 +8,12 @@
  *
  * Execution is serial by design (D6): the local providers share one GPU, so
  * parallel combos would thrash the Ollama model loader. Each combo forces
- * `--worktree` for a clean per-combo reset (D11); its `summary.json` is
- * persisted under `.volley-matrix/<builder>__<critic>/` before the next combo
- * overwrites `.volley/summary.json`.
+ * `--worktree --discard-worktree` for a clean per-combo reset (D11): a sweep
+ * wants verdicts, not effects, so every seat's work is thrown away with its
+ * branch — never salvaged onto one, never squash-merged onto the operator's
+ * branch (D13). Each combo's `summary.json` is persisted under
+ * `.volley-matrix/<builder>__<critic>/` before the next combo overwrites
+ * `.volley/summary.json`.
  *
  * Sweep-level exit semantics (D11): a combo that *runs* — even to a non-success
  * status — is a *result*, shown in the table; the sweep only "breaks" (nonzero)
@@ -82,18 +85,27 @@ export function parse_model_list(value: string | undefined, flag: string): strin
   return items;
 }
 
-/** The default combo runner: resolve the base config with this combo's models
- * and a forced worktree (D11), run the loop, and fold on the comparison block.
- * If the run throws (an unsalvageable phase failure), recover the best-effort
- * `summary.json` the orchestrator wrote so the combo is still a result row;
- * rethrow only when nothing is recoverable — then the sweep breaks. */
-export const default_run_combo: ComboRunner = async (base, combo, renderer) => {
-  const config = resolve_config({
+/** The config one seat runs under: the base task with this combo's models and a
+ * forced throw-away worktree (D11) — `--worktree` isolates the seat's effects and
+ * `--discard-worktree` throws them away at teardown, so a sweep of N seats leaves
+ * neither N branches behind nor N squash commits on the operator's branch (D13). */
+export function combo_config(base: VolleyConfig, combo: MatrixCombo): VolleyConfig {
+  return {
     ...base,
     builder_model: combo.builder,
     critic_model: combo.critic,
     worktree: true,
-  });
+    discard_worktree: true,
+  };
+}
+
+/** The default combo runner: resolve this seat's config, run the loop, and fold
+ * on the comparison block.
+ * If the run throws (an unsalvageable phase failure), recover the best-effort
+ * `summary.json` the orchestrator wrote so the combo is still a result row;
+ * rethrow only when nothing is recoverable — then the sweep breaks. */
+export const default_run_combo: ComboRunner = async (base, combo, renderer) => {
+  const config = resolve_config(combo_config(base, combo));
   config.check_resolved = resolve_check_runner(config.check, config.workspace);
   try {
     const result = await run_volley(config, { renderer });

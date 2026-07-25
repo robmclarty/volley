@@ -175,6 +175,7 @@ function run_result(): RunResult {
     critic_cost_usd: 0.05,
     check_duration_ms: 5,
     final_verdict: 'approved',
+    salvaged_branch: null,
   };
 }
 

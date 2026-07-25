@@ -63,6 +63,7 @@ export type VolleyConfig = {
   max_cost_usd?: number | null;
   git_checkpoints?: boolean;
   worktree?: boolean;
+  discard_worktree?: boolean;
   sandbox_image?: string;
   verbose?: boolean;
   quiet?: boolean;
@@ -99,6 +100,13 @@ export type ResolvedConfig = {
    * `.volley/` state stays under `workspace` (the control plane). Off by
    * default; requires the workspace to be a git repository. */
   worktree: boolean;
+  /** Throw a `--worktree` run's effects away at teardown even when it converged
+   * (D13): the run branch is force-deleted rather than kept, because only the
+   * verdicts are wanted. This is what `volley matrix` sweeps with — one config,
+   * many builder×critic seats, no per-seat commits or branches left anywhere.
+   * Refused without `--worktree`; `--git` still wins, so a `--worktree --git`
+   * run integrates exactly as it always has. */
+  discard_worktree: boolean;
   /** Container image the local-builder Docker sandbox runs (s2 D5). Defaults to
    * volley's own `Dockerfile`-built image; `--sandbox-image <tag>` /
    * `VOLLEY_SANDBOX_IMAGE` override it. Meaningful only for a local builder —
@@ -208,6 +216,13 @@ export type RunResult = {
   critic_cost_usd: number;
   check_duration_ms: number;
   final_verdict: Verdict | null;
+  /** The run branch teardown left behind because this run's work was never
+   * integrated (D13): under `--worktree` without `--git` a converged run has no
+   * other copy of its effects, so teardown commits them onto `volley/<run id>`
+   * and keeps the branch instead of force-deleting it. Null whenever nothing
+   * survived — every non-worktree run, every integrated run, every discarded
+   * one. `--json` consumers read it here; `.volley/summary.json` mirrors it. */
+  salvaged_branch: string | null;
 };
 
 /** Recoverable domain failures surface as `kind`-tagged Error values (the

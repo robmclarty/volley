@@ -452,6 +452,29 @@ describe('resolve_config', () => {
       mkdirSync(join(workspace, '.git'));
       const config = resolve_config({ ...base(workspace), worktree: true });
       expect(config.worktree).toBe(true);
+      // A bare --worktree run keeps its work: it is salvaged onto the run branch,
+      // not discarded (D13).
+      expect(config.discard_worktree).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses --discard-worktree without --worktree rather than ignoring it', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config(base(workspace)).discard_worktree).toBe(false);
+      mkdirSync(join(workspace, '.git'));
+      // Alone it would read as isolation the run does not have.
+      expect(() => resolve_config({ ...base(workspace), discard_worktree: true })).toThrow(
+        /--discard-worktree applies only to a --worktree run/,
+      );
+      const config = resolve_config({
+        ...base(workspace),
+        worktree: true,
+        discard_worktree: true,
+      });
+      expect(config.discard_worktree).toBe(true);
     } finally {
       cleanup();
     }

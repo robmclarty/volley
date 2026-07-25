@@ -1,7 +1,10 @@
 /**
  * `--dry-run` preflight (s2 Phase 2c; D1/D6/D7/D10, D9, B′): prove a run can
  * proceed *before any model spend*. It always renders the resolved config and,
- * when checkride is the resolved check, runs `checkride doctor`.
+ * when checkride is the resolved check, runs `checkride doctor`. Under
+ * `--worktree` it also predicts what a successful run will do with its effects
+ * (D13, `report_worktree_fate`) — integrate, salvage onto the run branch, or
+ * discard — so no fate arrives as a surprise at teardown.
  *
  * For a containment-requiring local builder — run from *inside* its container
  * (B′-2) — it additionally checks the three things that contained build needs:
@@ -37,6 +40,7 @@ import type { Engine } from './engine.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
 import type { Renderer } from './render/renderer.js';
 import type { BuilderProvider, CriticProvider, ResolvedConfig } from './types.js';
+import { report_worktree_fate } from './worktree.js';
 
 /** Executables the in-container builder shells out to (checkride/pnpm invoke
  * node; git drives the worktree). Their presence proves the sandbox image
@@ -190,6 +194,10 @@ export async function preflight(
     `critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`,
   );
   renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
+  // What a successful run does with its effects (D13), predicted here for any
+  // builder provider — the worktree's fate is not a containment concern, and
+  // `--worktree` without `--git` must not quietly end in a discarded build.
+  report_worktree_fate(config, renderer);
 
   if (config.check_resolved === 'checkride') {
     const doctor = probes.checkride_doctor ?? run_checkride_doctor;

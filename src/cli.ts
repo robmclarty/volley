@@ -47,6 +47,7 @@ type CliFlags = {
   maxCostUsd?: number;
   git?: boolean;
   worktree?: boolean;
+  discardWorktree?: boolean;
   sandboxImage?: string;
   dryRun?: boolean;
   config?: string;
@@ -132,6 +133,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.maxCostUsd !== undefined ? { max_cost_usd: Number(flags.maxCostUsd) } : {}),
     ...(flags.git === true ? { git_checkpoints: true } : {}),
     ...(flags.worktree === true ? { worktree: true } : {}),
+    ...(flags.discardWorktree === true ? { discard_worktree: true } : {}),
     ...(flags.sandboxImage !== undefined ? { sandbox_image: flags.sandboxImage } : {}),
     ...(flags.dryRun === true ? { dry_run: true } : {}),
     ...(flags.json === true ? { json: true } : {}),
@@ -184,6 +186,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--max-cost-usd <usd>', 'Hard USD ceiling, enforced in the loop guard')
     .option('--git', 'Auto-commit after each phase (workspace must be a git repo)')
     .option('--worktree', 'Isolate the builder run in a per-run git worktree (workspace must be a git repo)')
+    .option('--discard-worktree', "Throw a --worktree run's effects away at teardown instead of keeping them on the run branch")
     .option('--sandbox-image <tag>', `Container image for the local-builder sandbox (default: ${DEFAULT_SANDBOX_IMAGE})`)
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')
@@ -267,10 +270,11 @@ async function main(argv: string[]): Promise<number> {
         ...(flags.verbose === true ? { verbose: true } : {}),
         ...(flags.quiet === true ? { quiet: true } : {}),
       });
-      // Resolve once with the forced worktree (D11) to validate the git repo,
-      // providers, and task up front — before any combo spends — and to build
-      // the renderer and locate the workspace-level `.volley-matrix/` output.
-      const base_config = resolve_config({ ...merged, worktree: true });
+      // Resolve once with the forced throw-away worktree (D11) to validate the
+      // git repo, providers, and task up front — before any combo spends — and to
+      // build the renderer and locate the workspace-level `.volley-matrix/`
+      // output. Matches what `default_run_combo` resolves per seat.
+      const base_config = resolve_config({ ...merged, worktree: true, discard_worktree: true });
       const renderer = make_renderer(base_config);
       warn_api_key_meter(renderer);
       warn_unsandboxed_builder(base_config, renderer);

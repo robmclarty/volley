@@ -91,6 +91,12 @@ docker run --rm \
 Swap the model without editing the blessed config by appending
 `--builder-model <tag> --critic-model <tag>` (e.g. `qwen3.6:latest`).
 
+The config sets `worktree: true` and no `--git`, so a converged run's build is
+committed onto its run branch (`volley/<run id>`) in the workspace repo and left
+there — `git switch` to it to read the result, or append `--git` to squash-merge
+it onto the workspace branch instead, or `--discard-worktree` to keep only the
+`comparison` block. The workspace tree itself is untouched either way.
+
 **Seen live (2026-07-17, Ollama 0.30.10):** `qwen3.6:latest` *as critic*
 reproducibly dies with `stream interrupted: XML syntax error … element
 <function> closed by </parameter>` — under the critic's tools + constrained-

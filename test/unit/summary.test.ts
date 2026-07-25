@@ -54,6 +54,7 @@ function run_result(overrides: Partial<RunResult> = {}): RunResult {
     critic_cost_usd: 0.12,
     check_duration_ms: 4200,
     final_verdict: 'approved',
+    salvaged_branch: null,
     ...overrides,
   };
 }

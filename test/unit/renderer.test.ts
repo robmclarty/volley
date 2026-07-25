@@ -25,6 +25,7 @@ const RESULT: RunResult = {
   critic_cost_usd: 0.3,
   check_duration_ms: 500,
   final_verdict: 'approved',
+  salvaged_branch: null,
 };
 
 function capture(mode: RenderMode, show_thinking = true) {

@@ -35,7 +35,13 @@ import {
   volley_path,
   write_resolved_config,
 } from './workspace.js';
-import { build_root, with_worktree, worktree_branch } from './worktree.js';
+import {
+  build_root,
+  report_worktree_fate,
+  with_worktree,
+  worktree_branch,
+  worktree_fate,
+} from './worktree.js';
 
 export function initial_state(): LoopState {
   return {
@@ -120,16 +126,25 @@ export async function run_volley(
     initialize_workspace(config.workspace, { preserve: true });
   }
 
+  // Say what this run will do with its effects before it spends anything — the
+  // same notice `--dry-run` prints, repeated here so a run started without a dry
+  // run still hears it (D7's predict-then-warn shape).
+  report_worktree_fate(config, renderer);
+
   // The worktree lifecycle wraps the whole builder loop: created before the
   // first iteration, torn down after the last. Off unless `--worktree` is set
   // (config.worktree), so the default path never touches git here.
   const branch = worktree_branch(config.run_id);
-  return with_worktree(
+  const fate = worktree_fate(config);
+  const outcome = await with_worktree<RunResult>(
     {
       enabled: config.worktree,
       workspace: config.workspace,
       branch,
       log: (message) => renderer.info(message),
+      // The one case teardown must keep rather than force-delete: a converged run
+      // that integrated nothing, whose only copy of its work is the worktree.
+      salvage: (result) => fate === 'salvage' && result.status === 'success',
     },
     async () => {
       // Whole-process containment (B′/D5): volley runs *inside* its hardened
@@ -145,15 +160,34 @@ export async function run_volley(
       // phase branch's checkpoints onto the workspace branch before teardown
       // discards it. Any non-success outcome (cost cap, budget, interrupt,
       // error) is abandoned — teardown discards the branch wholesale, nothing
-      // integrated. Gated on `--git` too, so volley only commits to the
-      // workspace branch when the operator opted into checkpoints.
-      if (config.worktree && config.git_checkpoints && result.status === 'success') {
+      // integrated. Gated on `--git` too (`fate === 'integrate'`), so volley only
+      // commits to the workspace branch when the operator opted into checkpoints;
+      // without it the same work is salvaged onto its own branch instead.
+      if (fate === 'integrate' && result.status === 'success') {
         integrate_worktree(config.workspace, branch, `volley run ${config.run_id}: integrate worktree (squash)`);
         renderer.info(`worktree: squash-merged ${branch} onto the workspace branch`);
       }
       return result;
     },
   );
+
+  if (outcome.kept_path !== null) {
+    renderer.warn(
+      `worktree: could not commit this run's work onto ${branch}, so the checkout at ` +
+        `${outcome.kept_path} was left standing rather than deleted — its files are intact, and ` +
+        'the next --worktree run rotates the directory aside instead of destroying it.',
+    );
+  }
+  if (outcome.salvaged_branch === null) return outcome.value;
+  renderer.info(
+    `worktree: this run was not integrated; its work is preserved on branch ` +
+      `${outcome.salvaged_branch} (git switch ${outcome.salvaged_branch}, or cherry-pick it).`,
+  );
+  // Teardown salvaged the branch *after* `run_loop` wrote the final summary, so
+  // re-stamp it: `.volley/summary.json` and `--json` both name the survivor.
+  const salvaged: RunResult = { ...outcome.value, salvaged_branch: outcome.salvaged_branch };
+  write_run_summary(config, salvaged);
+  return salvaged;
 }
 
 async function run_loop(

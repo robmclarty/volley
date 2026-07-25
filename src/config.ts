@@ -321,6 +321,17 @@ export function resolve_config(
     throw config_error(`--worktree requires the workspace to be a git repository: ${workspace}`);
   }
 
+  // `--discard-worktree` (D13): opt in to the throw-away mode — a converged run's
+  // effects go away with its branch instead of being kept on it. Only meaningful
+  // under `--worktree`, so a lone flag is refused rather than silently ignored:
+  // it would otherwise read as isolation the run does not have.
+  const discard_worktree = raw.discard_worktree ?? false;
+  if (discard_worktree && !worktree) {
+    throw config_error(
+      '--discard-worktree applies only to a --worktree run: there is no worktree to discard',
+    );
+  }
+
   const sandbox_image = resolve_sandbox_image(raw, env);
 
   return {
@@ -344,6 +355,7 @@ export function resolve_config(
     max_cost_usd,
     git_checkpoints: raw.git_checkpoints ?? false,
     worktree,
+    discard_worktree,
     sandbox_image,
     workspace,
     verbose: raw.verbose ?? false,

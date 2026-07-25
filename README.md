@@ -98,7 +98,8 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--max-iterations` | `10` | Hard iteration cap. |
 | `--max-cost-usd` | none | Hard USD ceiling. Set it. |
 | `--git` | off | Commit after each phase (workspace must be a git repo). |
-| `--worktree` | off | Isolate the builder run in a per-run git worktree (workspace must be a git repo). |
+| `--worktree` | off | Isolate the builder run in a per-run git worktree (workspace must be a git repo). Without `--git`, a successful run's work is kept on the run branch — see [Local builder](#local-builder). |
+| `--discard-worktree` | off | Throw a `--worktree` run's effects away at teardown instead of keeping them on the run branch. Requires `--worktree`. |
 | `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
 | `--dry-run` | off | Validate config, run `checkride doctor` and (for a local critic) the critic-seat canary, then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
@@ -181,8 +182,10 @@ volley matrix \
 `--builders` and `--critics` are comma-separated model lists; every combination
 runs once (`--builder-model` × `--critic-model`), in series — the local
 providers share one GPU, so parallel combos would thrash the model loader. Each
-combo forces `--worktree` for a clean per-combo reset, so the **workspace must
-be a git repository**. Per-combo run state is written to
+combo forces `--worktree --discard-worktree` for a clean per-combo reset — a
+sweep wants verdicts, so each seat's effects are isolated and then thrown away,
+leaving neither a branch nor a commit behind — so the **workspace must be a git
+repository**. Per-combo run state is written to
 `.volley-matrix/<builder>__<critic>/summary.json`, and the sweep prints one
 aggregate table to stderr, sourced from each run's `comparison` block:
 
@@ -293,10 +296,21 @@ prints a one-time warning — only point it at a workspace you are willing to le
 local model run shell commands in.
 
 Independently of the sandbox, `--worktree` isolates a run in a per-run git
-worktree (the workspace must be a git repo). A successful `--worktree --git` run
-squash-merges the phase branch onto the workspace branch before teardown; any
-other outcome (cost cap, interrupt, error) is discarded wholesale, so the
-builder's effects never touch your working tree until the loop converges.
+worktree on a branch named `volley/<run id>` (the workspace must be a git repo),
+so the builder's effects never touch your working tree while the loop runs. What
+becomes of those effects when the run converges depends on two flags — volley
+prints which one applies at `--dry-run` and again at run start, so it is never a
+surprise at teardown:
+
+| Flags | A successful run's work |
+|---|---|
+| `--worktree --git` | Squash-merged onto the workspace branch, then the run branch is deleted. |
+| `--worktree` | Committed onto `volley/<run id>` and left there. Recover it with `git switch volley/<run id>` or `git cherry-pick`; the branch is named in the final summary and in `--json` as `salvaged_branch`. |
+| `--worktree --discard-worktree` | Thrown away with the branch — verdicts only, nothing kept. |
+
+Any run that does *not* converge (cost cap, budget exhausted, interrupt, error)
+is discarded wholesale in all three modes: an abandoned phase leaves nothing
+behind.
 
 Provider setup is the same as the [local critic](#local-critic) table
 (`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, same peer dependencies). At

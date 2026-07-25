@@ -82,20 +82,29 @@ describe('resume', () => {
     }
   });
 
-  it('persists --worktree and restores it on resume, defaulting off for legacy configs', () => {
+  it('persists the worktree flags and restores them on resume, defaulting off for legacy configs', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       initialize_workspace(workspace);
-      write_resolved_config(test_config({ workspace, run_id: 'wt-run', worktree: true }));
-      expect(load_resume_state(workspace, 'wt-run').raw_config.worktree).toBe(true);
+      write_resolved_config(
+        test_config({ workspace, run_id: 'wt-run', worktree: true, discard_worktree: true }),
+      );
+      const restored = load_resume_state(workspace, 'wt-run').raw_config;
+      expect(restored.worktree).toBe(true);
+      // The throw-away mode rides along: a resumed matrix seat must not start
+      // keeping a branch the sweep never asked for (D11/D13).
+      expect(restored.discard_worktree).toBe(true);
 
-      // A config.json written before --worktree existed (no key) restores off,
+      // A config.json written before these keys existed restores both off,
       // exactly like builder_provider's `?? claude_cli` default.
       const config_path = volley_path(workspace, 'config.json');
       const recorded = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
       delete recorded['worktree'];
+      delete recorded['discard_worktree'];
       writeFileSync(config_path, `${JSON.stringify(recorded, null, 2)}\n`);
-      expect(load_resume_state(workspace, 'wt-run').raw_config.worktree).toBe(false);
+      const legacy = load_resume_state(workspace, 'wt-run').raw_config;
+      expect(legacy.worktree).toBe(false);
+      expect(legacy.discard_worktree).toBe(false);
     } finally {
       cleanup();
     }

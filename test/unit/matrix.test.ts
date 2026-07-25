@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_USAGE } from '../../src/cost.js';
 import {
+  combo_config,
   parse_model_list,
   render_matrix_table,
   run_matrix,
 } from '../../src/matrix.js';
+import { worktree_fate } from '../../src/worktree.js';
 import type { ComboRunner, MatrixCombo, MatrixRow } from '../../src/matrix.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import type { RunSummary } from '../../src/summary.js';
@@ -37,6 +39,7 @@ function stub_summary(fields: {
     critic_cost_usd: 0,
     check_duration_ms: 0,
     final_verdict: converged ? 'approved' : null,
+    salvaged_branch: null,
     comparison: {
       builder_transport: 'ai_sdk',
       critic_transport: 'ai_sdk',
@@ -72,6 +75,23 @@ describe('parse_model_list', () => {
   it('refuses an empty or all-whitespace list', () => {
     expect(() => parse_model_list(undefined, '--builders')).toThrow(/--builders/);
     expect(() => parse_model_list(' , ', '--critics')).toThrow(/at least one model/);
+  });
+});
+
+describe('combo_config', () => {
+  it('forces a throw-away worktree per seat: no branch kept, nothing integrated', () => {
+    const config = combo_config(base_config, { builder: 'b1', critic: 'c1' });
+    expect(config.builder_model).toBe('b1');
+    expect(config.critic_model).toBe('c1');
+    expect(config.worktree).toBe(true);
+    expect(config.discard_worktree).toBe(true);
+    expect(
+      worktree_fate({
+        worktree: true,
+        git_checkpoints: config.git_checkpoints ?? false,
+        discard_worktree: true,
+      }),
+    ).toBe('discard');
   });
 });
 

@@ -144,6 +144,10 @@ export function run_result_from_state(
     critic_cost_usd: state.critic_cost_usd,
     check_duration_ms: state.check_duration_ms,
     final_verdict: state.verdict,
+    // The loop itself never salvages: the orchestrator re-stamps this after
+    // teardown when a converged `--worktree` run's work was kept on its branch
+    // (D13), which is the only moment the branch's survival is known.
+    salvaged_branch: null,
   };
 }
 
@@ -214,6 +218,7 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     max_cost_usd: recorded['max_cost_usd'] as number | null,
     git_checkpoints: recorded['git_checkpoints'] === true,
     worktree: recorded['worktree'] === true,
+    discard_worktree: recorded['discard_worktree'] === true,
     ...(recorded['sandbox_image'] === undefined
       ? {}
       : { sandbox_image: recorded['sandbox_image'] as string }),

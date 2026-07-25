@@ -1,9 +1,10 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import type { Tool } from 'fascicle';
 import { run_volley } from '../../src/orchestrator.js';
+import { create_renderer } from '../../src/render/renderer.js';
 import { worktree_branch, worktree_path } from '../../src/worktree.js';
 import { git_checkpoint } from '../../src/workspace.js';
 import { error_kind } from '../../src/types.js';
@@ -37,13 +38,23 @@ function head_subject(repo: string): string {
   return (spawnSync('git', ['log', '-1', '--format=%s'], { cwd: repo, encoding: 'utf8' }).stdout ?? '').trim();
 }
 
-/** A local-builder config whose write_file tool lands in the worktree, with
- * `--git` checkpoints on. Drives the D13 checkpoint/integration path. */
-function worktree_git_config(workspace: string, overrides: Record<string, unknown> = {}) {
+function show(repo: string, ref: string): string {
+  return spawnSync('git', ['show', ref], { cwd: repo, encoding: 'utf8' }).stdout ?? '';
+}
+
+function run_summary(workspace: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(join(workspace, '.volley', 'summary.json'), 'utf8'),
+  ) as Record<string, unknown>;
+}
+
+/** A local-builder config whose write_file tool lands in the worktree. Overrides
+ * pick the D13 fate: `git_checkpoints` integrates, `discard_worktree` throws the
+ * work away, neither salvages it onto the run branch. */
+function worktree_config(workspace: string, overrides: Record<string, unknown> = {}) {
   return test_config({
     workspace,
     worktree: true,
-    git_checkpoints: true,
     builder_provider: 'ollama',
     builder_model: 'qwen3-coder:30b',
     allow_unsandboxed_builder: true,
@@ -51,6 +62,11 @@ function worktree_git_config(workspace: string, overrides: Record<string, unknow
     check_resolved: 'none',
     ...overrides,
   });
+}
+
+/** The `--worktree --git` integrate path (D13). */
+function worktree_git_config(workspace: string, overrides: Record<string, unknown> = {}) {
+  return worktree_config(workspace, { git_checkpoints: true, ...overrides });
 }
 
 /** A builder that writes `out.txt` into its containment root (the worktree). */
@@ -299,6 +315,132 @@ describe('worktree-branch checkpoints + integration (D13, step 9)', () => {
         caught = err;
       }
       expect(error_kind(caught)).toBe('config_error');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('unintegrated success: salvage, not force-delete (D13)', () => {
+  it('salvages a converged --worktree run that had no --git to integrate it', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      // The defect this covers: with `--worktree` and no `--git`, a fully green
+      // run used to end in `branch -D` + `worktree remove --force` — the
+      // builder's work deleted, the workspace untouched, nothing said.
+      const config = worktree_config(workspace);
+      const branch = worktree_branch(config.run_id);
+
+      const before = commit_count(workspace);
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine: writing_builder(),
+        install_signal_handlers: false,
+      });
+
+      expect(result.status).toBe('success');
+      // The work survives on the run branch, named in the result and on disk.
+      expect(result.salvaged_branch).toBe(branch);
+      expect(run_summary(workspace)['salvaged_branch']).toBe(branch);
+      expect(branch_exists(workspace, branch)).toBe(true);
+      expect(show(workspace, `${branch}:out.txt`)).toBe('done');
+      // The workspace is exactly as it was: no commit, no file, no checkout.
+      expect(commit_count(workspace)).toBe(before);
+      expect(tracked_at_head(workspace)).not.toContain('out.txt');
+      expect(existsSync(join(workspace, 'out.txt'))).toBe(false);
+      expect(existsSync(worktree_path(workspace))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('warns at run start too, then names the branch to recover when the run ends', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      const lines: string[] = [];
+      const renderer = create_renderer({
+        mode: 'quiet',
+        show_thinking: false,
+        color: false,
+        max_cost_usd: null,
+        write: (text) => lines.push(text),
+      });
+      const config = worktree_config(workspace);
+
+      const result = await run_volley(config, {
+        renderer,
+        engine: writing_builder(),
+        install_signal_handlers: false,
+      });
+
+      expect(result.status).toBe('success');
+      const output = lines.join('');
+      // Predicted before any spend, reported concretely after teardown — a run
+      // started without `--dry-run` still hears both halves.
+      expect(output).toContain('will NOT be integrated');
+      expect(output).toContain(`git switch ${worktree_branch(config.run_id)}`);
+      expect(output.indexOf('will NOT be integrated')).toBeLessThan(
+        output.indexOf('git switch'),
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('discards cleanly in the sweep’s throw-away mode (--discard-worktree)', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      // What `volley matrix` resolves per seat (D11): isolate the effects, keep
+      // the verdict. A sweep must leave neither a branch nor a commit per seat.
+      const config = worktree_config(workspace, { discard_worktree: true });
+
+      const before = commit_count(workspace);
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine: writing_builder(),
+        install_signal_handlers: false,
+      });
+
+      expect(result.status).toBe('success');
+      expect(result.salvaged_branch).toBeNull();
+      expect(run_summary(workspace)['salvaged_branch']).toBeNull();
+      expect(branch_exists(workspace, worktree_branch(config.run_id))).toBe(false);
+      expect(existsSync(worktree_path(workspace))).toBe(false);
+      expect(commit_count(workspace)).toBe(before);
+      expect(tracked_at_head(workspace)).not.toContain('out.txt');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('still discards a non-converged --worktree run: only a green run is worth saving', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      const config = worktree_config(workspace, { max_iterations: 1 });
+      // A builder that writes, a critic that never approves: an abandoned phase.
+      const engine = mock_engine((call) =>
+        call.role === 'builder'
+          ? {
+              content: 'built',
+              cost_usd: 0,
+              effect: async (opts) => {
+                const write = opts.tools?.find((t: Tool) => t.name === 'write_file');
+                await write?.execute({ path: 'out.txt', content: 'done' }, ctx);
+              },
+            }
+          : reject_reply('needs work', ['unmet']),
+      );
+
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+
+      expect(result.status).toBe('budget_exhausted');
+      expect(result.salvaged_branch).toBeNull();
+      expect(branch_exists(workspace, worktree_branch(config.run_id))).toBe(false);
+      expect(existsSync(worktree_path(workspace))).toBe(false);
     } finally {
       cleanup();
     }

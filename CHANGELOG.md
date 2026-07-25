@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **`--worktree` without `--git` no longer destroys a successful run's work.** With `worktree: true` and git checkpoints off (the default), a fully green run — check passed, critic approved — ended in `git branch -D` plus a forced worktree removal: the builder's uncommitted work deleted, the workspace untouched, nothing said before or after. Teardown now *salvages* that case instead — it commits the worktree's state onto the run branch (`volley/<run id>`), keeps the branch, removes only the checkout, and reports the branch as `salvaged_branch` in `.volley/summary.json` and `--json` output, so the work is recoverable with `git switch` / `git cherry-pick`. If the salvage commit itself cannot land (no git identity, a stale index lock), the checkout is left standing rather than deleted. Runs that did not converge, and `--worktree --git` runs whose work was squash-merged, still discard wholesale; the documented integrate path is unchanged.
+- **A `--worktree` run's fate is now predicted before any model spend.** `--dry-run` and run start each print one line saying what a successful run will do with its effects — squash-merge onto the workspace branch (`--git`), leave them on the run branch (`--worktree` alone; a warning, since nothing is integrated), or throw them away (`--discard-worktree`) — alongside the existing critic-seat canary and `num_ctx` predictions.
+
+### Added
+- **`--discard-worktree`**: throw a `--worktree` run's effects away at teardown instead of keeping them on the run branch — "isolate the effects, I only want the verdicts". `volley matrix` forces it for every seat, so a sweep leaves neither a branch nor a squash commit per combo. Refused without `--worktree`; `--git` still wins, so `--worktree --git` integrates exactly as before.
+
 ## v0.4.0 — 2026-07-17
 
 ### Added

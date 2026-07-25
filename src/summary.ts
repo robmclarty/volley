@@ -8,9 +8,12 @@
  * object rather than re-deriving them from the per-iteration archive.
  *
  * This is the only writer of `summary.json`; the orchestrator calls it per
- * `record` step (status `running`, `completed_at` still null) and once more with
- * the final status. Each write recomputes the comparison from what is currently
- * archived under `.volley/iterations/`, so the trajectory grows as the run does.
+ * `record` step (status `running`, `completed_at` still null), once more with the
+ * final status, and — when a `--worktree` run's work was salvaged onto its branch
+ * rather than integrated (D13) — a third time, to stamp the surviving branch on
+ * `salvaged_branch`, which teardown only names after the final status is known.
+ * Each write recomputes the comparison from what is currently archived under
+ * `.volley/iterations/`, so the trajectory grows as the run does.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import type {

@@ -104,6 +104,71 @@ describe('preflight — all-Claude path never exits 5 from containment (C4)', ()
   });
 });
 
+describe('preflight — worktree fate prediction (D13)', () => {
+  /** The prediction is provider-independent, so these drive the all-Claude
+   * config: no containment probes run, only the fate line. */
+  function worktree_config(workspace: string, discard = false): ResolvedConfig {
+    const config = claude_config(workspace);
+    config.worktree = true;
+    config.discard_worktree = discard;
+    return config;
+  }
+
+  it('warns that a --worktree run without --git integrates nothing, and says where the work lands', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const code = await preflight(worktree_config(workspace), renderer, {}, ALL_GREEN);
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(output()).toContain('will NOT be integrated');
+      expect(output()).toContain('volley/<run id>');
+      expect(output()).toMatch(/warning:/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('predicts the squash-merge instead when --git is on', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const config = worktree_config(workspace);
+      config.git_checkpoints = true;
+      const code = await preflight(config, renderer, {}, ALL_GREEN);
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(output()).toContain('squash-merges');
+      expect(output()).not.toContain('will NOT be integrated');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('predicts a clean discard for the sweep’s throw-away mode', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const code = await preflight(worktree_config(workspace, true), renderer, {}, ALL_GREEN);
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(output()).toContain('thrown away');
+      expect(output()).not.toContain('will NOT be integrated');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('says nothing about a worktree when --worktree is off', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const code = await preflight(claude_config(workspace), renderer, {}, ALL_GREEN);
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(output()).not.toContain('worktree');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('preflight — containment checks for a local builder', () => {
   it('exits 0 when the toolchain, worktree, and endpoint are all present', async () => {
     const { workspace, cleanup } = temp_workspace();
