@@ -155,6 +155,39 @@ describe('gate edits', () => {
     }
   });
 
+  it('measures the worktree, not the workspace, under --worktree', async () => {
+    const { workspace, cleanup } = seeded_repo();
+    try {
+      // The builder writes into the worktree (its containment root, s2 D3) while
+      // the workspace stays pristine — the exact seam where a check once gated
+      // the wrong tree (research/v3-comparison-finding.md, defect 3). The change
+      // set has to follow the builder, not the workspace.
+      const engine = mock_engine((call: MockCall) =>
+        call.role === 'builder'
+          ? {
+              content: 'edited the test in the worktree',
+              cost_usd: 0.1,
+              effect: () =>
+                writeFileSync(join(`${workspace}.worktree`, 'test', 'feature.test.mjs'), '// gone\n'),
+            }
+          : approve_reply('Approved.'),
+      );
+
+      const result = await run_volley(config_for(workspace, { worktree: true }), {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+
+      expect(result.status).toBe('success');
+      expect(run_summary(workspace).comparison.gate_edits).toEqual(['test/feature.test.mjs']);
+      const prompt = prompt_text(engine.calls.find((call) => call.role === 'critic'));
+      expect(prompt).toContain('GATE EDITS (1)');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('omits the change section outside a git repository rather than claiming nothing changed', async () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {

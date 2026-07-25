@@ -130,7 +130,11 @@ function report_changes(
       `whether its work passes — ${listed}${hidden > 0 ? ` (+${String(hidden)} more)` : ''}. ` +
       'A green check proves less when the builder can edit the gate; the critic is told about ' +
       'this and the run summary records it.' +
-      (config.fail_on_gate_edit ? ' Halting the run: --fail-on-gate-edit is set.' : ''),
+      // The halt lands at the loop guard, after this iteration's check and
+      // critic have had their say — so promise the outcome, not the timing.
+      (config.fail_on_gate_edit
+        ? ' This run will end without success (--fail-on-gate-edit, exit 8).'
+        : ''),
   );
 }
 
