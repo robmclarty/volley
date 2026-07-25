@@ -3,7 +3,9 @@
  * CLI entry point (spec §5): cac argv parsing, dispatch, exit-code mapping.
  * Human progress goes to stderr; stdout carries machine output only.
  */
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cac } from 'cac';
 import {
   DEFAULT_CHECK,
@@ -66,6 +68,35 @@ type MatrixFlags = {
   verbose?: boolean;
   quiet?: boolean;
 };
+
+/**
+ * volley's own version for `--version`, read from the manifest rather than
+ * repeated here — a literal drifts silently, since `pnpm version` bumps only
+ * `package.json` (this one sat at `0.2.0` through three releases).
+ *
+ * Walks up from this module to the nearest `package.json`, the same shape
+ * `presets_dir()` uses to find its files: the manifest sits directly above both
+ * `src/` (under tsx) and `dist/` (the built bin, and the published package), so
+ * one walk serves every entry path. Never throws — an unreadable manifest
+ * reports `unknown` rather than failing every command over a version string.
+ */
+export function package_version(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 6; depth += 1) {
+    const manifest = join(dir, 'package.json');
+    if (existsSync(manifest)) {
+      try {
+        const version = (JSON.parse(readFileSync(manifest, 'utf8')) as { version?: unknown })
+          .version;
+        if (typeof version === 'string') return version;
+      } catch {
+        // A torn or unreadable manifest is not worth failing a run over.
+      }
+    }
+    dir = dirname(dir);
+  }
+  return 'unknown';
+}
 
 function render_mode(config: ResolvedConfig): RenderMode {
   if (config.json) return 'json';
@@ -292,7 +323,7 @@ async function main(argv: string[]): Promise<number> {
     });
 
   cli.help();
-  cli.version('0.2.0');
+  cli.version(package_version());
 
   try {
     cli.parse(argv, { run: false });

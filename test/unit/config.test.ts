@@ -11,7 +11,7 @@ import {
   load_config_file,
   resolve_config,
 } from '../../src/config.js';
-import { warn_unsandboxed_builder } from '../../src/cli.js';
+import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
 import { create_renderer } from '../../src/render/renderer.js';
@@ -587,6 +587,18 @@ describe('detect_containment (B′-2)', () => {
       expect(detect_containment({ VOLLEY_CONTAINED: value })).toBe(false);
     }
     expect(detect_containment({})).toBe(false);
+  });
+});
+
+describe('package_version', () => {
+  it('reports the manifest version, so --version cannot drift from the release', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+    expect(package_version()).toBe(manifest.version);
+    // Guards the fallback: a resolution failure would report `unknown`, not a
+    // stale-but-plausible number.
+    expect(package_version()).toMatch(/^\d+\.\d+\.\d+/);
   });
 });
 
