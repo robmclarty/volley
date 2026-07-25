@@ -73,6 +73,13 @@ export type ComparisonSummary = {
   final_verdict: Verdict | null;
   check_trajectory: CheckTrajectoryPoint[];
   local_salvage: SalvageStats;
+  /** Every gate path any iteration's builder edited — the tests, fixtures, and
+   * check configuration that decide whether its own work passes (`src/changes.ts`).
+   * Empty on a run that only touched the implementation, which is the shape of
+   * the by-hand verification `research/reckon-local-run-finding.md` recommends
+   * making routine: a green check plus an empty list is worth more than a green
+   * check alone. Sorted and de-duplicated across iterations. */
+  gate_edits: string[];
   /** Any iteration's critic verdict was rendered by the tool-less fallback
    * (OQ-12/D3): the tool-bearing critique kept dying on the provider's stream, so
    * the critic judged without read access — real, but shallower. The run's
@@ -91,6 +98,7 @@ type IterationArchive = {
   iteration?: number;
   builder?: { tool_calls?: number; salvaged_tool_calls?: number } | null;
   check?: { ran?: boolean; ok?: boolean; failing_slots?: string[] } | null;
+  changes?: { gate_edits?: string[] } | null;
   critic?: { critic_degraded?: boolean } | null;
 };
 
@@ -133,6 +141,17 @@ function any_critic_degraded(archives: IterationArchive[]): boolean {
   return archives.some((archive) => archive.critic?.critic_degraded === true);
 }
 
+/** Every gate path the run's builder touched, across all iterations: an edit in
+ * iteration 1 that a later iteration reverted still happened, so the run-level
+ * answer is the union rather than the last iteration's list. */
+function all_gate_edits(archives: IterationArchive[]): string[] {
+  const edits = new Set<string>();
+  for (const archive of archives) {
+    for (const path of archive.changes?.gate_edits ?? []) edits.add(path);
+  }
+  return [...edits].toSorted();
+}
+
 function salvage_stats(archives: IterationArchive[]): SalvageStats {
   let tool_calls = 0;
   let salvaged_tool_calls = 0;
@@ -169,6 +188,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       critic_cost_usd: result.critic_cost_usd,
       final_verdict: result.final_verdict,
       check_trajectory: check_trajectory(archives),
+      gate_edits: all_gate_edits(archives),
       local_salvage: salvage_stats(archives),
       critic_degraded: any_critic_degraded(archives),
     },

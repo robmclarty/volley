@@ -23,6 +23,7 @@ function stub_summary(fields: {
   wall_clock_ms?: number;
   salvage_rate?: number;
   critic_degraded?: boolean;
+  gate_edits?: string[];
 }): RunSummary {
   const status = fields.status ?? 'success';
   const converged = status === 'success';
@@ -50,6 +51,7 @@ function stub_summary(fields: {
       critic_cost_usd: 0,
       final_verdict: converged ? 'approved' : null,
       check_trajectory: [],
+      gate_edits: fields.gate_edits ?? [],
       local_salvage: { tool_calls: 10, salvaged_tool_calls: 0, rate: fields.salvage_rate ?? 0 },
       critic_degraded: fields.critic_degraded ?? false,
     },

@@ -11,6 +11,7 @@ import {
   EXIT_CHECK_ERROR,
   EXIT_CONFIG_ERROR,
   EXIT_COST_CAP,
+  EXIT_GATE_EDIT,
   EXIT_CRITIC_ERROR,
   EXIT_INTERRUPTED,
   EXIT_SUCCESS,
@@ -24,6 +25,7 @@ describe('exit_code_for_status', () => {
     expect(exit_code_for_status('success')).toBe(EXIT_SUCCESS);
     expect(exit_code_for_status('budget_exhausted')).toBe(EXIT_BUDGET_EXHAUSTED);
     expect(exit_code_for_status('cost_cap_reached')).toBe(EXIT_COST_CAP);
+    expect(exit_code_for_status('gate_edit_blocked')).toBe(EXIT_GATE_EDIT);
     expect(exit_code_for_status('interrupted')).toBe(EXIT_INTERRUPTED);
   });
 });

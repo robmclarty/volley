@@ -58,6 +58,8 @@ export function write_resolved_config(config: ResolvedConfig): void {
     git_checkpoints: config.git_checkpoints,
     worktree: config.worktree,
     discard_worktree: config.discard_worktree,
+    gate_paths: config.gate_paths,
+    fail_on_gate_edit: config.fail_on_gate_edit,
     sandbox_image: config.sandbox_image,
     workspace: config.workspace,
   };

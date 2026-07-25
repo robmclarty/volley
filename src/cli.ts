@@ -50,6 +50,8 @@ type CliFlags = {
   git?: boolean;
   worktree?: boolean;
   discardWorktree?: boolean;
+  gatePaths?: string;
+  failOnGateEdit?: boolean;
   sandboxImage?: string;
   dryRun?: boolean;
   config?: string;
@@ -96,6 +98,15 @@ export function package_version(): string {
     dir = dirname(dir);
   }
   return 'unknown';
+}
+
+/** Split a comma-separated `--gate-paths` value into globs. An all-empty value
+ * yields an empty list — "nothing is the gate", which turns the report off. */
+function parse_glob_list(value: string): string[] {
+  return value
+    .split(',')
+    .map((glob) => glob.trim())
+    .filter((glob) => glob.length > 0);
 }
 
 function render_mode(config: ResolvedConfig): RenderMode {
@@ -165,6 +176,8 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.git === true ? { git_checkpoints: true } : {}),
     ...(flags.worktree === true ? { worktree: true } : {}),
     ...(flags.discardWorktree === true ? { discard_worktree: true } : {}),
+    ...(flags.gatePaths !== undefined ? { gate_paths: parse_glob_list(flags.gatePaths) } : {}),
+    ...(flags.failOnGateEdit === true ? { fail_on_gate_edit: true } : {}),
     ...(flags.sandboxImage !== undefined ? { sandbox_image: flags.sandboxImage } : {}),
     ...(flags.dryRun === true ? { dry_run: true } : {}),
     ...(flags.json === true ? { json: true } : {}),
@@ -218,6 +231,8 @@ async function main(argv: string[]): Promise<number> {
     .option('--git', 'Auto-commit after each phase (workspace must be a git repo)')
     .option('--worktree', 'Isolate the builder run in a per-run git worktree (workspace must be a git repo)')
     .option('--discard-worktree', "Throw a --worktree run's effects away at teardown instead of keeping them on the run branch")
+    .option('--gate-paths <globs>', 'Comma-separated globs naming the gate (tests, fixtures, check config); replaces the defaults')
+    .option('--fail-on-gate-edit', 'Halt the run if the builder edits a gate path (exit 8) instead of reporting it')
     .option('--sandbox-image <tag>', `Container image for the local-builder sandbox (default: ${DEFAULT_SANDBOX_IMAGE})`)
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')

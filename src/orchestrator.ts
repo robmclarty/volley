@@ -10,6 +10,7 @@ import { filesystem_logger } from 'fascicle/adapters';
 import type { Engine } from 'fascicle';
 import { run_builder } from './builder.js';
 import type { BashExecutor } from './builder/tools.js';
+import { capture_baseline, collect_changes } from './changes.js';
 import { run_checkride } from './check/checkride.js';
 import { run_command_check, skipped_check } from './check/command.js';
 import { cost_cap_hit } from './cost.js';
@@ -21,6 +22,7 @@ import { run_critic } from './critic/run.js';
 import type { Renderer } from './render/renderer.js';
 import { error_kind, phase_error } from './types.js';
 import type {
+  ChangeSet,
   CheckResult,
   LoopState,
   ResolvedConfig,
@@ -51,6 +53,7 @@ export function initial_state(): LoopState {
     verdict: null,
     unmet_criteria: [],
     check: null,
+    changes: null,
     builder: null,
     critic: null,
     total_usage: EMPTY_USAGE,
@@ -64,24 +67,71 @@ export function initial_state(): LoopState {
   };
 }
 
-/** All three stopping conditions live here (spec §2): acceptance, cost cap,
- * and — implicitly via `max_rounds` — the iteration budget. Success wins
- * when it and the cap land on the same iteration. */
+/** Did this iteration's builder edit the gate that judges it, with the operator
+ * having asked for that to stop the run? Reported either way (the critic prompt
+ * and the summary always carry it); only `--fail-on-gate-edit` makes it fatal. */
+function gate_edit_halt(config: ResolvedConfig, state: LoopState): boolean {
+  return config.fail_on_gate_edit && (state.changes?.gate_edits.length ?? 0) > 0;
+}
+
+/** All stopping conditions live here (spec §2): acceptance, cost cap, the gate
+ * edit refusal, and — implicitly via `max_rounds` — the iteration budget.
+ * Success wins when it and the cap land on the same iteration.
+ *
+ * A gate edit is the one condition that *beats* success rather than losing to
+ * it: the run passed a check the builder had rewritten, so the pass is exactly
+ * what is in question. It stops the run instead of iterating, because a model
+ * that just edited the gate is not a promising candidate to be asked again. */
 export function gate(
   config: ResolvedConfig,
   state: LoopState,
 ): { stop: boolean; state: LoopState } {
-  const success = state.check?.ok === true && state.verdict === 'approved';
+  const gate_edit = gate_edit_halt(config, state);
+  const success = state.check?.ok === true && state.verdict === 'approved' && !gate_edit;
   const cap = cost_cap_hit(config, state);
+  const halt = gate_edit ? 'gate_edit' : !success && cap ? 'cost_cap' : null;
   return {
-    stop: success || cap,
-    state: { ...state, halt: !success && cap ? 'cost_cap' : null },
+    stop: success || cap || gate_edit,
+    state: { ...state, halt },
   };
 }
 
 export function status_of(value: LoopState, converged: boolean): RunStatus {
+  if (value.halt === 'gate_edit') return 'gate_edit_blocked';
   if (value.halt === 'cost_cap') return 'cost_cap_reached';
   return converged ? 'success' : 'budget_exhausted';
+}
+
+/** How many gate edits a warning names before it summarises the rest. */
+const LISTED_GATE_EDITS = 5;
+
+/**
+ * Say what the builder reached for, every iteration. The count is an info line;
+ * a gate edit is a warning, because it is the fact that changes how much a green
+ * check is worth — and the operator should hear it from the harness rather than
+ * discover it in the diff afterwards (the by-hand check that
+ * `research/reckon-local-run-finding.md` recommends making routine).
+ */
+function report_changes(
+  config: ResolvedConfig,
+  renderer: Renderer,
+  changes: ChangeSet | null,
+): void {
+  if (changes === null) return;
+  renderer.info(
+    `changes: ${String(changes.total)} file(s) changed since the run baseline` +
+      (changes.truncated ? ` (listing the first ${String(changes.files.length)})` : ''),
+  );
+  if (changes.gate_edits.length === 0) return;
+  const hidden = changes.gate_edits.length - LISTED_GATE_EDITS;
+  const listed = changes.gate_edits.slice(0, LISTED_GATE_EDITS).join(', ');
+  renderer.warn(
+    `gate edit: the builder changed ${String(changes.gate_edits.length)} file(s) that decide ` +
+      `whether its work passes — ${listed}${hidden > 0 ? ` (+${String(hidden)} more)` : ''}. ` +
+      'A green check proves less when the builder can edit the gate; the critic is told about ' +
+      'this and the run summary records it.' +
+      (config.fail_on_gate_edit ? ' Halting the run: --fail-on-gate-edit is set.' : ''),
+  );
 }
 
 async function execute_check(
@@ -155,7 +205,12 @@ export async function run_volley(
       // bind-mounted worktree; the retired `docker exec` path is gone. The
       // hardened `docker run` invocation spec the example uses lives in
       // `src/sandbox.ts`.
-      const result = await run_loop(config, deps, resume_from, null);
+      // The commit every iteration's change set is measured against, read after
+      // the worktree exists and before the builder writes anything. Null when the
+      // build root is not a git repo — then the run reports no changes at all
+      // rather than guessing at them.
+      const baseline = capture_baseline(build_root(config.workspace, config.worktree));
+      const result = await run_loop(config, deps, resume_from, null, baseline);
       // D13 integration: a *successful* `--worktree --git` run squash-merges the
       // phase branch's checkpoints onto the workspace branch before teardown
       // discards it. Any non-success outcome (cost cap, budget, interrupt,
@@ -195,6 +250,7 @@ async function run_loop(
   deps: OrchestratorDeps,
   resume_from: LoopState | null,
   bash_executor: BashExecutor | null,
+  baseline: string | null,
 ): Promise<RunResult> {
   const { renderer } = deps;
 
@@ -234,13 +290,22 @@ async function run_loop(
     if (built.cost_warned && !s.cost_warned) {
       renderer.warn('cost unavailable for this phase; recording null (run totals sum what is known)');
     }
+    // What the builder actually did, measured before the check runs — so the
+    // check's verdict and the builder's reach are two independent facts about
+    // the same iteration rather than one inferred from the other.
+    const changes = collect_changes({
+      root: build_root(config.workspace, config.worktree),
+      baseline,
+      gate_patterns: config.gate_paths,
+    });
+    report_changes(config, renderer, changes);
     if (config.git_checkpoints) {
       git_checkpoint(
         build_root(config.workspace, config.worktree),
         `volley iter ${String(built.iteration)}: build`,
       );
     }
-    return built;
+    return { ...built, changes };
   });
 
   // A builder-crossed cap short-circuits to the guard: the check and critic

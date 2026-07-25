@@ -8,7 +8,7 @@ import {
 } from '../../src/critic/prompt.js';
 import { skipped_check } from '../../src/check/command.js';
 import { temp_workspace, test_config } from '../helpers/harness.js';
-import type { CheckResult } from '../../src/types.js';
+import type { ChangeSet, CheckResult } from '../../src/types.js';
 
 describe('presets', () => {
   it('ships one markdown file per preset, discoverable by listing', () => {
@@ -75,7 +75,7 @@ describe('compose_critic_prompt', () => {
       ],
       summary: { schema_version: 1, ok: false },
     };
-    const prompt = compose_critic_prompt({ criteria: '- it works', iteration: 2, check });
+    const prompt = compose_critic_prompt({ criteria: '- it works', iteration: 2, check, changes: null });
     expect(prompt).toContain('- it works');
     expect(prompt).toContain('ITERATION: 2');
     expect(prompt).toContain('FAILED');
@@ -88,6 +88,7 @@ describe('compose_critic_prompt', () => {
       criteria: 'c',
       iteration: 1,
       check: skipped_check('none'),
+      changes: null,
     });
     expect(prompt).toContain('No deterministic check ran');
   });
@@ -103,7 +104,77 @@ describe('compose_critic_prompt', () => {
       detail: [],
       log: '1 test failed: widget spins backwards',
     };
-    const prompt = compose_critic_prompt({ criteria: 'c', iteration: 1, check });
+    const prompt = compose_critic_prompt({ criteria: 'c', iteration: 1, check, changes: null });
     expect(prompt).toContain('widget spins backwards');
+  });
+});
+
+describe('compose_critic_prompt — builder changes', () => {
+  const check = skipped_check('none');
+  const compose = (changes: ChangeSet | null): string =>
+    compose_critic_prompt({ criteria: 'c', iteration: 1, check, changes });
+
+  function change_set(overrides: Partial<ChangeSet> = {}): ChangeSet {
+    return {
+      baseline: 'abcdef1234567890abcdef1234567890abcdef12',
+      files: [{ path: 'src/a.mjs', status: 'modified', gate: false }],
+      gate_edits: [],
+      total: 1,
+      truncated: false,
+      ...overrides,
+    };
+  }
+
+  it('omits the section entirely when change detection is unavailable', () => {
+    expect(compose(null)).not.toContain('BUILDER CHANGES');
+  });
+
+  it('lists the changed paths with their status and the baseline', () => {
+    const prompt = compose(
+      change_set({
+        files: [
+          { path: 'src/a.mjs', status: 'modified', gate: false },
+          { path: 'src/b.mjs', status: 'added', gate: false },
+          { path: 'src/c.mjs', status: 'deleted', gate: false },
+        ],
+        total: 3,
+      }),
+    );
+    expect(prompt).toContain('BUILDER CHANGES (since baseline abcdef12)');
+    expect(prompt).toContain('M src/a.mjs');
+    expect(prompt).toContain('A src/b.mjs');
+    expect(prompt).toContain('D src/c.mjs');
+    expect(prompt).not.toContain('GATE EDITS');
+  });
+
+  it('calls out gate edits and tells the critic what to do about them', () => {
+    const prompt = compose(
+      change_set({
+        files: [
+          { path: 'src/a.mjs', status: 'modified', gate: false },
+          { path: 'test/a.test.mjs', status: 'deleted', gate: true },
+        ],
+        gate_edits: ['test/a.test.mjs'],
+        total: 2,
+      }),
+    );
+    expect(prompt).toContain('GATE EDITS (1)');
+    expect(prompt).toContain('! test/a.test.mjs');
+    expect(prompt).toContain('changes_requested');
+  });
+
+  it('says the builder changed nothing rather than staying silent', () => {
+    const prompt = compose(change_set({ files: [], total: 0 }));
+    expect(prompt).toContain('The builder changed no files');
+  });
+
+  it('names the truncation instead of implying a short list is the whole list', () => {
+    const prompt = compose(change_set({ total: 431, truncated: true }));
+    expect(prompt).toContain('showing 1 of 431 changed paths');
+  });
+
+  it('reads as "this run" when the repository has no baseline commit', () => {
+    const prompt = compose(change_set({ baseline: null }));
+    expect(prompt).toContain('BUILDER CHANGES (since this run)');
   });
 });

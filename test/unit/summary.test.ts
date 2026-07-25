@@ -21,6 +21,7 @@ function archive(
     check_ran?: boolean;
     check_ok?: boolean;
     failing_slots?: string[];
+    gate_edits?: string[];
   },
 ): void {
   const dir = join(workspace, '.volley', 'iterations', String(iteration).padStart(3, '0'));
@@ -37,6 +38,10 @@ function archive(
         fields.check_ran === undefined
           ? null
           : { ran: fields.check_ran, ok: fields.check_ok ?? false, failing_slots: fields.failing_slots ?? [] },
+      changes:
+        fields.gate_edits === undefined
+          ? null
+          : { baseline: 'abc', files: [], gate_edits: fields.gate_edits, total: 0, truncated: false },
     }),
   );
 }
@@ -129,6 +134,44 @@ describe('write_run_summary', () => {
       expect(written.status).toBe('success');
       // ...alongside the comparison block.
       expect(written.comparison.iterations_to_converge).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('comparison.gate_edits', () => {
+  it('unions every iteration\'s gate edits, sorted and de-duplicated', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      // Edited in iteration 1, edited again in 2 alongside a second file: an
+      // edit that a later iteration reverts still happened.
+      archive(workspace, 1, { gate_edits: ['test/b.test.mjs'] });
+      archive(workspace, 2, { gate_edits: ['test/b.test.mjs', 'package.json'] });
+      const summary = build_run_summary(test_config({ workspace }), run_result());
+      expect(summary.comparison.gate_edits).toEqual(['package.json', 'test/b.test.mjs']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('is empty for a run that only touched the implementation', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      archive(workspace, 1, { gate_edits: [] });
+      const summary = build_run_summary(test_config({ workspace }), run_result());
+      expect(summary.comparison.gate_edits).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('is empty when the archives predate change detection', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      archive(workspace, 1, { check_ran: true, check_ok: true });
+      const summary = build_run_summary(test_config({ workspace }), run_result());
+      expect(summary.comparison.gate_edits).toEqual([]);
     } finally {
       cleanup();
     }

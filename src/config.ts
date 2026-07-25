@@ -7,6 +7,7 @@ import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
@@ -332,6 +333,14 @@ export function resolve_config(
     );
   }
 
+  // What counts as the gate is the task's call, so a config's own list replaces
+  // the defaults outright rather than extending them: a test-writing task owns
+  // its tests, and an empty list turns the report off entirely.
+  const gate_paths = raw.gate_paths ?? DEFAULT_GATE_PATTERNS;
+  if (!Array.isArray(gate_paths) || gate_paths.some((glob) => typeof glob !== 'string')) {
+    throw config_error('gate_paths must be an array of glob strings');
+  }
+
   const sandbox_image = resolve_sandbox_image(raw, env);
 
   return {
@@ -356,6 +365,8 @@ export function resolve_config(
     git_checkpoints: raw.git_checkpoints ?? false,
     worktree,
     discard_worktree,
+    gate_paths: [...gate_paths],
+    fail_on_gate_edit: raw.fail_on_gate_edit ?? false,
     sandbox_image,
     workspace,
     verbose: raw.verbose ?? false,

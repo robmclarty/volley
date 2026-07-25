@@ -12,6 +12,10 @@ export const EXIT_CHECK_ERROR = 4;
 export const EXIT_CONFIG_ERROR = 5;
 export const EXIT_CRITIC_ERROR = 6;
 export const EXIT_COST_CAP = 7;
+/** The builder edited the gate that judges it and `--fail-on-gate-edit` was set:
+ * distinct from a failed check (4) and from a budget exhaustion (2), because
+ * nothing failed — the run refused to count a pass it could not trust. */
+export const EXIT_GATE_EDIT = 8;
 export const EXIT_INTERRUPTED = 130;
 
 export function exit_code_for_status(status: RunStatus): number {
@@ -22,6 +26,8 @@ export function exit_code_for_status(status: RunStatus): number {
       return EXIT_BUDGET_EXHAUSTED;
     case 'cost_cap_reached':
       return EXIT_COST_CAP;
+    case 'gate_edit_blocked':
+      return EXIT_GATE_EDIT;
     case 'interrupted':
       return EXIT_INTERRUPTED;
     default:

@@ -6,6 +6,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import type { Renderer } from '../../src/render/renderer.js';
 import type { ResolvedConfig } from '../../src/types.js';
@@ -80,6 +81,8 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     git_checkpoints: false,
     worktree: false,
     discard_worktree: false,
+    gate_paths: DEFAULT_GATE_PATTERNS,
+    fail_on_gate_edit: false,
     sandbox_image: 'volley-sandbox:latest',
     verbose: false,
     quiet: false,

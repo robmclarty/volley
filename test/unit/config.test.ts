@@ -11,6 +11,7 @@ import {
   load_config_file,
   resolve_config,
 } from '../../src/config.js';
+import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
@@ -534,6 +535,67 @@ describe('resolve_config', () => {
         env: {},
       });
       expect(restored.sandbox_image).toBe('pinned/img:3');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('gate paths', () => {
+  it('defaults to the shipped gate patterns, off by default as a refusal', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace));
+      expect(config.gate_paths).toEqual(DEFAULT_GATE_PATTERNS);
+      expect(config.fail_on_gate_edit).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('replaces the defaults rather than extending them — the task owns its gate', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config({ ...base(workspace), gate_paths: ['schema/**'] });
+      expect(config.gate_paths).toEqual(['schema/**']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('accepts an empty list as "nothing here is the gate"', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config({ ...base(workspace), gate_paths: [] }).gate_paths).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a non-glob-list gate_paths as a config error', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config({ ...base(workspace), gate_paths: [42] as unknown as string[] }),
+      ).toThrow(/gate_paths/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('carries both settings across a resume', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config({
+        ...base(workspace),
+        gate_paths: ['schema/**'],
+        fail_on_gate_edit: true,
+      });
+      initialize_workspace(workspace);
+      write_resolved_config(config);
+      const resumed = load_resume_state(workspace, config.run_id);
+      expect(resumed.raw_config.gate_paths).toEqual(['schema/**']);
+      expect(resumed.raw_config.fail_on_gate_edit).toBe(true);
     } finally {
       cleanup();
     }

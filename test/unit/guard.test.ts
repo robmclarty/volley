@@ -60,11 +60,55 @@ describe('gate', () => {
   }
 });
 
+describe('gate — gate edits (--fail-on-gate-edit)', () => {
+  const workspace = '/tmp';
+  const reporting = test_config({ workspace });
+  const refusing = test_config({ workspace, fail_on_gate_edit: true });
+
+  function state_with_gate_edits(gate_edits: string[]): LoopState {
+    return {
+      ...state_with(check_result(true), 'approved', 0.5),
+      changes: {
+        baseline: 'abc',
+        files: gate_edits.map((path) => ({ path, status: 'modified' as const, gate: true })),
+        gate_edits,
+        total: gate_edits.length,
+        truncated: false,
+      },
+    };
+  }
+
+  it('reports and converges by default: a gate edit is evidence, not a refusal', () => {
+    const { stop, state } = gate(reporting, state_with_gate_edits(['test/a.test.mjs']));
+    expect(stop).toBe(true);
+    expect(state.halt).toBeNull();
+  });
+
+  it('beats success under the flag — the pass is what the edit puts in question', () => {
+    const { stop, state } = gate(refusing, state_with_gate_edits(['test/a.test.mjs']));
+    expect(stop).toBe(true);
+    expect(state.halt).toBe('gate_edit');
+  });
+
+  it('lets a clean run through under the flag', () => {
+    const { stop, state } = gate(refusing, state_with_gate_edits([]));
+    expect(stop).toBe(true);
+    expect(state.halt).toBeNull();
+  });
+
+  it('does not halt when change detection was unavailable', () => {
+    const clean = { ...state_with(check_result(true), 'approved', 0.5), changes: null };
+    expect(gate(refusing, clean).state.halt).toBeNull();
+  });
+});
+
 describe('status_of', () => {
   it('maps loop outcomes to run statuses', () => {
     const s = initial_state();
     expect(status_of({ ...s, halt: null }, true)).toBe('success');
     expect(status_of({ ...s, halt: null }, false)).toBe('budget_exhausted');
     expect(status_of({ ...s, halt: 'cost_cap' }, true)).toBe('cost_cap_reached');
+    // Wins over `converged`, which the guard set when it stopped the loop.
+    expect(status_of({ ...s, halt: 'gate_edit' }, true)).toBe('gate_edit_blocked');
   });
 });

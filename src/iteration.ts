@@ -120,6 +120,11 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
             failing_slots: check.failing_slots,
           },
     critic: phase_summary(state.critic),
+    // What the builder reached for this iteration (`src/changes.ts`), archived
+    // beside the check's verdict so the two can be read against each other after
+    // the fact: green + a gate edit is a different result from green alone.
+    // Null when the build root is not a git repository. Additive (C5).
+    changes: state.changes,
     verdict: state.verdict,
     iteration_cost_usd: state.iteration_cost_usd,
     iteration_total_cost_usd: state.total_cost_usd,
@@ -219,6 +224,10 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     git_checkpoints: recorded['git_checkpoints'] === true,
     worktree: recorded['worktree'] === true,
     discard_worktree: recorded['discard_worktree'] === true,
+    ...(Array.isArray(recorded['gate_paths'])
+      ? { gate_paths: recorded['gate_paths'] as string[] }
+      : {}),
+    fail_on_gate_edit: recorded['fail_on_gate_edit'] === true,
     ...(recorded['sandbox_image'] === undefined
       ? {}
       : { sandbox_image: recorded['sandbox_image'] as string }),
@@ -231,6 +240,9 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     verdict: null,
     unmet_criteria: [],
     check: null,
+    // Re-measured by the resumed run's first `build` step, against a baseline
+    // captured at resume — a resumed run reports what it changes from there.
+    changes: null,
     builder: null,
     critic: null,
     total_usage: summary?.total_usage ?? EMPTY_USAGE,

@@ -287,6 +287,7 @@ export async function run_critic(
       criteria: config.criteria,
       iteration: state.iteration,
       check,
+      changes: state.changes,
     });
 
     // Rung 1 (D1/OQ-11): retry a local critic's stochastic tool-phase stream

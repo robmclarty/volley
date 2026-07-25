@@ -42,6 +42,10 @@ export type RunStatus =
   | 'success'
   | 'budget_exhausted'
   | 'cost_cap_reached'
+  /** The builder edited the gate that judges it, under `--fail-on-gate-edit`:
+   * the run halts on the spot rather than iterating, because a check the builder
+   * can rewrite is not evidence the work is done. */
+  | 'gate_edit_blocked'
   | 'interrupted'
   | 'error';
 
@@ -64,6 +68,8 @@ export type VolleyConfig = {
   git_checkpoints?: boolean;
   worktree?: boolean;
   discard_worktree?: boolean;
+  gate_paths?: string[];
+  fail_on_gate_edit?: boolean;
   sandbox_image?: string;
   verbose?: boolean;
   quiet?: boolean;
@@ -107,6 +113,18 @@ export type ResolvedConfig = {
    * Refused without `--worktree`; `--git` still wins, so a `--worktree --git`
    * run integrates exactly as it always has. */
   discard_worktree: boolean;
+  /** Glob patterns naming the *gate*: the tests, fixtures, and check
+   * configuration that decide whether the builder's work passes. An edit to one
+   * is reported to the critic and recorded in the summary — and refused outright
+   * under `fail_on_gate_edit`. Defaults to `DEFAULT_GATE_PATTERNS`; a config's
+   * own list replaces it, because what counts as the gate is the task's call
+   * (a test-writing task edits tests by design). */
+  gate_paths: string[];
+  /** Halt the run when the builder edits a `gate_paths` match, instead of
+   * reporting it and continuing. Off by default: a gate edit is legitimate often
+   * enough that refusing it by default would break honest tasks, and the mark on
+   * the summary already makes it impossible to miss. */
+  fail_on_gate_edit: boolean;
   /** Container image the local-builder Docker sandbox runs (s2 D5). Defaults to
    * volley's own `Dockerfile`-built image; `--sandbox-image <tag>` /
    * `VOLLEY_SANDBOX_IMAGE` override it. Meaningful only for a local builder —
@@ -139,6 +157,39 @@ export type CheckResult = {
   summary?: unknown;
   /** Captured combined output (when the runner is a shell command). */
   log?: string;
+};
+
+/** How one path changed between the run's baseline and the builder's output.
+ * `renamed` covers git's rename/copy detection (the destination path is the one
+ * recorded); `unknown` is any status git reports that none of these name. */
+export type ChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'unknown';
+
+/** One path the builder changed, and whether that path is part of the *gate* —
+ * the tests, fixtures, and check configuration that decide whether the work
+ * passes. A gate edit is not misconduct by itself (some tasks are *about* the
+ * tests); it is the fact that makes a green check prove less. */
+export type ChangedFile = {
+  path: string;
+  status: ChangeStatus;
+  gate: boolean;
+};
+
+/** What the builder changed since the run's baseline, as the harness sees it
+ * (`src/changes.ts`). Null in `LoopState` when the build root is not a git
+ * repository — change detection is evidence, never a precondition. */
+export type ChangeSet = {
+  /** The commit the changes are measured against — the build root's HEAD before
+   * the first iteration. Null in a repository with no commits yet, where only
+   * untracked files can be reported. */
+  baseline: string | null;
+  /** The changed paths, sorted, capped at the collection limit. */
+  files: ChangedFile[];
+  /** Every gate-matching path — computed over the *full* list before the cap,
+   * so truncation can never hide a gate edit. */
+  gate_edits: string[];
+  /** How many paths changed in total, before the cap. */
+  total: number;
+  truncated: boolean;
 };
 
 /** Per-phase record for iteration summaries (spec §3). */
@@ -177,7 +228,7 @@ export type PhaseRecord = {
   critic_degraded?: boolean;
 };
 
-export type HaltReason = 'cost_cap' | null;
+export type HaltReason = 'cost_cap' | 'gate_edit' | null;
 
 /** Carry-state threaded through the fascicle loop. */
 export type LoopState = {
@@ -187,6 +238,10 @@ export type LoopState = {
   verdict: Verdict | null;
   unmet_criteria: string[];
   check: CheckResult | null;
+  /** What the builder changed this iteration, measured against the run's
+   * baseline (`src/changes.ts`). Null when the build root is not a git
+   * repository, and before the first `build` step of a run. */
+  changes: ChangeSet | null;
   builder: PhaseRecord | null;
   critic: PhaseRecord | null;
   total_usage: UsageTotals;
