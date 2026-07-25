@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **volley sees what the builder changed, and says so.** Every iteration now diffs the build root against a baseline captured before the first iteration, and hands the result to the two places that were flying blind. The **critic prompt** carries the changed-path list, so a critic reviews a change instead of re-reading a tree the deterministic check already blessed (paths and statuses only — never diff hunks, so a 32k-context local critic's prompt stays bounded). The **run summary** gains `comparison.gate_edits`, and each iteration archive carries its own change set.
+- **Gate-edit detection.** Changed paths matching the *gate* — the tests, fixtures, and check configuration that decide whether the work passes — are called out to the critic, warned about on stderr, and recorded in the summary. This mechanizes the by-hand verification `research/reckon-local-run-finding.md` recommends making routine: a green check plus an empty `gate_edits` is worth more than a green check alone, because a builder can also pass by editing the test. Reported, not refused, by default (plenty of tasks are legitimately about the tests); `--fail-on-gate-edit` halts the run with the new **exit 8** instead, and beats success rather than losing to it. `--gate-paths` / `gate_paths` replaces the built-in pattern list, and `--dry-run` predicts the posture — including a warning that the refusal cannot fire outside a git repository.
+
 ## v0.4.1 — 2026-07-24
 
 ### Added

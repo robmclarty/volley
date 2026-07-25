@@ -12,7 +12,7 @@ import type { PreflightProbes } from '../../src/preflight.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import type { ResolvedConfig } from '../../src/types.js';
-import { temp_workspace } from '../helpers/harness.js';
+import { temp_git_workspace, temp_workspace } from '../helpers/harness.js';
 import { approve_reply, mock_engine, prompt_text } from '../helpers/mock_engine.js';
 import type { MockCall, MockReply } from '../helpers/mock_engine.js';
 
@@ -384,6 +384,62 @@ describe('preflight — critic-seat canary (D5)', () => {
       const code = await preflight(local_config(workspace), renderer, {}, ALL_GREEN);
       expect(code).toBe(EXIT_SUCCESS);
       expect(output()).toContain('critic canary: ok');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('preflight — gate posture', () => {
+  it('says the default posture: watched, reported, not refused', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const code = await preflight(claude_config(workspace), renderer, {}, ALL_GREEN);
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(output()).toMatch(/gate: watching \d+ path pattern/);
+      expect(output()).toContain('not refused');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('predicts the halt when --fail-on-gate-edit is set on a git workspace', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const config = claude_config(workspace);
+      config.fail_on_gate_edit = true;
+      expect(await preflight(config, renderer, {}, ALL_GREEN)).toBe(EXIT_SUCCESS);
+      expect(output()).toContain('halts the run');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('warns that --fail-on-gate-edit cannot fire outside a git repository', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const config = claude_config(workspace);
+      config.fail_on_gate_edit = true;
+      // Still exit 0: the run is viable, just not the refusal that was asked for.
+      expect(await preflight(config, renderer, {}, ALL_GREEN)).toBe(EXIT_SUCCESS);
+      expect(output()).toMatch(/warning:/);
+      expect(output()).toContain('will not fire');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('says so when nothing is configured as the gate', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const config = claude_config(workspace);
+      config.gate_paths = [];
+      expect(await preflight(config, renderer, {}, ALL_GREEN)).toBe(EXIT_SUCCESS);
+      expect(output()).toContain('no gate paths configured');
     } finally {
       cleanup();
     }

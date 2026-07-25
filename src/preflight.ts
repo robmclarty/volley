@@ -28,7 +28,8 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { capture_baseline } from './changes.js';
 import { critic_canary } from './critic/run.js';
 import {
   DEFAULT_LMSTUDIO_URL,
@@ -40,7 +41,7 @@ import type { Engine } from './engine.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
 import type { Renderer } from './render/renderer.js';
 import type { BuilderProvider, CriticProvider, ResolvedConfig } from './types.js';
-import { report_worktree_fate } from './worktree.js';
+import { build_root, report_worktree_fate } from './worktree.js';
 
 /** Executables the in-container builder shells out to (checkride/pnpm invoke
  * node; git drives the worktree). Their presence proves the sandbox image
@@ -154,6 +155,40 @@ function default_canary_engine(
   });
 }
 
+/**
+ * What this run will do about a builder that edits its own gate, said before any
+ * spend — the same predict-then-warn shape as the worktree fate (D13) and the
+ * critic-seat canary (D5).
+ *
+ * The warning that earns its place here: `--fail-on-gate-edit` outside a git
+ * repository is a refusal that cannot fire. Change detection needs a baseline to
+ * diff against, so a non-git workspace silently reports nothing — and an
+ * operator who asked for the refusal should learn that now, not from a summary
+ * whose `gate_edits` is empty for the wrong reason.
+ */
+export function report_gate_posture(config: ResolvedConfig, renderer: Renderer): void {
+  const root = build_root(config.workspace, config.worktree);
+  const detectable = capture_baseline(root) !== null || existsSync(join(root, '.git'));
+  if (config.fail_on_gate_edit && !detectable) {
+    renderer.warn(
+      '--fail-on-gate-edit is set, but the build root is not a git repository, so there is no ' +
+        'baseline to diff against and gate edits cannot be detected. The flag will not fire: ' +
+        'run against a git workspace to get the refusal you asked for.',
+    );
+    return;
+  }
+  if (config.gate_paths.length === 0) {
+    renderer.info('gate: no gate paths configured; builder edits to tests and check config are not flagged.');
+    return;
+  }
+  renderer.info(
+    `gate: watching ${String(config.gate_paths.length)} path pattern(s)` +
+      (config.fail_on_gate_edit
+        ? ' — a builder edit to any of them halts the run (--fail-on-gate-edit, exit 8).'
+        : ' — edits are reported to the critic and recorded in the summary, not refused.'),
+  );
+}
+
 function run_checkride_doctor(workspace: string): boolean {
   const doctor = spawnSync('pnpm', ['exec', 'checkride', 'doctor'], {
     cwd: workspace,
@@ -198,6 +233,7 @@ export async function preflight(
   // builder provider — the worktree's fate is not a containment concern, and
   // `--worktree` without `--git` must not quietly end in a discarded build.
   report_worktree_fate(config, renderer);
+  report_gate_posture(config, renderer);
 
   if (config.check_resolved === 'checkride') {
     const doctor = probes.checkride_doctor ?? run_checkride_doctor;

@@ -54,8 +54,9 @@ prompt ──> builder (full agentic session in your workspace)
   `pnpm exec checkride --json` and gates on the summary. Any shell command
   works too (`--check "npm test"`), or `--check none` for critic-only runs.
 - **Critic** is read-only (`Read`, `Grep`, `Glob` — no write path at all) and
-  returns a schema-validated `{ verdict, feedback, unmet_criteria }`. The
-  harness writes `.volley/feedback.md` and `.volley/verdict`; the critic
+  returns a schema-validated `{ verdict, feedback, unmet_criteria }`. It is told
+  which files the builder changed, so it reviews a change rather than a tree.
+  The harness writes `.volley/feedback.md` and `.volley/verdict`; the critic
   cannot get them wrong.
 
 Each iteration is a fresh session — no context carries over except through the
@@ -100,6 +101,8 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--git` | off | Commit after each phase (workspace must be a git repo). |
 | `--worktree` | off | Isolate the builder run in a per-run git worktree (workspace must be a git repo). Without `--git`, a successful run's work is kept on the run branch — see [Local builder](#local-builder). |
 | `--discard-worktree` | off | Throw a `--worktree` run's effects away at teardown instead of keeping them on the run branch. Requires `--worktree`. |
+| `--gate-paths` | (built-in list) | Comma-separated globs naming the gate — tests, fixtures, check config. Replaces the defaults; see [What the builder changed](#what-the-builder-changed). |
+| `--fail-on-gate-edit` | off | Halt the run (exit 8) if the builder edits a gate path, instead of reporting it. |
 | `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
 | `--dry-run` | off | Validate config, run `checkride doctor` and (for a local critic) the critic-seat canary, then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
@@ -123,6 +126,7 @@ checkride.
 | 5 | Configuration error. |
 | 6 | Critic error (schema validation failed after repair attempts). |
 | 7 | Cost cap reached. |
+| 8 | The builder edited the gate and `--fail-on-gate-edit` was set. |
 | 130 | Interrupted (SIGINT); resumable. |
 
 ### Config file
@@ -347,6 +351,47 @@ weak local model to drive a tool loop reliably has three sharp edges:
 
 Local providers are free, so a local builder's cost is reported as `$0.000` and
 never trips `--max-cost-usd`.
+
+## What the builder changed
+
+A check that exits 0 proves the check passed. It does not prove the builder did
+the work — a builder can also pass by editing the test. So every iteration,
+volley diffs the build root against a baseline captured before the first
+iteration and reports what moved:
+
+- The **critic prompt** carries the changed-path list, so the critic reviews the
+  change instead of re-reading a tree the check already blessed. Paths and
+  statuses only, never diff hunks — the list stays bounded for a local critic
+  with a small context window, which can read any file it wants once it knows
+  which ones moved.
+- Changed paths matching the **gate** — the tests, fixtures, and check
+  configuration that decide whether the work passes — are called out separately
+  in the prompt, listed in `.volley/summary.json` as `comparison.gate_edits`,
+  and warned about on stderr as they happen.
+
+A gate edit is not misconduct: plenty of tasks are *about* the tests. It is the
+fact that makes a green check prove less, so volley reports it by default rather
+than refusing it. To refuse it, `--fail-on-gate-edit` halts the run on the spot
+with exit 8 — success does not override it, because the pass is the thing the
+edit puts in question.
+
+The default gate is a broad, language-general list (`*.test.*`, `test/**`,
+`fixtures/**`, `vitest.config.*`, `package.json`, `.github/workflows/**`, and
+similar). `--gate-paths 'schema/**,docs/spec.md'` (or `gate_paths` in a config
+file) **replaces** it — a task that owns its tests should say so — and an empty
+list turns the report off entirely.
+
+```sh
+# The tests are the spec here: refuse a builder that edits them.
+volley --prompt "@task.md" --workspace ./my-project --criteria "@criteria.md" \
+  --fail-on-gate-edit
+```
+
+Change detection needs git: it diffs against a baseline commit in the build root
+(the worktree under `--worktree`, else the workspace). In a workspace that is not
+a git repository there is no baseline, so the section is omitted from the critic
+prompt rather than claiming the builder changed nothing — and `--dry-run` warns
+that `--fail-on-gate-edit` cannot fire there.
 
 ## Run artifacts
 
