@@ -13,7 +13,7 @@
 // Dry-run from the repo root:
 //   VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 volley \
 //     --config examples/ladder/test-writing-seat/volley.config.ts --dry-run
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

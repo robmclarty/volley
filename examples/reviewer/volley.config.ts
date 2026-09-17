@@ -1,6 +1,6 @@
 // Acceptance-driven loop: the default reviewer critic gates on the criteria.
 // Run: volley --config examples/reviewer/volley.config.ts
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

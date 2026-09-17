@@ -11,11 +11,11 @@
 // Dependency-free gate: `node --test` runs the built-in test runner over
 // `cart.test.mjs`; no install, no toolchain beyond node.
 //
-// Run from the repo root. A local builder is refused unless contained (B′-2) —
+// Run from the repo root. A local builder is refused unless contained —
 // dry-run first, then run inside the sandbox (see ../README.md):
 //   VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 volley \
 //     --config examples/ladder/brownfield-bugfix/volley.config.ts --dry-run
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

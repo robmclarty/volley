@@ -4,7 +4,7 @@
 // than reinventing it inline. The check gate verifies the dependency is actually
 // declared and installed, not just that the output looks right.
 //
-// ONLINE-ONLY (D10): volley's sandbox egress is deny-by-default (allowlist to
+// ONLINE-ONLY: volley's sandbox egress is deny-by-default (allowlist to
 // host Ollama only, or `--network none`), so an in-sandbox `pnpm add` cannot
 // reach the npm registry. Run this probe with the sandbox network opened to the
 // registry, or uncontained on a host that has network. See ../README.md.
@@ -16,7 +16,7 @@
 // offline — the online requirement bites only on a real run):
 //   VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 volley \
 //     --config examples/ladder/dependency-wrangling/volley.config.ts --dry-run
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

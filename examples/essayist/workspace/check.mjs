@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Essayist check gate (D10): a dependency-free mechanical floor under the
+ * Essayist check gate: a dependency-free mechanical floor under the
  * rubric — word count, structure, citations-present. Judgment (thesis,
  * argument, prose quality) belongs to the critic, not this script.
  *

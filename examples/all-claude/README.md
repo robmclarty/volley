@@ -9,8 +9,8 @@ blocks isolates what the model and transport actually changed.
 
 ## Why no Docker here
 
-`claude_cli` has its own permission model, so volley never containerizes it
-(C4/D10): `--sandbox` is a no-op on this path and the `--dry-run` preflight never
+`claude_cli` has its own permission model, so volley never containerizes it:
+`--sandbox` is a no-op on this path and the `--dry-run` preflight never
 exits 5. Containment is the local-builder story (`examples/all-local`), not this
 one.
 
@@ -32,7 +32,7 @@ critic (`reviewer` preset) then judges the criteria. On convergence,
 `.volley/summary.json` carries the `comparison` block (iterations-to-converge,
 wall-clock, cost, verdict, check trajectory, local salvage rate, transports).
 
-## Confounds this arm holds constant (disclosed, not narrowed — s2 D9)
+## Confounds this arm holds constant (disclosed, not narrowed)
 
 - **Transport:** builder + critic are `claude_cli` (a CLI subprocess), recorded as
   `builder_transport`/`critic_transport: "claude_cli"`. The all-local twin runs
@@ -40,7 +40,7 @@ wall-clock, cost, verdict, check trajectory, local salvage rate, transports).
 - **Containment:** host, no Docker here; Docker sandbox + worktree there. The
   containment mechanisms differ by construction (fascicle `claude_cli`
   bwrap/greywall vs volley's Docker) — volley owns its own sandbox and does not
-  harden the CLI via fascicle's, so this confound stays disclosed (D10).
+  harden the CLI via fascicle's, so this confound stays disclosed.
 - **Cost:** this arm spends real Claude tokens; the local arm targets $0. Compare
   iterations-to-converge and salvage rate, not just dollars.
 - **Local salvage rate** is 0 here: the `claude_cli` builder runs its own loop and

@@ -1,7 +1,7 @@
 // all-local — the v3 local path. Builder AND critic run on a free local model
-// via Ollama on the `ai_sdk` transport (D1/C5), gated by checkride, running
-// inside volley's hardened Docker sandbox (B′/D5) over a per-run git worktree
-// (s2 D3). The builder's `fetch` tool is enabled; the run targets $0 and — after
+// via Ollama on the `ai_sdk` transport, gated by checkride, running
+// inside volley's hardened Docker sandbox over a per-run git worktree.
+// The builder's `fetch` tool is enabled; the run targets $0 and — after
 // deps are warmed — offline.
 //
 // Paired with examples/all-claude: identical task, criteria, checkride gate, and
@@ -9,11 +9,11 @@
 // `.volley/summary.json` `comparison` blocks to isolate model-vs-transport.
 //
 // Run: launch volley INSIDE its sandbox container. A local builder is refused
-// unless volley detects containment (B′-2), so the operator's `docker run` sets
+// unless volley detects containment, so the operator's `docker run` sets
 // VOLLEY_CONTAINED=1 and crosses the model endpoint to host.docker.internal.
 // The hardened invocation and the ollama / worktree / offline setup are in
 // ./README.md (src/sandbox.ts renders the exact `docker run` line).
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

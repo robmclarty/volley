@@ -1,7 +1,7 @@
-// Essayist — critic-swap generality (Q1): the same loop that reviews code,
+// Essayist — critic-swap generality: the same loop that reviews code,
 // judging prose. The critic seat runs a custom editor prompt (./critic.md)
 // against rubric criteria (./rubric.md); the check gate is a dependency-free
-// node script (D10) enforcing the mechanical floor (word count, structure,
+// node script enforcing the mechanical floor (word count, structure,
 // citations-present) so the critic spends its judgment on thesis and argument.
 //
 // Seats embody the v3 finding (research/v3-comparison-finding.md): qwen3.6
@@ -9,11 +9,11 @@
 // so it gets the builder seat and the (fast, proven) glm-4.7-flash judges.
 // Swap either freely — just keep qwen3.6 out of the critic seat.
 //
-// Run from the repo root. A local builder is refused unless contained (B′-2) —
+// Run from the repo root. A local builder is refused unless contained —
 // launch inside the sandbox container (see ./README.md) or dry-run first:
 //   VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 volley \
 //     --config examples/essayist/volley.config.ts --dry-run
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt: '@./examples/essayist/brief.md',

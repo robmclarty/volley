@@ -53,7 +53,7 @@ vary them.
 
 - **Ollama** on the host with the models you intend to sweep pulled (`ollama pull
   qwen3.6:latest`, `ollama pull glm-4.7-flash:latest`, and whatever else you name).
-- For a real (non-dry) run: a local builder is refused unless contained (B′-2), so
+- For a real (non-dry) run: a local builder is refused unless contained, so
   launch volley inside its sandbox exactly as `examples/all-local/README.md`
   documents. The workspaces need **no toolchain install** — the gates are plain
   `node` (again, except `dependency-wrangling`).

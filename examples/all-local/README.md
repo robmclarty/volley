@@ -1,8 +1,8 @@
 # all-local example (v3 local path)
 
-Builder **and** critic on a free local model via Ollama on the `ai_sdk` transport
-(D1/C5), gated by checkride, running inside volley's **hardened Docker sandbox**
-(B′/D5) over a **per-run git worktree** (s2 D3). The builder's `fetch` tool is
+Builder **and** critic on a free local model via Ollama on the `ai_sdk` transport,
+gated by checkride, running inside volley's **hardened Docker sandbox**
+over a **per-run git worktree**. The builder's `fetch` tool is
 enabled; the run targets **$0** and — once deps are warmed — **offline**. This is
 the local arm of the v3 comparison; its twin is `examples/all-claude`. Both run
 the **same task, criteria, checkride gate, and caps**, so diffing their
@@ -59,12 +59,12 @@ the **same task, criteria, checkride gate, and caps**, so diffing their
 
 ## Run: launch volley *inside* its container
 
-A local builder is refused unless volley detects containment (B′-2), so the
+A local builder is refused unless volley detects containment, so the
 operator's `docker run` is what starts it. The image bakes `VOLLEY_CONTAINED=1`,
 its entrypoint *is* the volley CLI (args after the image tag are volley args),
 and the run injects `VOLLEY_MODEL_HOST=host.docker.internal` so the in-container
 model client crosses the boundary to the host Ollama daemon (the base-url
-normalizer consumes it — `src/engine.ts`, OQ-8). The hardened flag set below is
+normalizer consumes it — `src/engine.ts`). The hardened flag set below is
 what `sandbox_invocation` + `format_docker_run` render in `src/sandbox.ts` —
 treat that module as the source of truth for the *flags*; the mount is the one
 place the example goes wider: it binds the **example dir**, not the workspace,
@@ -120,7 +120,7 @@ on any failure) by appending `--dry-run` to the same `docker run` line:
     --workspace /workspace/workspace --dry-run
 ```
 
-## Confounds this arm carries (disclosed, not narrowed — s2 D9)
+## Confounds this arm carries (disclosed, not narrowed)
 
 - **Transport:** builder + critic run `ai_sdk` (recorded as
   `builder_transport`/`critic_transport: "ai_sdk"`), against `claude_cli` on the
@@ -128,11 +128,11 @@ on any failure) by appending `--dry-run` to the same `docker run` line:
   arms only in that both *have* one; the CLI arm does not route through it.
 - **Containment:** Docker sandbox + worktree here vs host/no-Docker there. volley
   owns this sandbox and does **not** harden the CLI arm via fascicle's `claude_cli`
-  sandbox (D10), so the two containment mechanisms differ by construction.
+  sandbox, so the two containment mechanisms differ by construction.
 - **Tool surface:** the local builder uses volley's own tools (`bash`, file tools,
   `fetch`); `fetch` ≠ Claude Code's `WebFetch`. Different tool surfaces are part of
   the confound.
 - **Local salvage rate** is meaningful here: it is the share of builder tool calls
-  recovered from assistant text (D5). A high rate means the local model's native
+  recovered from assistant text. A high rate means the local model's native
   tool-call encoding is drifting from `ai-sdk-ollama`'s parser — read it alongside
   iterations-to-converge when judging where the local model got stuck.

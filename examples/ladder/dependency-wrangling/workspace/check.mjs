@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dependency-wrangling check gate (ONLINE-ONLY, D10). Verifies the builder
+ * dependency-wrangling check gate (ONLINE-ONLY). Verifies the builder
  * genuinely pulled in `slugify` rather than hand-rolling it: the package must be
  * declared in package.json AND installed, and slug.mjs must behave. Offline this
  * fails at the install check by design — the ladder README discloses that this

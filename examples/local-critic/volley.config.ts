@@ -6,7 +6,7 @@
 // peer dependency: `pnpm add ai-sdk-ollama`.
 //
 // Run: volley --config examples/local-critic/volley.config.ts
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

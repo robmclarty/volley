@@ -1,7 +1,7 @@
 // Coverage-completeness loop: the researcher critic approves when the
 // research goal is adequately covered, even if more depth is always possible.
 // Run: volley --config examples/researcher/volley.config.ts
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

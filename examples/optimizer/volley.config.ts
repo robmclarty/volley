@@ -1,7 +1,7 @@
 // Improvement-plateau loop: the optimizer critic approves when further
 // iteration would yield diminishing returns, not merely when criteria pass.
 // Run: volley --config examples/optimizer/volley.config.ts
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

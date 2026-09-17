@@ -1,5 +1,5 @@
 // all-Claude — the v3 comparison baseline. Builder AND critic run on Claude via
-// the `claude_cli` provider, on the host, with NO Docker (C4/D10): the CLI has
+// the `claude_cli` provider, on the host, with NO Docker: the CLI has
 // its own permission model, so volley never containerizes it.
 //
 // Paired with examples/all-local: identical task, criteria, checkride gate, and
@@ -13,7 +13,7 @@
 //
 // The workspace ships a minimal checkride.config.json (types + test), so
 // `check: 'auto'` gates the builder on `tsc` + `vitest`. See ./README.md.
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt:

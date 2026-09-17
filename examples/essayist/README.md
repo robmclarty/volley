@@ -1,6 +1,6 @@
 # essayist example (critic-swap generality)
 
-The same loop that reviews code, judging prose (Q1). Every seat that makes
+The same loop that reviews code, judging prose. Every seat that makes
 volley a *code* harness is swapped by configuration, nothing else:
 
 | Seat | Swap |
@@ -8,7 +8,7 @@ volley a *code* harness is swapped by configuration, nothing else:
 | Task | `brief.md` — a prose commission (essay, thesis, sources), `@`-referenced as the prompt |
 | Criteria | `rubric.md` — editorial acceptance criteria the critic echoes verbatim in `unmet_criteria` |
 | Critic | `critic.md` — a custom editor prompt in place of the `reviewer` preset (`--critic <path>`) |
-| Check | `workspace/check.mjs` — a dependency-free node script (D10): word count, structure, citations-present |
+| Check | `workspace/check.mjs` — a dependency-free node script: word count, structure, citations-present |
 
 The check gate holds the mechanical floor so the critic spends its judgment
 where a script can't reach: is the thesis arguable, does each section advance
@@ -38,7 +38,7 @@ VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 volley \
   --config examples/essayist/volley.config.ts --dry-run
 ```
 
-A local builder is refused unless contained (B′-2), so the real run launches
+A local builder is refused unless contained, so the real run launches
 volley inside its sandbox container exactly as `examples/all-local/README.md`
 documents — same hardened flags, this example dir as the mount. The config's
 repo-root-relative paths are re-pointed at the mount with flag overrides
@@ -87,7 +87,7 @@ prospective editor.
 
 ## Why there is no prose variant of the builder harness-append
 
-Step 7's plan left room for a prose variant of
+The plan left room for a prose variant of
 `src/builder/presets/harness_append_local.md` *if the preset proved
 code-toned*. Judged against this brief, it doesn't: the append is domain-neutral
 tool mechanics (read before you edit, one tool at a time, verify before
