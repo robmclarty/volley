@@ -20,7 +20,7 @@ Bump the root `package.json` version, write a `CHANGELOG.md` entry summarizing e
 - Last release commit: !`git log -1 --extended-regexp --grep='^v[0-9]+\.[0-9]+\.[0-9]+$' --pretty=format:'%H %s'`
 - Working tree status: !`git status --short`
 
-The "last release commit" line finds the most recent commit whose message is a bare `vX.Y.Z` — that's how this skill marks releases (there are no git tags; volley has no remote to push them to). **If that line is empty, there is no prior release** and this is an initial release: summarize the full history.
+The "last release commit" line finds the most recent commit whose message is a bare `vX.Y.Z` — that's how this skill marks releases (the release marker is the commit message, not a git tag). **If that line is empty, there is no prior release** and this is an initial release: summarize the full history.
 
 (Commits since the last release are fetched in step 4 — preflight blocks can't use `$(...)` substitution under Claude Code's permission system, so we look up the range there instead.)
 
@@ -90,7 +90,7 @@ The "last release commit" line finds the most recent commit whose message is a b
    ```
    The message is literally `vX.Y.Z` — no prefix, no body, no footer. That bare `vX.Y.Z` message is exactly what the next bump's preflight greps for to find "the last release," so it must not carry a conventional-commit prefix.
 
-8. **Report back.** Tell the user: the old version, the new version, the commit SHA, and the number of commits summarized. Do *not* push (volley has no remote). Do *not* create a git tag — releases are tracked by the `vX.Y.Z` commit message, not tags.
+8. **Report back.** Tell the user: the old version, the new version, the commit SHA, and the number of commits summarized. Do *not* push — publishing to `origin` is the user's call, and they may want to fold the release into a larger push. Do *not* create a git tag — releases are tracked by the `vX.Y.Z` commit message, not tags.
 
 ## When to use this skill
 
@@ -108,4 +108,4 @@ The "last release commit" line finds the most recent commit whose message is a b
 - **`CHANGELOG.md` exists but has no `# Changelog` heading.** Prepend the new heading plus the new section; leave the old content below untouched.
 - **Commit list contains merge commits.** Drop them from the summary unless they introduced something not present in the squashed commits. `--no-merges` on the log is fine if the output is noisy.
 - **A commit is marked with `BREAKING:` or `!:` but the user asked for `patch` or `minor`.** Warn the user and ask if they meant `major`. Don't override silently.
-- **No verify step is needed.** A version-string + CHANGELOG diff can't affect volley's only active checkride slot (`test`; `spell` and `docs` are disabled in `checkride.config.json`), so there is nothing to run. Release-readiness of the actual code is the user's concern before invoking this skill.
+- **No verify step is needed.** A version-string + CHANGELOG diff cannot affect the code-facing checkride slots (`types`, `lint`, `struct`, `dead`, `test`). The `links` slot does check relative markdown links, so if the new entry links to a file, run `pnpm check` before committing. Release-readiness of the actual code is the user's concern before invoking this skill.
