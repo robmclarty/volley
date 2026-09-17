@@ -158,7 +158,7 @@ describe('gate edits', () => {
   it('measures the worktree, not the workspace, under --worktree', async () => {
     const { workspace, cleanup } = seeded_repo();
     try {
-      // The builder writes into the worktree (its containment root, s2 D3) while
+      // The builder writes into the worktree (its containment root) while
       // the workspace stays pristine — the exact seam where a check once gated
       // the wrong tree (research/v3-comparison-finding.md, defect 3). The change
       // set has to follow the builder, not the workspace.

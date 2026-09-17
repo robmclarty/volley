@@ -1,5 +1,5 @@
 /**
- * Git-worktree orchestration (s2 Phase 2a; D7, D13): isolate a builder run's
+ * Git-worktree orchestration: isolate a builder run's
  * *effects* on a per-run branch checked out into a sibling worktree, then tear
  * the whole thing down when the run ends. The worktree lifecycle wraps the
  * fascicle loop — it is not itself a loop — so these are straight-line git
@@ -32,14 +32,14 @@ export function worktree_path(workspace: string): string {
   return `${resolve(workspace)}.worktree`;
 }
 
-/** The per-run branch name (D13: one named branch per phase). Derived from the
+/** The per-run branch name (one named branch per phase). Derived from the
  * run id so it is stable across a resume. */
 export function worktree_branch(run_id: string): string {
   return `volley/${run_id}`;
 }
 
 /**
- * The directory the builder's *effects* land in (s2 D3): the run's worktree
+ * The directory the builder's *effects* land in: the run's worktree
  * when `--worktree` is on, else the workspace itself. This is the containment
  * root the builder/critic file tools resolve through `contain()` and the
  * `bash` tool's cwd — re-pointing it moves writes into the worktree without
@@ -51,7 +51,7 @@ export function build_root(workspace: string, worktree: boolean): string {
   return worktree ? worktree_path(workspace) : workspace;
 }
 
-/** What becomes of a *successful* `--worktree` run's effects (D13). Any other
+/** What becomes of a *successful* `--worktree` run's effects. Any other
  * outcome — cost cap, budget, interrupt, error — always discards: an abandoned
  * phase's branch is thrown away wholesale, as it always has been. */
 export type WorktreeFate = 'none' | 'integrate' | 'salvage' | 'discard';
@@ -70,7 +70,7 @@ export type WorktreeFateConfig = {
  * - `integrate` — `--worktree --git`: the phase branch's checkpoints squash-merge
  *   onto the workspace branch (`integrate_worktree`), then teardown discards it.
  * - `discard` — `--discard-worktree`: the effects go away with the branch. What
- *   `volley matrix` sweeps with (D11): isolate the effects, keep only verdicts.
+ *   `volley matrix` sweeps with: isolate the effects, keep only verdicts.
  * - `salvage` — `--worktree` alone: nothing integrates, and the worktree holds the
  *   run's only copy of its work, so teardown commits that onto the run branch and
  *   keeps it rather than force-deleting a green run's build.
@@ -95,7 +95,7 @@ export type WorktreeNotice = { level: 'info' | 'warn'; message: string };
 /**
  * What this run will do with its effects, in one line, said before any model
  * spend — the same predict-at-dry-run/warn-at-run-start shape as the local-critic
- * seat canary (D5) and the `num_ctx` guard (D12). `salvage` is a warning, not an
+ * seat canary and the `num_ctx` guard. `salvage` is a warning, not an
  * info line: `--worktree` without `--git` integrates nothing, and it is the one
  * fate an operator is likely to have configured by accident.
  */
@@ -192,7 +192,7 @@ function branch_exists(repo: string, branch: string): boolean {
 /**
  * Check `branch` out into a fresh worktree at `worktree_path(workspace)`.
  *
- * Rotate-on-conflict (D7): a leftover worktree directory or branch from a
+ * Rotate-on-conflict: a leftover worktree directory or branch from a
  * crashed run is renamed aside under a `.bak.<stamp>` name — never destroyed —
  * before the fresh one is created, mirroring `.volley.bak.<stamp>`.
  */
@@ -229,7 +229,7 @@ export function create_worktree(options: {
 
   // The toolchain rides along: `node_modules` is untracked, so a fresh
   // checkout has none — link the workspace's install in so the deterministic
-  // check (which runs at the build root, s2 D3) and the builder's `bash` can
+  // check (which runs at the build root) and the builder's `bash` can
   // run the project toolchain without a per-run re-install.
   const modules = join(repo, 'node_modules');
   if (existsSync(modules) && !existsSync(join(path, 'node_modules'))) {
@@ -250,12 +250,12 @@ export type TeardownOutcome = {
   /** The checkout teardown refused to delete because its work could not be
    * committed (no git identity, a stale index lock, a broken repo): the files are
    * still on disk, and the next run rotates them aside rather than destroying
-   * them (D7). Null whenever the checkout was removed. */
+   * them. Null whenever the checkout was removed. */
   kept_path: string | null;
 };
 
 /**
- * Tear the worktree down with the idempotent trio (D13): remove the worktree,
+ * Tear the worktree down with the idempotent trio: remove the worktree,
  * delete its branch, prune the registration. Each step tolerates the target
  * already being gone, so a second teardown — or teardown of a worktree that
  * was never created — is a safe no-op.
@@ -343,7 +343,7 @@ export type WorktreeOptions<T> = {
   log?: (message: string) => void;
   /** Consulted with the body's value on a clean exit: `true` means this run's
    * work was never integrated, so teardown must salvage it onto the run branch
-   * instead of discarding it (D13). Never consulted when the body throws — a
+   * instead of discarding it. Never consulted when the body throws — a
    * failed run's branch is thrown away wholesale. */
   salvage?: (value: T) => boolean;
 };

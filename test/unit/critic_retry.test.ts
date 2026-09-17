@@ -1,8 +1,8 @@
 /**
- * OQ-11: the local critic's bounded retry on a provider stream death — the
- * first rung of the degradation ladder (D1). A stochastic Ollama tool-XML
- * parser death is retried once; the retry is counted in the iteration summary
- * (D8). The retry path is provider-agnostic among the local providers, so these
+ * The local critic's bounded retry on a provider stream death — the
+ * first rung of the degradation ladder. A stochastic Ollama tool-XML
+ * parser death is retried once; the retry is counted in the iteration summary.
+ * The retry path is provider-agnostic among the local providers, so these
  * use `lmstudio` to avoid the ollama-only prewarm's real fetch.
  */
 import { describe, expect, it } from 'vitest';
@@ -62,7 +62,7 @@ function make(
   return { engine, invoke, cleanup };
 }
 
-describe('run_critic local retry (OQ-11)', () => {
+describe('run_critic local retry', () => {
   it('retries a local stream death once, then completes with the retry counted', async () => {
     const { engine, invoke, cleanup } = make((_call, index) =>
       index === 0 ? err_reply(stream_death('provider_5xx')) : approve_reply('LGTM'),
@@ -100,7 +100,7 @@ describe('run_critic local retry (OQ-11)', () => {
         (e: unknown) => e,
       );
       // rung 1's tool-bearing attempts (initial + retry) plus rung 2's tool-less
-      // fallback (OQ-12) — the fallback dies here too, so the run still ends in a
+      // fallback — the fallback dies here too, so the run still ends in a
       // critic phase_error. The degraded-verdict path is covered in critic_fallback.
       expect(engine.calls).toHaveLength(MAX_CRITIC_RETRIES + 2);
       expect(error_kind(err)).toBe('phase_error');
@@ -112,7 +112,7 @@ describe('run_critic local retry (OQ-11)', () => {
     }
   });
 
-  it('does not retry a claude_cli critic — the proven path is not the ladder’s (D2)', async () => {
+  it('does not retry a claude_cli critic — the proven path is not the ladder’s', async () => {
     const { engine, invoke, cleanup } = make(() => err_reply(stream_death()), 'claude_cli');
     try {
       await expect(invoke()).rejects.toMatchObject({ kind: 'phase_error', phase: 'critic' });
@@ -122,7 +122,7 @@ describe('run_critic local retry (OQ-11)', () => {
     }
   });
 
-  it('does not retry once the run is aborted — an abort must stay exit-130 (D8)', async () => {
+  it('does not retry once the run is aborted — an abort must stay exit-130', async () => {
     const controller = new AbortController();
     controller.abort();
     const { engine, invoke, cleanup } = make(() => err_reply(stream_death()), 'lmstudio', controller.signal);
@@ -134,7 +134,7 @@ describe('run_critic local retry (OQ-11)', () => {
     }
   });
 
-  it('does not retry a schema validation failure — deterministic, not transient (D8)', async () => {
+  it('does not retry a schema validation failure — deterministic, not transient', async () => {
     const { engine, invoke, cleanup } = make(() =>
       err_reply(new schema_validation_error('verdict did not validate', {}, '{}')),
     );

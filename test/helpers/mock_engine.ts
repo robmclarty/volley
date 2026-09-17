@@ -1,5 +1,5 @@
 /**
- * Scripted `Engine` mock for integration tests (spec §10): generate results
+ * Scripted `Engine` mock for integration tests: generate results
  * and side effects are driven by the test, no provider or subprocess involved.
  */
 import type {
@@ -19,10 +19,10 @@ export type MockReply = {
   session_id?: string;
   duration_ms?: number;
   /** How the loop ended; default 'stop'. Set 'max_steps' to stand in for a
-   * local builder that burned its step budget without calling finish (D7). */
+   * local builder that burned its step budget without calling finish. */
   finish_reason?: FinishReason;
   /** Tool calls to report on the result — e.g. some marked `salvaged` — so a
-   * test can drive the salvage-rate health metric (D5). Default none. */
+   * test can drive the salvage-rate health metric. Default none. */
   tool_calls?: ToolCallRecord[];
   /** Side effect to run when this call happens (e.g. "builder writes file"). */
   effect?: (opts: GenerateOptions<unknown>) => void | Promise<void>;
@@ -98,7 +98,7 @@ export function mock_engine(
     list_prices: () => ({}),
     // A scripted mock has no providers to merge, so deriving is a no-op that
     // returns this same engine (keeping the responder and `calls` log intact).
-    // Present to satisfy fascicle 0.9.5's Engine.with_providers (D8).
+    // Present to satisfy fascicle 0.9.5's Engine.with_providers.
     with_providers: () => engine,
     dispose: async () => {},
     calls,

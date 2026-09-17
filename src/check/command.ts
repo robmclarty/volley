@@ -1,5 +1,5 @@
 /**
- * Generic command runner (spec §6, v1 semantics): `sh -c <command>`, combined
+ * Generic command runner: `sh -c <command>`, combined
  * output captured, exit-0 semantics. Command-not-found is an operator error
  * (exit 4), not an iterable failure.
  */

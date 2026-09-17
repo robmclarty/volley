@@ -107,7 +107,7 @@ describe('resolve_config', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       expect(resolve_config(base(workspace)).builder_provider).toBe('claude_cli');
-      // Local providers are refused without the D11 opt-out (covered separately);
+      // Local providers are refused without the opt-out (covered separately);
       // here they resolve once it is granted.
       expect(
         resolve_config({
@@ -139,7 +139,7 @@ describe('resolve_config', () => {
     }
   });
 
-  it('refuses a local builder with no opt-out (D11) — before any model spend', () => {
+  it('refuses a local builder with no opt-out — before any model spend', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       for (const provider of ['ollama', 'lmstudio'] as const) {
@@ -206,7 +206,7 @@ describe('resolve_config', () => {
     }
   });
 
-  it('a contained local builder resolves without the opt-out (B′-2)', () => {
+  it('a contained local builder resolves without the opt-out', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       for (const provider of ['ollama', 'lmstudio'] as const) {
@@ -454,7 +454,7 @@ describe('resolve_config', () => {
       const config = resolve_config({ ...base(workspace), worktree: true });
       expect(config.worktree).toBe(true);
       // A bare --worktree run keeps its work: it is salvaged onto the run branch,
-      // not discarded (D13).
+      // not discarded.
       expect(config.discard_worktree).toBe(false);
     } finally {
       cleanup();
@@ -641,7 +641,7 @@ describe('load_config_file', () => {
   });
 });
 
-describe('detect_containment (B′-2)', () => {
+describe('detect_containment', () => {
   it('recognizes the VOLLEY_CONTAINED marker truthy values only', () => {
     expect(detect_containment({ VOLLEY_CONTAINED: '1' })).toBe(true);
     expect(detect_containment({ VOLLEY_CONTAINED: 'true' })).toBe(true);

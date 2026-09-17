@@ -1,6 +1,6 @@
 /**
- * OQ-12: the local critic's tool-less fallback — rung 2 of the degradation ladder
- * (D1/D3/D4/D9). When the tool-bearing critique keeps dying on the provider's
+ * The local critic's tool-less fallback — rung 2 of the degradation ladder.
+ * When the tool-bearing critique keeps dying on the provider's
  * stream even after the bounded retry, the critic runs one more pass with no tools
  * (only the tool surface enters Ollama's broken parser) but keeps constrained
  * decode, grounded by a workspace file inventory. The verdict is schema-valid and
@@ -100,7 +100,7 @@ function make(
   return { engine, workspace, invoke, cleanup };
 }
 
-describe('run_critic tool-less fallback (OQ-12)', () => {
+describe('run_critic tool-less fallback', () => {
   it('falls back tool-less on persistent tool-phase death and marks the verdict degraded', async () => {
     const { engine, workspace, invoke, cleanup } = make((call) =>
       is_tool_call(call) ? err_reply(stream_death('provider_5xx')) : approve_reply('degraded but valid'),
@@ -115,11 +115,11 @@ describe('run_critic tool-less fallback (OQ-12)', () => {
       // A schema-valid verdict still comes back...
       expect(state.verdict).toBe('approved');
       expect(state.feedback).toBe('degraded but valid');
-      // ...marked degraded, with the exhausted retries and cause recorded (D3/D8).
+      // ...marked degraded, with the exhausted retries and cause recorded.
       expect(state.critic?.critic_degraded).toBe(true);
       expect(state.critic?.retries).toBe(MAX_CRITIC_RETRIES);
       expect(state.critic?.retry_cause_kind).toBe('provider_5xx');
-      // The fallback prompt is grounded by the paths+sizes inventory (D9).
+      // The fallback prompt is grounded by the paths+sizes inventory.
       const fallback_prompt = prompt_text(engine.calls[2]);
       expect(fallback_prompt).toContain('WORKSPACE FILE INVENTORY');
       expect(fallback_prompt).toContain('answer.ts');
@@ -128,7 +128,7 @@ describe('run_critic tool-less fallback (OQ-12)', () => {
     }
   });
 
-  it('fails with a critic phase_error when the tool-less pass dies too (exit 6, C4)', async () => {
+  it('fails with a critic phase_error when the tool-less pass dies too (exit 6)', async () => {
     const { engine, invoke, cleanup } = make(() => err_reply(stream_death('network')));
     try {
       const err = await invoke().then(
@@ -146,7 +146,7 @@ describe('run_critic tool-less fallback (OQ-12)', () => {
     }
   });
 
-  it('never falls back for a claude_cli critic — the proven path is not the ladder’s (D2)', async () => {
+  it('never falls back for a claude_cli critic — the proven path is not the ladder’s', async () => {
     const { engine, invoke, cleanup } = make(() => err_reply(stream_death()), 'claude_cli');
     try {
       await expect(invoke()).rejects.toMatchObject({ kind: 'phase_error', phase: 'critic' });
@@ -207,10 +207,10 @@ function archived_iteration(workspace: string, critic: PhaseRecord): LoopState {
   return state;
 }
 
-/** The done-when's persistence half: a degraded verdict must land in *both* the
+/** The persistence half: a degraded verdict must land in *both* the
  * per-iteration archive and the run-level comparison block, and a normal run must
- * report `critic_degraded: false` (C5 additive — old consumers keep parsing). */
-describe('critic_degraded persistence (OQ-12 done-when)', () => {
+ * report `critic_degraded: false` (additive — old consumers keep parsing). */
+describe('critic_degraded persistence', () => {
   it('writes critic_degraded to the iteration archive and the comparison block', () => {
     const { workspace, cleanup } = temp_workspace();
     try {

@@ -1,27 +1,27 @@
 /**
- * `--dry-run` preflight (s2 Phase 2c; D1/D6/D7/D10, D9, B′): prove a run can
+ * `--dry-run` preflight: prove a run can
  * proceed *before any model spend*. It always renders the resolved config and,
  * when checkride is the resolved check, runs `checkride doctor`. Under
  * `--worktree` it also predicts what a successful run will do with its effects
- * (D13, `report_worktree_fate`) — integrate, salvage onto the run branch, or
+ * (`report_worktree_fate`) — integrate, salvage onto the run branch, or
  * discard — so no fate arrives as a surprise at teardown.
  *
  * For a containment-requiring local builder — run from *inside* its container
- * (B′-2) — it additionally checks the three things that contained build needs:
+ * — it additionally checks the three things that contained build needs:
  * the toolchain is present, the worktree is creatable, and the host LLM endpoint
  * is reachable across the boundary at `host.docker.internal` (the resolved base
  * URL, which the v0.3.1 normalizer already crosses to the gateway when
- * `VOLLEY_MODEL_HOST` is set — engine.ts, OQ-8). Any containment check failing
+ * `VOLLEY_MODEL_HOST` is set — engine.ts). Any containment check failing
  * exits 5 (`EXIT_CONFIG_ERROR`).
  *
  * The all-Claude path runs *none* of the containment checks — it never requires
- * Docker (C4) — so those checks never contribute an exit 5 on that path.
+ * Docker — so those checks never contribute an exit 5 on that path.
  *
- * A *local critic* additionally gets the critic-seat canary (D5, amended
- * Q6/Q7): one tiny $0 generate through the real critic tool wiring, run
+ * A *local critic* additionally gets the critic-seat canary: one tiny $0
+ * generate through the real critic tool wiring, run
  * whatever the builder provider is. A degradable failure warns and predicts
  * `critic_degraded`; only a would-fail-even-degraded combo (endpoint down,
- * model missing) exits 5. The `claude_cli` critic path never runs it (D2).
+ * model missing) exits 5. The `claude_cli` critic path never runs it.
  *
  * The probes are injectable so the exit-code contract is unit-testable without
  * a daemon, a git repo, or a live model endpoint.
@@ -53,7 +53,7 @@ const REQUIRED_TOOLCHAIN: ReadonlyArray<string> = ['node', 'pnpm', 'git'];
 const ENDPOINT_PROBE_TIMEOUT_MS = 3000;
 
 /** Builders that run a local model through volley's own tool loop, so the
- * containment preflight applies. `claude_cli` never does (C4). */
+ * containment preflight applies. `claude_cli` never does. */
 export function is_local_builder(
   provider: BuilderProvider,
 ): provider is 'ollama' | 'lmstudio' {
@@ -61,7 +61,7 @@ export function is_local_builder(
 }
 
 /** Critics that run a local model through volley's own tool wiring, so the
- * critic-seat canary applies. `claude_cli` never does (D2/D5): that path is
+ * critic-seat canary applies. `claude_cli` never does: that path is
  * proven and its calls cost real money. */
 export function is_local_critic(
   provider: CriticProvider,
@@ -71,8 +71,8 @@ export function is_local_critic(
 
 /** The base URL the in-container model client will use — mirrors engine.ts's
  * `local_provider_config` so the preflight probes exactly what the run will hit.
- * With `VOLLEY_MODEL_HOST` set (B′-2) both cross a loopback authority to the host
- * gateway, so this is the `host.docker.internal` endpoint the done-when names. */
+ * With `VOLLEY_MODEL_HOST` set both cross a loopback authority to the host
+ * gateway, so this is the `host.docker.internal` endpoint the run will hit. */
 export function model_endpoint(
   provider: 'ollama' | 'lmstudio',
   env: Record<string, string | undefined>,
@@ -157,8 +157,8 @@ function default_canary_engine(
 
 /**
  * What this run will do about a builder that edits its own gate, said before any
- * spend — the same predict-then-warn shape as the worktree fate (D13) and the
- * critic-seat canary (D5).
+ * spend — the same predict-then-warn shape as the worktree fate and the
+ * critic-seat canary.
  *
  * The warning that earns its place here: `--fail-on-gate-edit` outside a git
  * repository is a refusal that cannot fire. Change detection needs a baseline to
@@ -229,7 +229,7 @@ export async function preflight(
     `critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`,
   );
   renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
-  // What a successful run does with its effects (D13), predicted here for any
+  // What a successful run does with its effects, predicted here for any
   // builder provider — the worktree's fate is not a containment concern, and
   // `--worktree` without `--git` must not quietly end in a discarded build.
   report_worktree_fate(config, renderer);
@@ -245,7 +245,7 @@ export async function preflight(
   }
 
   // Containment preflight — local builder only, so the all-Claude path never
-  // reaches an exit 5 from here (C4). Re-calling the guard narrows `provider`.
+  // reaches an exit 5 from here. Re-calling the guard narrows `provider`.
   if (is_local_builder(provider)) {
     const missing = (probes.toolchain_missing ?? toolchain_missing)(REQUIRED_TOOLCHAIN);
     if (missing.length > 0) {
@@ -272,7 +272,7 @@ export async function preflight(
     renderer.info(`host LLM endpoint: reachable (${endpoint})`);
   }
 
-  // Critic-seat canary (D5, amended Q6/Q7) — local critic only, whatever the
+  // Critic-seat canary — local critic only, whatever the
   // builder provider is, so a claude_cli-builder + local-critic run still gets
   // its doomed-combo warning before any builder spend. A degradable death warns
   // and predicts `critic_degraded` (refusing it would contradict the fallback

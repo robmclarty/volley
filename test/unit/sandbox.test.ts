@@ -24,8 +24,8 @@ function run_args(overrides: Partial<Parameters<typeof sandbox_run_args>[0]> = {
   });
 }
 
-describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', () => {
-  it('is a one-shot foreground --rm container, no daemon keep-alive (B′ retires -d … sleep infinity)', () => {
+describe('sandbox_run_args (the invocation spec; hardening flag set)', () => {
+  it('is a one-shot foreground --rm container, no daemon keep-alive (no -d … sleep infinity)', () => {
     const args = run_args();
     expect(args.slice(0, 2)).toEqual(['run', '--rm']);
     expect(args).not.toContain('-d');
@@ -33,12 +33,12 @@ describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', (
     expect(args[args.indexOf('--name') + 1]).toBe('volley-sandbox-run-1');
     // The image is the last argv when no command is appended.
     expect(args[args.length - 1]).toBe('volley-sandbox:latest');
-    // The host build root is bind-mounted and is the container cwd (D5).
+    // The host build root is bind-mounted and is the container cwd.
     expect(args).toContain('/tmp/ws.worktree:/workspace');
     expect(args[args.indexOf('-w') + 1]).toBe('/workspace');
   });
 
-  it('appends the volley command after the image and injects env / entrypoint (B′-2 crossing)', () => {
+  it('appends the volley command after the image and injects env / entrypoint (the host crossing)', () => {
     const args = run_args({
       command: ['--prompt', 'do the thing', '--workspace', '/workspace'],
       env: [['VOLLEY_MODEL_HOST', HOST_GATEWAY_HOST]],
@@ -55,7 +55,7 @@ describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', (
     expect(args.indexOf('--entrypoint')).toBeLessThan(args.lastIndexOf('volley-sandbox:latest'));
   });
 
-  it('applies the D11 caps: non-root user, cap-drop, no-new-privileges, init, resource limits, read-only + tmpfs', () => {
+  it('applies the hardening caps: non-root user, cap-drop, no-new-privileges, init, resource limits, read-only + tmpfs', () => {
     const args = run_args();
     const joined = args.join(' ');
     expect(args[args.indexOf('--user') + 1]).toBe('501:20');
@@ -75,7 +75,7 @@ describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', (
     expect(joined).toContain('volley-pnpm-store:/home/node/.local/share/pnpm/store');
   });
 
-  it('never grants root or full privileges (D9)', () => {
+  it('never grants root or full privileges', () => {
     const args = run_args();
     expect(args).not.toContain('--privileged');
     expect(args[args.indexOf('--user') + 1]).not.toBe('0:0');
@@ -92,11 +92,11 @@ describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', (
     expect(run_args({ uid: null, gid: null })).not.toContain('--user');
   });
 
-  it('omits --name when none is given (the operator/example names the container, B′-2)', () => {
+  it('omits --name when none is given (the operator/example names the container)', () => {
     expect(run_args({ name: null })).not.toContain('--name');
   });
 
-  it('carries the network posture into the run argv (D6/D12)', () => {
+  it('carries the network posture into the run argv', () => {
     // Default-deny: no interface at all.
     expect(run_args({ network: 'none' }).join(' ')).toContain('--network none');
     // Allowlist: user-defined bridge + host-collapsed allowlist via host-gateway.
@@ -106,7 +106,7 @@ describe('sandbox_run_args (B′ invocation spec; D9/D11 hardening flag set)', (
   });
 });
 
-describe('network_run_args (D6/D12 egress postures)', () => {
+describe('network_run_args (egress postures)', () => {
   it("'none' denies all egress with --network none and no host-gateway", () => {
     const args = network_run_args('none', 'volley-sandbox-net');
     expect(args).toEqual(['--network', 'none']);
@@ -123,7 +123,7 @@ describe('network_run_args (D6/D12 egress postures)', () => {
   });
 });
 
-describe('sandbox_invocation (the B′-2 invocation-spec helper)', () => {
+describe('sandbox_invocation (the invocation-spec helper)', () => {
   it('composes the hardened run with the canonical bridge + pnpm store and the volley command', () => {
     const args = sandbox_invocation({
       image: 'volley-sandbox:latest',
@@ -141,7 +141,7 @@ describe('sandbox_invocation (the B′-2 invocation-spec helper)', () => {
     expect(args.join(' ')).not.toContain('VOLLEY_MODEL_HOST');
   });
 
-  it('injects VOLLEY_MODEL_HOST on the allowlist crossing and uses the canonical bridge (D12/OQ-8)', () => {
+  it('injects VOLLEY_MODEL_HOST on the allowlist crossing and uses the canonical bridge', () => {
     const args = sandbox_invocation({
       image: 'volley-sandbox:latest',
       build_root: '/tmp/ws.worktree',
@@ -156,7 +156,7 @@ describe('sandbox_invocation (the B′-2 invocation-spec helper)', () => {
   });
 });
 
-describe('allowlist bridge identity (D12 invocation spec the examples share)', () => {
+describe('allowlist bridge identity (the invocation spec the examples share)', () => {
   it('names the dedicated user-defined bridge and its pinned /24 subnet', () => {
     expect(SANDBOX_NETWORK_NAME).toBe('volley-sandbox-net');
     expect(SANDBOX_NETWORK_SUBNET).toBe('172.31.99.0/24');

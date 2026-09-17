@@ -39,7 +39,7 @@ describe('fresh_workspace_happy_path', () => {
       expect(result.total_cost_usd).toBeCloseTo(0.3);
       expect(result.total_usage.input_tokens).toBeGreaterThan(0);
 
-      // .volley/ layout per spec §3.
+      // .volley/ layout.
       expect(existsSync(join(workspace, '.volley', 'config.json'))).toBe(true);
       expect(existsSync(join(workspace, '.volley', 'trajectory.jsonl'))).toBe(true);
       expect(readFileSync(join(workspace, '.volley', 'verdict'), 'utf8')).toBe('approved\n');

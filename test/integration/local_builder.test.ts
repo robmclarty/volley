@@ -8,7 +8,7 @@ import type { Renderer } from '../../src/render/renderer.js';
 import { silent_renderer, temp_workspace, test_config } from '../helpers/harness.js';
 import { mock_engine } from '../helpers/mock_engine.js';
 
-/** A renderer that captures `warn` lines (D7 max_steps notice) and no-ops the
+/** A renderer that captures `warn` lines (the max_steps notice) and no-ops the
  * rest, so a test can assert what the run surfaced. */
 function capturing_renderer(): { renderer: Renderer; warnings: string[] } {
   const warnings: string[] = [];
@@ -16,7 +16,7 @@ function capturing_renderer(): { renderer: Renderer; warnings: string[] } {
 }
 
 /** A minimal executed tool call for the salvage-rate metric; `salvaged: true`
- * marks one recovered from assistant text (D5). */
+ * marks one recovered from assistant text. */
 function tool_call(name: string, salvaged?: true): ToolCallRecord {
   return { id: `${name}-1`, name, input: {}, duration_ms: 1, started_at: 0, ...(salvaged ? { salvaged } : {}) };
 }
@@ -74,11 +74,11 @@ describe('local builder (ollama provider)', () => {
       // The whole volley tool surface is supplied, in the reused-read-tools +
       // new-tools order, terminated by `finish`.
       expect(builder?.opts.tools?.map((t) => t.name)).toEqual(BUILDER_TOOL_NAMES);
-      // `finish` is the terminal tool: a successful call ends the loop (D6).
+      // `finish` is the terminal tool: a successful call ends the loop.
       const finish = builder?.opts.tools?.find((t) => t.name === 'finish');
       expect(finish?.ends_turn).toBe(true);
 
-      // The five per-call loop knobs (D5/C5) — and no schema (a builder
+      // The five per-call loop knobs — and no schema (a builder
       // produces a workspace, not a verdict).
       expect(builder?.opts.max_steps).toBe(17);
       expect(builder?.opts.tool_error_policy).toBe('feed_back');
@@ -103,7 +103,7 @@ describe('local builder (ollama provider)', () => {
     }
   });
 
-  it('treats a max_steps cutoff as data, not an error: warns, records finish_reason + salvage rate, and still runs check + critic (D7)', async () => {
+  it('treats a max_steps cutoff as data, not an error: warns, records finish_reason + salvage rate, and still runs check + critic', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const config = test_config({
@@ -118,7 +118,7 @@ describe('local builder (ollama provider)', () => {
       });
       // The builder burns its whole step budget without calling finish: a
       // max_steps cutoff, three tool calls, two of them salvaged from assistant
-      // text. It leaves a partial workspace behind (D7).
+      // text. It leaves a partial workspace behind.
       const engine = mock_engine((call) =>
         call.role === 'builder'
           ? {
@@ -161,7 +161,7 @@ describe('local builder (ollama provider)', () => {
     }
   });
 
-  it('logs the finish summary to the trajectory and records finish_reason: stop with no cutoff warning (D6)', async () => {
+  it('logs the finish summary to the trajectory and records finish_reason: stop with no cutoff warning', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const config = test_config({
@@ -174,7 +174,7 @@ describe('local builder (ollama provider)', () => {
       const finish_summary = 'created out.txt and verified pnpm check';
       // The mock stands in for the real fascicle tool loop (just as its
       // file-writing effect does): a successful `finish` ends the turn, and
-      // fascicle records the call to the trajectory like any tool call (D6).
+      // fascicle records the call to the trajectory like any tool call.
       const engine = mock_engine((call) =>
         call.role === 'builder'
           ? {
@@ -214,7 +214,7 @@ describe('local builder (ollama provider)', () => {
     }
   });
 
-  it('never trips the max_cost_usd cap on $0 local phases and keeps totals accurate (D13)', async () => {
+  it('never trips the max_cost_usd cap on $0 local phases and keeps totals accurate', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const config = test_config({
@@ -267,7 +267,7 @@ describe('local builder (ollama provider)', () => {
     }
   });
 
-  it('leaves the claude_cli builder arm byte-for-byte unchanged (C3, §8 fairness)', async () => {
+  it('leaves the claude_cli builder arm byte-for-byte unchanged', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       // Default builder_provider is claude_cli; the critic goes local so the

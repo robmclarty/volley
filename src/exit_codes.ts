@@ -1,5 +1,5 @@
 /**
- * Exit codes (spec §5) and the mapping from fascicle's error taxonomy plus
+ * Exit codes and the mapping from fascicle's error taxonomy plus
  * volley's own tagged errors onto them.
  */
 import { error_kind } from './types.js';

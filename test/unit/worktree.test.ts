@@ -69,7 +69,7 @@ describe('worktree_path / worktree_branch', () => {
 });
 
 describe('build_root', () => {
-  it('re-points to the worktree when on, and stays the workspace when off (s2 D3)', () => {
+  it('re-points to the worktree when on, and stays the workspace when off', () => {
     expect(build_root('/tmp/proj', true)).toBe(worktree_path('/tmp/proj'));
     expect(build_root('/tmp/proj', false)).toBe('/tmp/proj');
   });
@@ -185,7 +185,7 @@ describe('create_worktree', () => {
     }
   });
 
-  it('rotates a dirty/existing worktree aside and logs, preserving its files (D7)', () => {
+  it('rotates a dirty/existing worktree aside and logs, preserving its files', () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
       const branch = worktree_branch('run1');
@@ -251,7 +251,7 @@ describe('create_worktree', () => {
 });
 
 describe('teardown_worktree', () => {
-  it('removes the worktree and its branch (the D13 trio)', () => {
+  it('removes the worktree and its branch (the teardown trio)', () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
       const branch = worktree_branch('run1');

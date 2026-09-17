@@ -5,9 +5,9 @@
  * The claude_cli builder/critic get file access from the CLI's own built-in
  * tools. API-style providers (ollama, lmstudio, …) have no built-ins, so
  * volley supplies its own. The critic uses the read-only set as-is via
- * `src/critic/tools.ts` (spec §13 Q3); the builder set in
+ * `src/critic/tools.ts`; the builder set in
  * `src/builder/tools.ts` reuses `contain()` and the read tools and adds its
- * write/exec surface (v3 C4). Every path is resolved and confined to the
+ * write/exec surface. Every path is resolved and confined to the
  * workspace root.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -33,7 +33,7 @@ export const IGNORED_DIRS = new Set([
 /** Resolve `rel` inside `workspace`, rejecting absolute paths and any `..`
  * escape. Returns the absolute path; throws on containment violation. The
  * `workspace` root passed here is the build root, which is the per-run git
- * worktree under `--worktree` (s2 D3, `build_root`), not necessarily the
+ * worktree under `--worktree` (`build_root`), not necessarily the
  * control-plane workspace that holds `.volley/`. */
 export function contain(workspace: string, rel: string): string {
   const root = resolve(workspace);
@@ -193,7 +193,7 @@ export function read_only_tools(workspace: string): Tool[] {
 
 /** A `paths + sizes` listing of the workspace tree, no file contents — the
  * grounding a tool-less critic gets when its provider's tool parser died and the
- * degradation ladder (OQ-12/D9) traded read access for survival. Reuses the same
+ * degradation ladder traded read access for survival. Reuses the same
  * `walk` + `IGNORED_DIRS` traversal as the read tools, so the inventory matches
  * what a working `list_files` would have surfaced; caps at `limit` entries. */
 export function workspace_inventory(root: string, limit: number = LIST_MAX_ENTRIES): string {

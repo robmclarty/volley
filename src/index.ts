@@ -1,6 +1,6 @@
 /**
  * Public API surface: the `VolleyConfig` type for `volley.config.ts` files
- * (spec §5) plus the pieces a parent harness would embed.
+ * plus the pieces a parent harness would embed.
  */
 export { resolve_config, load_config_file, expand_at_file } from './config.js';
 export { run_volley, gate, initial_state, status_of } from './orchestrator.js';

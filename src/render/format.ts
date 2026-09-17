@@ -1,5 +1,5 @@
 /**
- * Display formatting (spec §6): glyph taxonomy, role colors, truncation.
+ * Display formatting: glyph taxonomy, role colors, truncation.
  * All human output goes to stderr; these helpers only build strings.
  */
 import pc from 'picocolors';

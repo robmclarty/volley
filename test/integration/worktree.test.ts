@@ -49,7 +49,7 @@ function run_summary(workspace: string): Record<string, unknown> {
 }
 
 /** A local-builder config whose write_file tool lands in the worktree. Overrides
- * pick the D13 fate: `git_checkpoints` integrates, `discard_worktree` throws the
+ * pick the fate: `git_checkpoints` integrates, `discard_worktree` throws the
  * work away, neither salvages it onto the run branch. */
 function worktree_config(workspace: string, overrides: Record<string, unknown> = {}) {
   return test_config({
@@ -64,7 +64,7 @@ function worktree_config(workspace: string, overrides: Record<string, unknown> =
   });
 }
 
-/** The `--worktree --git` integrate path (D13). */
+/** The `--worktree --git` integrate path. */
 function worktree_git_config(workspace: string, overrides: Record<string, unknown> = {}) {
   return worktree_config(workspace, { git_checkpoints: true, ...overrides });
 }
@@ -96,7 +96,7 @@ describe('orchestrator worktree lifecycle (config.worktree)', () => {
           ? {
               content: 'built',
               cost_usd: 0.1,
-              // The worktree exists around the builder phase (done-when).
+              // The worktree exists around the builder phase.
               effect: () => {
                 worktree_present_during_build = existsSync(worktree_path(workspace));
               },
@@ -120,7 +120,7 @@ describe('orchestrator worktree lifecycle (config.worktree)', () => {
     }
   });
 
-  it('re-points the builder containment root into the worktree so git -C <worktree> shows the diff (step 8 done-when)', async () => {
+  it('re-points the builder containment root into the worktree so git -C <worktree> shows the diff', async () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
       // A local builder brings volley's own tool surface; --worktree moves its
@@ -202,7 +202,7 @@ describe('orchestrator worktree lifecycle (config.worktree)', () => {
   });
 });
 
-describe('check at the build root (s2 D3, step 8 deferral landed)', () => {
+describe('check at the build root', () => {
   it('gates the check on the worktree tree, not the workspace', async () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
@@ -232,7 +232,7 @@ describe('check at the build root (s2 D3, step 8 deferral landed)', () => {
   });
 });
 
-describe('worktree-branch checkpoints + integration (D13, step 9)', () => {
+describe('worktree-branch checkpoints + integration', () => {
   it('checkpoints on the worktree branch and squash-integrates onto the workspace branch on success', async () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
@@ -249,7 +249,7 @@ describe('worktree-branch checkpoints + integration (D13, step 9)', () => {
       expect(result.status).toBe('success');
       // The raw per-phase checkpoints landed on the (now-discarded) phase branch,
       // not the workspace branch: the workspace branch gained exactly one commit
-      // — the squash integration — carrying the builder's effect (D13).
+      // — the squash integration — carrying the builder's effect.
       expect(commit_count(workspace)).toBe(before + 1);
       expect(head_subject(workspace)).toContain('integrate worktree (squash)');
       expect(tracked_at_head(workspace)).toContain('out.txt');
@@ -321,7 +321,7 @@ describe('worktree-branch checkpoints + integration (D13, step 9)', () => {
   });
 });
 
-describe('unintegrated success: salvage, not force-delete (D13)', () => {
+describe('unintegrated success: salvage, not force-delete', () => {
   it('salvages a converged --worktree run that had no --git to integrate it', async () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
@@ -390,7 +390,7 @@ describe('unintegrated success: salvage, not force-delete (D13)', () => {
   it('discards cleanly in the sweep’s throw-away mode (--discard-worktree)', async () => {
     const { workspace, cleanup } = temp_git_workspace();
     try {
-      // What `volley matrix` resolves per seat (D11): isolate the effects, keep
+      // What `volley matrix` resolves per seat: isolate the effects, keep
       // the verdict. A sweep must leave neither a branch nor a commit per seat.
       const config = worktree_config(workspace, { discard_worktree: true });
 

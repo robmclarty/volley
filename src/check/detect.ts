@@ -1,5 +1,5 @@
 /**
- * `--check` resolution (spec §5): `auto` detects checkride in the workspace;
+ * `--check` resolution: `auto` detects checkride in the workspace;
  * `none` disables the gate; anything else is a shell command — unless it is
  * recognizably checkride itself, which gets the structured runner.
  */

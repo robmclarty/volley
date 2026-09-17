@@ -29,7 +29,7 @@ describe('gate', () => {
   const uncapped = test_config({ workspace });
   const capped = test_config({ workspace, max_cost_usd: 1.0 });
 
-  // Table-driven over (check.ok, verdict, cost, cap) per spec §10.
+  // Table-driven over (check.ok, verdict, cost, cap).
   const cases: Array<{
     name: string;
     check: CheckResult | null;

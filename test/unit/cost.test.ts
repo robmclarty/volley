@@ -103,7 +103,7 @@ describe('cost_source_of / phase_record', () => {
     expect(record.model).toBe('opus');
   });
 
-  it('phase_record captures finish_reason and counts salvaged tool calls (D5/D7)', () => {
+  it('phase_record captures finish_reason and counts salvaged tool calls', () => {
     const record = phase_record(
       result({
         finish_reason: 'max_steps',
@@ -131,7 +131,7 @@ describe('cost_cap_hit', () => {
     expect(cost_cap_hit(capped, { ...state, total_cost_usd: 0.99 })).toBe(false);
   });
 
-  it('a $0 engine-derived phase records 0 (not null), stays un-warned, and does not trip the cap (D13)', () => {
+  it('a $0 engine-derived phase records 0 (not null), stays un-warned, and does not trip the cap', () => {
     const capped = test_config({ workspace: '/tmp', max_cost_usd: 1 });
     let state = { ...initial_state(), iteration: 1 };
     state = accumulate(
@@ -151,7 +151,7 @@ describe('cost_cap_hit', () => {
     expect(cost_cap_hit(capped, state)).toBe(false);
   });
 
-  it('a null-cost phase neither trips nor disables the cap (D13)', () => {
+  it('a null-cost phase neither trips nor disables the cap', () => {
     const capped = test_config({ workspace: '/tmp', max_cost_usd: 1 });
     let state = { ...initial_state(), iteration: 1 };
     const no_cost = result();

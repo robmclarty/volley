@@ -1,7 +1,7 @@
 /**
  * Enriched run summary (`.volley/summary.json`): the `RunResult` projection plus
- * a `comparison` block that makes the two blessed examples' runs diff-able
- * (s2 D9/D10). The block gathers the seven comparison metrics — transport,
+ * a `comparison` block that makes the two blessed examples' runs diff-able.
+ * The block gathers the seven comparison metrics — transport,
  * iterations-to-converge, wall-clock, cost, verdict, the deterministic check
  * trajectory, and the local salvage rate — into one self-contained surface so
  * the model-vs-transport write-up (verification §4) reads them from a single
@@ -10,7 +10,7 @@
  * This is the only writer of `summary.json`; the orchestrator calls it per
  * `record` step (status `running`, `completed_at` still null), once more with the
  * final status, and — when a `--worktree` run's work was salvaged onto its branch
- * rather than integrated (D13) — a third time, to stamp the surviving branch on
+ * rather than integrated — a third time, to stamp the surviving branch on
  * `salvaged_branch`, which teardown only names after the final status is known.
  * Each write recomputes the comparison from what is currently archived under
  * `.volley/iterations/`, so the trajectory grows as the run does.
@@ -26,7 +26,7 @@ import type {
 import { volley_path } from './workspace.js';
 
 /** How a role reached the model. volley stays on the `ai_sdk` transport for the
- * local providers (D1/C5 — fascicle 0.9.5 defaults `transport` to `'ai_sdk'`, so
+ * local providers (fascicle 0.9.5 defaults `transport` to `'ai_sdk'`, so
  * volley sets no field); `claude_cli` drives Claude through its own CLI
  * subprocess, not an ai-sdk transport at all. Recording both keeps the transport
  * a clean second variable in the comparison (model vs transport). */
@@ -44,7 +44,7 @@ export type CheckTrajectoryPoint = {
   failing_slots: string[];
 };
 
-/** Run-level salvage aggregate (D5 health metric): the share of builder tool
+/** Run-level salvage aggregate (a health metric): the share of builder tool
  * calls recovered from assistant text rather than returned structurally. A high
  * rate on a local run means the model's native tool-call encoding is drifting
  * from its runtime's parser. `rate` is 0 when the builder made no tool calls
@@ -56,7 +56,7 @@ export type SalvageStats = {
 };
 
 /** The self-contained comparison surface the two blessed examples are read
- * through (s2 D9/D10). Cost and verdict echo the `RunResult` top level on
+ * through. Cost and verdict echo the `RunResult` top level on
  * purpose — this block is the single object the write-up diffs, so it carries
  * every comparison metric rather than pointing back out for some of them. */
 export type ComparisonSummary = {
@@ -85,18 +85,18 @@ export type ComparisonSummary = {
    * "why not" a non-success status alone cannot give: `budget_exhausted` says the
    * run ran out of iterations, not what it was still missing. */
   unmet_criteria: string[];
-  /** Any iteration's critic verdict was rendered by the tool-less fallback
-   * (OQ-12/D3): the tool-bearing critique kept dying on the provider's stream, so
+  /** Any iteration's critic verdict was rendered by the tool-less fallback:
+   * the tool-bearing critique kept dying on the provider's stream, so
    * the critic judged without read access — real, but shallower. The run's
-   * headline honesty flag, and the "degraded" column the matrix runner (step
-   * 4/D11) reads straight from this block. */
+   * headline honesty flag, and the "degraded" column the matrix runner
+   * reads straight from this block. */
   critic_degraded: boolean;
 };
 
 /** `RunResult` plus the comparison block; `.volley/summary.json` mirrors this. */
 export type RunSummary = RunResult & { comparison: ComparisonSummary };
 
-/** The subset of an archived per-iteration summary (spec §3 shape, written by
+/** The subset of an archived per-iteration summary (written by
  * `archive_iteration`) the comparison block reads. Every field is optional so a
  * half-written or older archive degrades to zeros/empties rather than throwing. */
 type IterationArchive = {
@@ -141,7 +141,7 @@ function check_trajectory(archives: IterationArchive[]): CheckTrajectoryPoint[] 
 }
 
 /** The run degraded if any archived iteration's critic verdict came from the
- * tool-less fallback (OQ-12/D3). Reads the same on-disk archives as the other
+ * tool-less fallback. Reads the same on-disk archives as the other
  * comparison metrics, so it grows with the run. */
 function any_critic_degraded(archives: IterationArchive[]): boolean {
   return archives.some((archive) => archive.critic?.critic_degraded === true);

@@ -1,10 +1,10 @@
 /**
- * Docker sandbox invocation spec (s2 Phase 2b; D5, D9, D11, D12): the hardened
+ * Docker sandbox invocation spec: the hardened
  * `docker run` argv that launches the *whole* volley builder inside one
- * container (shape B′). volley no longer orchestrates the container — under B′-2
+ * container. volley no longer orchestrates the container — instead
  * the operator/example runs `docker run <these flags> <image> <volley args>` and
  * volley detects it is already contained. The create/`exec`/reap/teardown
- * lifecycle and the `docker exec` bash executor were retired in step 13; what
+ * lifecycle and the `docker exec` bash executor were retired; what
  * remains here is the *spec* — pure, daemon-free flag-builders the blessed
  * examples and the `--dry-run` preflight render into the `docker run` line,
  * unit-testable without a daemon.
@@ -12,15 +12,15 @@
  * Inside that container volley's `bash` is the local `host_bash_executor`
  * (`spawnSync`, now running in-container), its file tools write straight to the
  * bind-mounted worktree at `/workspace`, and its model client reaches the host
- * LLM endpoint across the boundary at `host.docker.internal` (the D12 allowlist
+ * LLM endpoint across the boundary at `host.docker.internal` (the allowlist
  * target; see the `VOLLEY_MODEL_HOST` crossing in `src/engine.ts`).
  *
- * Hardening (D9/D11): non-root as the worktree owner, cap-drop-all,
+ * Hardening: non-root as the worktree owner, cap-drop-all,
  * no-new-privileges, default seccomp, tini as PID 1 (`--init`), memory/cpu/pids
  * caps, a read-only rootfs with tmpfs for the few writable paths, and the pnpm
  * store on a named volume. Never `--privileged`, never `--user 0`. volley's Node
  * process reaps its own bash children in-container, so the old reap-between-`exec`
- * rider (D9) falls away.
+ * rider falls away.
  */
 import { resolve } from 'node:path';
 import { config_error } from './types.js';
@@ -36,7 +36,7 @@ const SANDBOX_WORKDIR = '/workspace';
  * brick tools that scribble there. */
 const SANDBOX_HOME = '/home/node';
 
-/** Named volume for the pnpm store (D11): survives the read-only rootfs and
+/** Named volume for the pnpm store: survives the read-only rootfs and
  * persists the content-addressed store across runs. (Making a `--user`-mapped,
  * non-1000 uid writable to a fresh volume is a footgun handled where pnpm
  * actually runs — the blessed examples — not here.) */
@@ -46,19 +46,19 @@ const SANDBOX_STORE_VOLUME = 'volley-pnpm-store';
  * already provides it). It is both the `--add-host` target for the allowlist
  * bridge and the value the example injects as `VOLLEY_MODEL_HOST` so the
  * in-container model client crosses to the host LLM endpoint (see
- * `resolve_ollama_base_url` in `src/engine.ts`, OQ-8). */
+ * `resolve_ollama_base_url` in `src/engine.ts`). */
 export const HOST_GATEWAY_HOST = 'host.docker.internal';
 
 /** Canonical identity of the allowlist bridge the examples create (`docker
  * network create --subnet <SANDBOX_NETWORK_SUBNET> <SANDBOX_NETWORK_NAME>`) and
- * the host `DOCKER-USER` rules scope to (D12). Exported so the blessed examples
- * (step 15) share one spelling of the invocation spec. */
+ * the host `DOCKER-USER` rules scope to. Exported so the blessed examples
+ * share one spelling of the invocation spec. */
 export const SANDBOX_NETWORK_NAME = 'volley-sandbox-net';
 export const SANDBOX_NETWORK_SUBNET = '172.31.99.0/24';
 
 /**
- * The container's egress posture (s2 D6/D12). Under whole-process containment
- * (B′/D5) the model client and the `fetch` tool run inside the container, so its
+ * The container's egress posture. Under whole-process containment
+ * the model client and the `fetch` tool run inside the container, so its
  * legitimate egress is the package registry for `pnpm install` plus the host LLM
  * endpoint the model client reaches via host-gateway.
  *
@@ -70,7 +70,7 @@ export const SANDBOX_NETWORK_SUBNET = '172.31.99.0/24';
  * - `'allowlist'` — the container sits on volley's dedicated user-defined bridge
  *   with `host.docker.internal:host-gateway`, collapsing the allowlist targets
  *   (the package registry, and the host LLM endpoint the in-container model
- *   client now reaches — B′/D5) onto the host gateway. The L3/L4 default-DROP that
+ *   client now reaches) onto the host gateway. The L3/L4 default-DROP that
  *   makes the bridge a true allowlist is the host-applied, subnet-scoped
  *   `DOCKER-USER` rule the operator installs (volley never installs it — that
  *   chain is root and host-global, and on Docker Desktop lives inside a VM). The
@@ -86,7 +86,7 @@ export const SANDBOX_NETWORK_SUBNET = '172.31.99.0/24';
 export type SandboxNetwork = 'none' | 'allowlist';
 
 /**
- * The network-related `docker run` args for a posture (D6/D12), pure and exported
+ * The network-related `docker run` args for a posture, pure and exported
  * so the policy is unit-testable without a daemon. `'none'` denies all egress
  * (`--network none`); `'allowlist'` attaches the dedicated user-defined bridge and
  * collapses the allowlist targets onto the host gateway (`host.docker.internal`,
@@ -98,19 +98,19 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
 }
 
 /**
- * The hardened `docker run` argv that launches volley inside its container
- * (D5/D9/D11/D12). Pure and exported so the flag set is unit-testable without a
+ * The hardened `docker run` argv that launches volley inside its container.
+ * Pure and exported so the flag set is unit-testable without a
  * daemon and the blessed examples / `--dry-run` preflight can render it.
  *
- * A one-shot, foreground `--rm` container — under B′ the whole run *is* this
- * container (it was a detached `-d … sleep infinity` daemon volley `exec`'d
- * against under shape B), so `--rm` cleans it up when volley exits. `command`
+ * A one-shot, foreground `--rm` container — the whole run *is* this
+ * container (an earlier design ran a detached `-d … sleep infinity` daemon volley
+ * `exec`'d against), so `--rm` cleans it up when volley exits. `command`
  * appends the container command (the volley args); omit it to use the image's
  * `volley` entrypoint. `env` injects `-e KEY=VALUE` pairs (the `VOLLEY_MODEL_HOST`
- * crossing, D5). `entrypoint` overrides the image entrypoint (the opt-in
+ * crossing). `entrypoint` overrides the image entrypoint (the opt-in
  * real-docker isolation test runs a raw `sh` this way).
  *
- * Never emits `--privileged` and refuses `--user 0` (D9): volley must not hand
+ * Never emits `--privileged` and refuses `--user 0`: volley must not hand
  * the sandbox root or full capabilities. Everything writable under the
  * `--read-only` rootfs is an explicit tmpfs or volume; the bind-mounted worktree
  * is the one host-visible write path.
@@ -144,16 +144,16 @@ export function sandbox_run_args(options: {
   const env = (options.env ?? []).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
   return [
     'run',
-    // One-shot, foreground container: the whole run *is* this container (B′), so
+    // One-shot, foreground container: the whole run *is* this container, so
     // remove it when volley exits.
     '--rm',
     ...name,
     ...user,
-    // Network policy (D6/D12): default-deny egress. `'none'` gives the container
+    // Network policy: default-deny egress. `'none'` gives the container
     // no interface; `'allowlist'` puts it on the user-defined bridge and collapses
     // the allowlist targets onto the host gateway.
     ...network_run_args(options.network, options.network_name),
-    // Resource caps (D11): contain a runaway / fork-bomb / OOM without starving
+    // Resource caps: contain a runaway / fork-bomb / OOM without starving
     // pnpm/tsc (pids 1024, not 100; nofile high enough for esbuild/watchers).
     '--memory=4g',
     '--memory-swap=4g',
@@ -164,7 +164,7 @@ export function sandbox_run_args(options: {
     'nofile=8192:16384',
     '--ulimit',
     'core=0',
-    // Privilege caps (D9/D11): drop every capability, forbid privilege
+    // Privilege caps: drop every capability, forbid privilege
     // escalation, keep the default seccomp profile, and run tini (PID 1) to reap
     // zombies. Never `--privileged`.
     '--cap-drop=ALL',
@@ -198,10 +198,10 @@ export function sandbox_run_args(options: {
 }
 
 /**
- * The small helper that surfaces the full invocation spec (B′-2): compose the
+ * The small helper that surfaces the full invocation spec: compose the
  * hardened `docker run` argv with the canonical bridge + pnpm store and, when
  * crossing to a host-run model (the `'allowlist'` posture), the
- * `VOLLEY_MODEL_HOST` env the base-url normalizer consumes (engine.ts, OQ-8). The
+ * `VOLLEY_MODEL_HOST` env the base-url normalizer consumes (engine.ts). The
  * operator/example runs this (`format_docker_run` renders it as a copy-paste
  * shell line); volley detects it is contained rather than running it itself.
  */

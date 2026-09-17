@@ -1,5 +1,5 @@
 /**
- * Critic invocation (spec §6): a read-only `claude_cli` session returning a
+ * Critic invocation: a read-only `claude_cli` session returning a
  * schema-validated structured verdict. The harness — not the critic — writes
  * `.volley/feedback.md` and `.volley/verdict`.
  */
@@ -48,7 +48,7 @@ export type CriticDeps = {
  * path at all.
  *
  * The two providers also enforce `verdict_schema` by two different paths, both
- * verified live (v3 R4/R5). The claude_cli critic compiles the schema for
+ * verified live. The claude_cli critic compiles the schema for
  * `claude --json-schema`; that only works because fascicle 0.9.5's
  * `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps (the
  * CLI rejects them) — `live_smoke` asserts a structured verdict comes back, so a
@@ -57,8 +57,8 @@ export type CriticDeps = {
  * fascicle's ai_sdk default whenever a `schema` is passed — so the verdict is
  * structurally guaranteed at decode time, with no prompt-parse-repair;
  * `live_local_builder` exercises that path. Unchanged in v3: on ai_sdk
- * constrained decode needs no wiring, and under the deferred native flip (D2) it
- * would move to `provider_options.ollama.format` (Q5, parked). */
+ * constrained decode needs no wiring, and under the deferred native flip it
+ * would move to `provider_options.ollama.format` (parked). */
 function critic_tool_options(
   config: ResolvedConfig,
 ): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options'> {
@@ -72,22 +72,22 @@ function critic_tool_options(
       },
     };
   }
-  // Read the builder's actual output: under `--worktree` (s2 D3) that lives in
+  // Read the builder's actual output: under `--worktree` that lives in
   // the worktree, so the local critic's read tools resolve through the same
   // re-pointed containment root as the builder's writes.
   return { tools: read_only_tools(build_root(config.workspace, config.worktree)) };
 }
 
-/** Degradation ladder rung 1 (D1/OQ-11): how many times a local critic's call
+/** Degradation ladder rung 1: how many times a local critic's call
  * is retried on a provider stream death before the ladder moves on. Capped at
  * one — the qwen3.6/Ollama tool-XML parser death is stochastic, so a same-call
  * retry often passes; past one attempt the failure is not transient and the
- * tool-less fallback (OQ-12) must take over. */
+ * tool-less fallback must take over. */
 export const MAX_CRITIC_RETRIES = 1;
 
 /** Is this critic failure the transient local-provider stream death the ladder
- * retries? Local providers only (D2 — the `claude_cli` path is proven and its
- * retries cost real money), fascicle's typed `provider_error` only (D8 — no
+ * retries? Local providers only (the `claude_cli` path is proven and its
+ * retries cost real money), fascicle's typed `provider_error` only (no
  * message string-matching), and never a user abort, which must stay exit-130. */
 function is_retryable_critic_error(
   config: ResolvedConfig,
@@ -100,7 +100,7 @@ function is_retryable_critic_error(
 }
 
 /** fascicle's `provider_error.cause_kind` is `... | undefined`; fold the
- * missing case into `'unknown'` so a recorded retry always names a cause (D8). */
+ * missing case into `'unknown'` so a recorded retry always names a cause. */
 function retry_cause_kind_of(err: unknown): CauseKind {
   const cause = (err as { cause_kind?: unknown }).cause_kind;
   return cause === 'provider_5xx' || cause === 'network' ? cause : 'unknown';
@@ -108,7 +108,7 @@ function retry_cause_kind_of(err: unknown): CauseKind {
 
 /** Bookkeeping stamped onto a critic record by the degradation ladder: how many
  * tool-bearing retries preceded this verdict, the last retry's cause, and — on the
- * tool-less rung — the `critic_degraded` mark (D3/D8). */
+ * tool-less rung — the `critic_degraded` mark. */
 type LadderMark = {
   retries: number;
   retry_cause_kind: CauseKind | undefined;
@@ -146,7 +146,7 @@ function finalize_critic(
 }
 
 /** The tool-less fallback's prompt: the normal critic prompt plus a notice that
- * read tools are gone this pass and a paths+sizes workspace inventory (D4/D9), so
+ * read tools are gone this pass and a paths+sizes workspace inventory, so
  * the critic still judges from the criteria, the raw check artifacts already in
  * the prompt, and the file layout — grounded, just shallower. */
 function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): string {
@@ -163,8 +163,8 @@ function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): st
   ].join('\n');
 }
 
-/** What the `--dry-run` canary learned about the critic seat (D5, amended
- * Q6/Q7): `ok` — the tool-bearing call came back; `degraded` — the tool-bearing
+/** What the `--dry-run` canary learned about the critic seat:
+ * `ok` — the tool-bearing call came back; `degraded` — the tool-bearing
  * call died on a provider stream error but a tool-less pass survived, so a real
  * run will likely finish via the fallback ladder (`critic_degraded`);
  * `failed` — even the tool-less pass died, so the combo would fail a real run
@@ -174,7 +174,7 @@ export type CanaryOutcome =
   | { outcome: 'degraded'; detail: string }
   | { outcome: 'failed'; detail: string };
 
-/** The canary must *elicit a real tool call* (D5): the qwen3.6 death happens at
+/** The canary must *elicit a real tool call*: the qwen3.6 death happens at
  * tool-markup emission inside Ollama's server-side parser, so a call that never
  * invokes a tool could not fail and would prove nothing. The target path need
  * not exist — a tool error is fed back and the model answers anyway; entering
@@ -182,7 +182,7 @@ export type CanaryOutcome =
  * then an immediate one-word verdict), because a hard `max_tokens` could
  * truncate a thinking model mid-verdict and report `failed` for a combo that
  * works. A model that skips the tool and just answers passes stochastically —
- * acceptable per D5: the canary is early warning, the ladder is the guarantee. */
+ * acceptable: the canary is early warning, the ladder is the guarantee. */
 const CANARY_PROMPT = [
   'CANARY CHECK — a tiny wiring probe, not a real review.',
   'First, call the read_file tool on the path "package.json".',
@@ -202,13 +202,13 @@ function canary_detail(err: unknown): string {
 }
 
 /**
- * The `--dry-run` critic-seat canary (D5): one tiny generate through the *real*
+ * The `--dry-run` critic-seat canary: one tiny generate through the *real*
  * production tool wiring (`critic_tool_options`) and `verdict_schema`, $0 on a
  * local model. The caller (preflight) gates it to local critics only —
- * `claude_cli` is proven and its calls cost real money (D2).
+ * `claude_cli` is proven and its calls cost real money.
  *
  * A tool-bearing death is classified by the same discriminant as the run-time
- * ladder (D8: typed `provider_error` only), then probed tool-less exactly as
+ * ladder (typed `provider_error` only), then probed tool-less exactly as
  * rung 2 would run, so the canary *predicts the ladder* instead of guessing:
  * tool-less survives → `degraded` (warn — the combo completes a real run,
  * marked); tool-less dies too → `failed` (the endpoint-down / model-missing
@@ -290,7 +290,7 @@ export async function run_critic(
       changes: state.changes,
     });
 
-    // Rung 1 (D1/OQ-11): retry a local critic's stochastic tool-phase stream
+    // Rung 1: retry a local critic's stochastic tool-phase stream
     // death once before the fallback trades read access for survival. `attempt`
     // is also the retry count folded into the record: 0 on a first-try success.
     // A non-retryable failure (schema, abort, claude_cli) throws straight through
@@ -314,12 +314,12 @@ export async function run_critic(
       }
     }
 
-    // Rung 2 (D3/D4/D9/OQ-12): every tool-bearing attempt died on a retryable
+    // Rung 2: every tool-bearing attempt died on a retryable
     // local provider stream error, so run one tool-less pass — no tools enter
     // Ollama's broken parser, constrained decode (`schema`) still guarantees the
     // verdict, and the workspace inventory keeps it grounded. Marked
     // `critic_degraded`. A death here throws → the outer catch → `phase_error`,
-    // so exit-6 semantics are preserved (C4).
+    // so exit-6 semantics are preserved.
     const result = await engine.generate({
       ...base,
       prompt: toolless_critic_prompt(config, tool_prompt),

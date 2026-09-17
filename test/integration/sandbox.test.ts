@@ -1,9 +1,9 @@
 /**
- * Opt-in Docker sandbox test (s2 Phase 2b, B′/D5): VOLLEY_SANDBOX_TEST=1 pnpm test
+ * Opt-in Docker sandbox test: VOLLEY_SANDBOX_TEST=1 pnpm test
  *
- * Exercises the real container the B′ invocation spec produces — the hardened
- * `sandbox_run_args` argv run as a one-shot `docker run --rm` (D5/D9/D11/D12). It
- * proves the isolation done-when still holds under whole-process containment: a
+ * Exercises the real container the invocation spec produces — the hardened
+ * `sandbox_run_args` argv run as a one-shot `docker run --rm`. It
+ * proves the isolation contract still holds under whole-process containment: a
  * command inside sees the *container's* root filesystem (not the host's), writes
  * land host-side in the bind-mounted worktree, and `--network none` leaves no
  * route off the box. Skipped by default: it needs a running daemon and a present
@@ -30,7 +30,7 @@ const RUN = docker_ready();
 const HOST_UID = process.getuid?.() ?? null;
 const HOST_GID = process.getgid?.() ?? null;
 
-/** Run a raw `sh -c` script inside the hardened B′ container over `build_root`. */
+/** Run a raw `sh -c` script inside the hardened container over `build_root`. */
 function run_in_sandbox(
   build_root: string,
   script: string,
@@ -51,7 +51,7 @@ function run_in_sandbox(
   return { status: res.status, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
 }
 
-describe.runIf(RUN)('builder sandbox (real B′ docker run)', () => {
+describe.runIf(RUN)('builder sandbox (real docker run)', () => {
   it(
     'FS isolation, host-visible writes, and container cwd inside the hardened container',
     () => {
@@ -63,7 +63,7 @@ describe.runIf(RUN)('builder sandbox (real B′ docker run)', () => {
           'set -e',
           // Isolation: `/etc/passwd` is the *container's* file; the host path to
           // the workspace does not exist inside the container — only the
-          // `/workspace` mount does. Same bytes, two views (done-when).
+          // `/workspace` mount does. Same bytes, two views.
           'echo "PASSWD:$(head -n1 /etc/passwd)"',
           `[ -e "${host_abs}" ] && echo "HOSTABS:visible" || echo "HOSTABS:invisible"`,
           '[ -f host_seen.txt ] && echo "MOUNT:$(cat host_seen.txt)" || echo "MOUNT:missing"',
@@ -89,7 +89,7 @@ describe.runIf(RUN)('builder sandbox (real B′ docker run)', () => {
   );
 
   it(
-    'default-deny egress: --network none leaves the container with only loopback (D6/D12)',
+    'default-deny egress: --network none leaves the container with only loopback',
     () => {
       const { workspace, cleanup } = temp_workspace();
       try {

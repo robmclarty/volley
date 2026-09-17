@@ -88,7 +88,7 @@ describe('checkride_gate_loop', () => {
       expect(prompt_text(first_critic)).toContain('failing slots: test');
       expect(prompt_text(first_critic)).toContain('widget spins');
 
-      // Archived check artifacts for the failing iteration (spec §3).
+      // Archived check artifacts for the failing iteration.
       const archive = join(workspace, '.volley', 'iterations', '001', 'check');
       expect(existsSync(join(archive, 'summary.json'))).toBe(true);
       expect(existsSync(join(archive, 'test.json'))).toBe(true);

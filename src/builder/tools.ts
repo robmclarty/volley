@@ -1,19 +1,19 @@
 /**
- * Builder tool set for local (non-CLI) builders (v3 s1, D2).
+ * Builder tool set for local (non-CLI) builders.
  *
  * A local model brings no built-in tools, so volley supplies the whole
  * agentic surface: the shared read-only trio (reused from
- * `src/workspace_tools.ts`, C4) plus `write_file`, `edit_file`, `bash`,
+ * `src/workspace_tools.ts`) plus `write_file`, `edit_file`, `bash`,
  * `fetch`, and the terminal `finish`. File paths are confined to the
  * workspace via `contain()`.
  *
- * Error semantics (D4/D10): a wrong-but-recoverable input — `edit_file`
+ * Error semantics: a wrong-but-recoverable input — `edit_file`
  * matching 0 or N places, a `bash` command exiting non-zero or timing out, a
  * `fetch` that is SSRF-blocked or fails — is *returned* as a tool result the
  * model reads and acts on. Tools throw only on a genuine harness fault
  * (containment violation, unreadable input, over-cap write).
  *
- * `fetch` (D9) is a native readability pipeline (`linkedom` + `@mozilla/
+ * `fetch` is a native readability pipeline (`linkedom` + `@mozilla/
  * readability` + `turndown`) with SSRF protection at the undici connector, not
  * as a pre-flight URL check: a validating DNS `lookup` rejects hostnames that
  * resolve to a non-unicast address before the TCP connect, and the resolved
@@ -21,12 +21,12 @@
  * literal-IP URLs (Node skips `lookup` for those) and every redirect hop
  * (each re-dispatches through the same guarded connector). The byte cap is
  * enforced while reading the HTTP stream, so raw HTML is never returned and a
- * huge page cannot OOM the tool (C7).
+ * huge page cannot OOM the tool.
  *
- * Egress is defended in two independent layers (s2 D6/D12): this tool's SSRF
+ * Egress is defended in two independent layers: this tool's SSRF
  * deny-list (above) and the sandbox's container network posture (`--network none`
  * by default, or a host-collapsed allowlist bridge — see `SandboxNetwork` in
- * `src/sandbox.ts`). Under whole-process containment (B′/D5) the whole volley
+ * `src/sandbox.ts`). Under whole-process containment the whole volley
  * process — `fetch` included — runs inside the container, so both layers apply to
  * `fetch`'s egress: `--network none` leaves it no route and it returns a "could
  * not fetch" error result, and the loop continues.
@@ -48,13 +48,13 @@ import { contain, read_only_tools } from '../workspace_tools.js';
 export const WRITE_FILE_MAX_BYTES = 1_000_000;
 
 // Sized to fit a workspace `pnpm check`: volley's own checkride timeout is
-// 600s (Q1), so a shorter budget would kill the builder's self-verify
+// 600s, so a shorter budget would kill the builder's self-verify
 // mid-run. Overridable per call site via `BuilderToolOptions` (tests use a
 // short value so the timeout path is exercised without a 10-minute wait).
 export const BASH_TIMEOUT_MS = 600_000;
 
 // Model-facing cap on each of stdout/stderr; oversize output is truncated
-// with a marker (D3 failure mode). Not a memory guard — `BASH_CAPTURE_MAX_BYTES`
+// with a marker. Not a memory guard — `BASH_CAPTURE_MAX_BYTES`
 // below bounds what `spawnSync` buffers before we ever truncate.
 export const BASH_MAX_OUTPUT_BYTES = 100_000;
 
@@ -63,13 +63,13 @@ export const BASH_MAX_OUTPUT_BYTES = 100_000;
 // display cap for the model.
 const BASH_CAPTURE_MAX_BYTES = 10_000_000;
 
-// Hard cap on bytes read from the HTTP stream before conversion (C7): a page
+// Hard cap on bytes read from the HTTP stream before conversion: a page
 // larger than this is truncated at the socket, so raw HTML never reaches the
 // model and a huge page cannot OOM the tool.
 export const FETCH_MAX_BYTES = 200_000;
 
 // Default page-size for the model-facing markdown slice; `start_index`
-// paginates through the rest (MCP fetch-server contract, D9).
+// paginates through the rest (MCP fetch-server contract).
 export const FETCH_MAX_CHARS = 5000;
 
 // How many redirect hops to follow. Each hop re-dispatches through the same
@@ -97,12 +97,12 @@ export type BashOutcome = {
 };
 
 /** How the `bash` tool runs a command: the local `host_bash_executor`
- * (`spawnSync`) — which under whole-process containment (B′/D5) runs *inside*
+ * (`spawnSync`) — which under whole-process containment runs *inside*
  * volley's own hardened container, no `docker exec` hop. The executor runs one
  * command to completion and returns its raw outcome; the `bash` tool owns the
  * truncation + timeout marker. Kept as an injectable seam so tests can supply a
  * fake and a future shape could re-point it (the `docker exec` executor was
- * retired in step 13). */
+ * retired). */
 export type BashExecutor = (
   command: string,
   options: { timeout_ms: number; max_capture_bytes: number },
@@ -115,9 +115,9 @@ export type BuilderToolOptions = {
   bash_max_output_bytes?: number;
   /**
    * Where `bash` runs a command. Defaults to `host_bash_executor` — the local
-   * `spawnSync`, which under B′ runs inside volley's own container against the
+   * `spawnSync`, which under containment runs inside volley's own container against the
    * bind-mounted worktree. Injectable so tests can supply a fake (the
-   * `docker exec` executor was retired in step 13).
+   * `docker exec` executor was retired).
    */
   bash_executor?: BashExecutor;
   /** Override `FETCH_MAX_BYTES` (bytes read from the HTTP stream before the cap). */
@@ -189,7 +189,7 @@ function truncate_bytes(text: string, max: number): string {
 }
 
 /**
- * Non-unicast → forbidden (D9/C7). Rejects loopback, private, link-local,
+ * Non-unicast → forbidden. Rejects loopback, private, link-local,
  * unspecified, broadcast, multicast, CGNAT, and the IPv6 equivalents; an
  * IPv4-mapped IPv6 address is folded to its v4 form first so `::ffff:127.0.0.1`
  * is caught as loopback (and `::ffff:<public>` is still allowed). An
@@ -215,7 +215,7 @@ const default_resolver: LookupFunction = (hostname, options, callback) => {
 
 // A `lookup` that resolves normally, then rejects the connection if any
 // resolved address is forbidden — closing the DNS-rebinding / redirect-hop gap
-// a pre-flight URL check leaves open (D9). Runs before the TCP connect, so a
+// a pre-flight URL check leaves open. Runs before the TCP connect, so a
 // hostname pointing at a private range never opens a socket.
 function guarded_lookup(is_forbidden: (address: string) => boolean, resolve: LookupFunction): LookupFunction {
   return (hostname, options, callback) => {
@@ -272,7 +272,7 @@ function create_ssrf_agent(is_forbidden: (address: string) => boolean, resolve: 
 }
 
 // Read the response body, stopping at `max_bytes` so raw HTML never fully
-// buffers (C7). Breaking the `for await` destroys the stream, ending the
+// buffers. Breaking the `for await` destroys the stream, ending the
 // download.
 async function read_body_capped(body: AsyncIterable<Buffer>, max_bytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -442,10 +442,10 @@ async function run_fetch(raw: unknown, ctx: ToolExecContext, config: FetchConfig
 /**
  * The `bash` executor: run the command via `spawnSync` with a shell, bounded by
  * the timeout (SIGKILL on expiry) and the OOM capture cap. Under whole-process
- * containment (B′/D5) this runs *inside* volley's hardened container against the
+ * containment this runs *inside* volley's hardened container against the
  * bind-mounted worktree — the container is the isolation boundary, no
  * `docker exec` hop — and it is likewise the executor on the
- * `--allow-unsandboxed-builder` host escape hatch (shape C). `status` is null
+ * `--allow-unsandboxed-builder` host escape hatch. `status` is null
  * when a signal (the timeout SIGKILL) killed the process.
  */
 export function host_bash_executor(cwd: string): BashExecutor {
@@ -537,8 +537,8 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       `Each stream is truncated past ${String(bash_max_output_bytes)} bytes, ` +
       `and the command is killed if it runs longer than ${String(bash_timeout_ms)}ms.`,
     input_schema: bash_input,
-    // D3/D4: stateless per command (the executor is injectable without touching
-    // this contract — under B′ it is the local `spawnSync` running in-container),
+    // Stateless per command (the executor is injectable without touching
+    // this contract — under containment it is the local `spawnSync` running in-container),
     // and never throws on the command's own failure — a non-zero exit or a
     // timeout is *returned* as `{ exit_code, stdout, stderr }` for the model to
     // read. The executor buffers up to `BASH_CAPTURE_MAX_BYTES` (OOM guard)
@@ -573,8 +573,8 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       'the next slice. Private, loopback, and link-local addresses are refused. ' +
       'A blocked, non-HTML, or failed request returns an error string you can read and act on.',
     input_schema: fetch_input,
-    // D9: native readability pipeline with connection-time SSRF protection; a
-    // blocked / non-HTML / HTTP error is returned as a tool result (D4), not
+    // Native readability pipeline with connection-time SSRF protection; a
+    // blocked / non-HTML / HTTP error is returned as a tool result, not
     // thrown. The classifier and resolver are overridable for tests only.
     execute: (raw, ctx) =>
       run_fetch(raw, ctx, {
@@ -590,7 +590,7 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       'Declare the task complete. Calling this tool ends your turn — do not ' +
       'call it until the work is done and verified.',
     input_schema: finish_input,
-    // D6: a successful `finish` ends the loop deterministically. The summary
+    // A successful `finish` ends the loop deterministically. The summary
     // is recorded in the trajectory like any tool call and otherwise ignored
     // — the workspace, not the self-report, is truth.
     ends_turn: true,

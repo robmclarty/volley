@@ -92,7 +92,7 @@ describe('resume', () => {
       const restored = load_resume_state(workspace, 'wt-run').raw_config;
       expect(restored.worktree).toBe(true);
       // The throw-away mode rides along: a resumed matrix seat must not start
-      // keeping a branch the sweep never asked for (D11/D13).
+      // keeping a branch the sweep never asked for.
       expect(restored.discard_worktree).toBe(true);
 
       // A config.json written before these keys existed restores both off,

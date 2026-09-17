@@ -1,9 +1,9 @@
 /**
- * Read-only workspace tools for non-CLI critics (spec §13 Q3).
+ * Read-only workspace tools for non-CLI critics.
  *
  * The implementation lives in the shared `src/workspace_tools.ts` module so
  * the builder tool set can reuse `contain()` and the read tools without
- * reaching into this one (v3 C4, `no-deep-sibling-import`). A non-CLI critic
+ * reaching into this one (`no-deep-sibling-import`). A non-CLI critic
  * still has no write path and cannot escape the workspace.
  */
 export {

@@ -1,5 +1,5 @@
 /**
- * Cost and usage accumulation (spec §6). All pricing knowledge lives in
+ * Cost and usage accumulation. All pricing knowledge lives in
  * fascicle; volley only folds `GenerateResult.usage` / `.cost` into loop
  * state and enforces the cap predicate in the guard.
  */

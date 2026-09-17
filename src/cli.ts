@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CLI entry point (spec §5): cac argv parsing, dispatch, exit-code mapping.
+ * CLI entry point: cac argv parsing, dispatch, exit-code mapping.
  * Human progress goes to stderr; stdout carries machine output only.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -135,7 +135,7 @@ function warn_api_key_meter(renderer: Renderer): void {
 }
 
 /** One loud warning when a local builder is about to run *uncontained* on the
- * host via the opt-out (D11 → B′/D5). Config resolution has already refused this
+ * host via the opt-out. Config resolution has already refused this
  * unless volley is contained or the opt-out is set, so reaching here with the
  * opt-out active means the operator accepted the uncontained risk. */
 export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Renderer): void {
@@ -144,7 +144,7 @@ export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Rende
       `UNSANDBOXED BUILDER: '${config.builder_provider}' runs a local model with a real bash ` +
         `(write + exec) directly on this machine in ${config.workspace} — no container isolation. ` +
         `Proceeding because --allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER is set; ` +
-        `run volley inside its sandbox container (B′-2) for blast-radius containment instead.`,
+        `run volley inside its sandbox container for blast-radius containment instead.`,
     );
   }
 }
@@ -319,7 +319,7 @@ async function main(argv: string[]): Promise<number> {
         ...(flags.verbose === true ? { verbose: true } : {}),
         ...(flags.quiet === true ? { quiet: true } : {}),
       });
-      // Resolve once with the forced throw-away worktree (D11) to validate the
+      // Resolve once with the forced throw-away worktree to validate the
       // git repo, providers, and task up front — before any combo spends — and to
       // build the renderer and locate the workspace-level `.volley-matrix/`
       // output. Matches what `default_run_combo` resolves per seat.

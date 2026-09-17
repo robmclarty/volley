@@ -29,7 +29,7 @@ describe('resolve_ollama_base_url', () => {
     );
   });
 
-  it('crosses a loopback URL to VOLLEY_MODEL_HOST when volley runs contained (B′/D5, OQ-8)', () => {
+  it('crosses a loopback URL to VOLLEY_MODEL_HOST when volley runs contained', () => {
     // In-container: the host LLM daemon is reached across the boundary; the
     // server-root shape (no trailing slash) is preserved after the swap.
     expect(
@@ -45,7 +45,7 @@ describe('resolve_ollama_base_url', () => {
   });
 });
 
-describe('cross_to_host_gateway (container→host crossing, OQ-8)', () => {
+describe('cross_to_host_gateway (container→host crossing)', () => {
   const CROSS = { VOLLEY_MODEL_HOST: 'host.docker.internal' };
 
   it('is a no-op when the override is unset (the host / unsandboxed path)', () => {

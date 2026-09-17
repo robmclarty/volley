@@ -1,5 +1,5 @@
 /**
- * checkride runner (spec §6): spawn `pnpm exec checkride --json`, gate on the
+ * checkride runner: spawn `pnpm exec checkride --json`, gate on the
  * `.check/summary.json` contract (`schema_version: 1`), and collect raw
  * failing-slot artifacts for the critic — the critic reads what the tool
  * actually said, not a normalized digest.
@@ -152,7 +152,7 @@ export async function run_checkride(opts: CheckrideOpts): Promise<CheckResult> {
     ...(opts.abort !== undefined ? { abort: opts.abort } : {}),
   });
   // checkride exit 2 is a harness/usage error — an operator problem, not
-  // something to iterate on (spec §5 exit-code mapping).
+  // something to iterate on.
   if (proc.exit_code === 2) {
     throw check_error(`checkride harness error: ${proc.stderr.trim()}`);
   }

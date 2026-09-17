@@ -1,5 +1,5 @@
 /**
- * Workspace lifecycle (spec §3, §9 #17): `.volley/` initialization, stale-run
+ * Workspace lifecycle: `.volley/` initialization, stale-run
  * backup rotation, path helpers, and optional git checkpoints.
  */
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -17,7 +17,7 @@ export function iteration_dir(workspace: string, iteration: number): string {
 }
 
 /** Filesystem-safe timestamp for `.bak.<stamp>` rotation names. Shared by the
- * `.volley/` rotation here and the worktree rotation (D7) so both preserve
+ * `.volley/` rotation here and the worktree rotation so both preserve
  * prior state under the same never-destroy naming. */
 export function backup_stamp(date: Date = new Date()): string {
   return date.toISOString().replace(/[:.]/g, '-');
@@ -73,7 +73,7 @@ export function write_resolved_config(config: ResolvedConfig): void {
  * `--git`: commit everything under `root` after a phase (`git -C <root>`, run
  * here via the spawn `cwd`). `root` is the build root (`build_root`): the
  * workspace on the default path, or the per-run worktree under `--worktree`, so
- * checkpoints land on the worktree branch (D13) rather than the workspace's.
+ * checkpoints land on the worktree branch rather than the workspace's.
  * A checkpoint with nothing to commit is fine; a missing git binary or repo is
  * not.
  */
@@ -101,7 +101,7 @@ export function git_checkpoint(root: string, message: string): void {
 }
 
 /**
- * D13 integration — bring a successful `--worktree --git` run's effects onto the
+ * Integration — bring a successful `--worktree --git` run's effects onto the
  * workspace branch. The per-phase checkpoints on `branch` are the raw
  * audit/replay trail; here they collapse into a single squash commit
  * (`git merge --squash` then `commit`) on the workspace's current branch. The

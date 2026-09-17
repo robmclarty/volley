@@ -1,5 +1,5 @@
 /**
- * Opt-in live tests (spec §10): VOLLEY_LIVE=1 pnpm test
+ * Opt-in live tests: VOLLEY_LIVE=1 pnpm test
  *
  * live_smoke drives the real `claude` CLI once; live_checkride_smoke runs the
  * real checkride binary against a minimal fixture workspace; live_local_builder
@@ -52,7 +52,7 @@ describe.runIf(LIVE)('live_smoke (real claude CLI)', () => {
       expect(existsSync(join(workspace, 'hello.txt'))).toBe(true);
       expect(existsSync(join(workspace, '.volley', 'trajectory.jsonl'))).toBe(true);
 
-      // R5 (v3): the all-Claude critic's structured verdict survived the trip
+      // The all-Claude critic's structured verdict survived the trip
       // through `claude --json-schema`. The critic ran `verdict_schema` there
       // this iteration; it only compiles because fascicle 0.9.5's
       // `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps
@@ -129,7 +129,7 @@ describe.runIf(LIVE_LOCAL_BUILDER)('live_local_builder (real local provider)', (
       expect(['stop', 'max_steps']).toContain(summary.builder.finish_reason);
       // The produced workspace was handed to check + critic like any build.
       expect(summary.check.ran).toBe(true);
-      // R4 (v3): the local critic returned a structured verdict via Ollama
+      // The local critic returned a structured verdict via Ollama
       // constrained decode (`verdict_schema`, fascicle's ai_sdk default) — the
       // other half of the two schema paths, unchanged in v3.
       expect(summary.critic.provider).toBe(provider);

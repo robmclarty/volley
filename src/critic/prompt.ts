@@ -1,5 +1,5 @@
 /**
- * Critic prompt resolution and composition (spec §6). Presets live as
+ * Critic prompt resolution and composition. Presets live as
  * markdown files in ./presets/ — discoverable by listing the directory —
  * and every critic system prompt gets the harness append.
  */

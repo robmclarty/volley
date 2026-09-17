@@ -1,5 +1,5 @@
 /**
- * Shared value and type contracts for volley (spec §3, §6).
+ * Shared value and type contracts for volley.
  *
  * Type aliases are PascalCase; value-level identifiers are snake_case.
  * Fascicle's usage/cost types are used verbatim so summaries carry the
@@ -33,7 +33,7 @@ export type CheckRunnerKind = 'checkride' | 'command' | 'none';
 export type CostSource = 'provider_reported' | 'engine_derived' | 'unknown';
 
 /** Fascicle's `provider_error.cause_kind` discriminant — why a provider call
- * died. Recorded alongside a critic retry (OQ-11/D8) so a degraded run says
+ * died. Recorded alongside a critic retry so a degraded run says
  * *what* failed, not just that it retried. */
 export type CauseKind = 'provider_5xx' | 'network' | 'unknown';
 
@@ -91,7 +91,7 @@ export type ResolvedConfig = {
   builder_provider: BuilderProvider;
   builder_max_steps: number;
   /** Operator opt-out permitting a local (non-`claude_cli`) builder to run
-   * without a sandbox — it gets a real host bash. Refused by default (D11). */
+   * without a sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;
   critic_model: string;
   critic_provider: CriticProvider;
@@ -101,13 +101,13 @@ export type ResolvedConfig = {
   max_iterations: number;
   max_cost_usd: number | null;
   git_checkpoints: boolean;
-  /** Isolate the builder run's effects in a per-run git worktree (s2 D3): the
+  /** Isolate the builder run's effects in a per-run git worktree: the
    * builder/critic file tools' containment root moves to the worktree, while
    * `.volley/` state stays under `workspace` (the control plane). Off by
    * default; requires the workspace to be a git repository. */
   worktree: boolean;
-  /** Throw a `--worktree` run's effects away at teardown even when it converged
-   * (D13): the run branch is force-deleted rather than kept, because only the
+  /** Throw a `--worktree` run's effects away at teardown even when it converged:
+   * the run branch is force-deleted rather than kept, because only the
    * verdicts are wanted. This is what `volley matrix` sweeps with — one config,
    * many builder×critic seats, no per-seat commits or branches left anywhere.
    * Refused without `--worktree`; `--git` still wins, so a `--worktree --git`
@@ -125,10 +125,10 @@ export type ResolvedConfig = {
    * enough that refusing it by default would break honest tasks, and the mark on
    * the summary already makes it impossible to miss. */
   fail_on_gate_edit: boolean;
-  /** Container image the local-builder Docker sandbox runs (s2 D5). Defaults to
+  /** Container image the local-builder Docker sandbox runs. Defaults to
    * volley's own `Dockerfile`-built image; `--sandbox-image <tag>` /
    * `VOLLEY_SANDBOX_IMAGE` override it. Meaningful only for a local builder —
-   * the `claude_cli` path never uses Docker (C4). */
+   * the `claude_cli` path never uses Docker. */
   sandbox_image: string;
   workspace: string;
   verbose: boolean;
@@ -192,7 +192,7 @@ export type ChangeSet = {
   truncated: boolean;
 };
 
-/** Per-phase record for iteration summaries (spec §3). */
+/** Per-phase record for iteration summaries. */
 export type PhaseRecord = {
   provider: string;
   model: string;
@@ -201,30 +201,30 @@ export type PhaseRecord = {
   usage: UsageTotals;
   cost_usd: number | null;
   cost_source: CostSource;
-  /** How the phase's generate call ended (D6/D7). For a local builder,
+  /** How the phase's generate call ended. For a local builder,
    * `'max_steps'` is a budget cutoff surfaced as a warning, not an error. */
   finish_reason: FinishReason;
   /** Tool calls fascicle executed in this phase, and how many were recovered
-   * from assistant text rather than returned structurally (D5) — the raw
+   * from assistant text rather than returned structurally — the raw
    * counts behind the salvage-rate health metric. */
   tool_calls: number;
   salvaged_tool_calls: number;
   /** Provider-error retries that preceded this phase's successful call
-   * (OQ-11/D8) — the local-critic degradation ladder's first rung: a stochastic
+   * — the local-critic degradation ladder's first rung: a stochastic
    * Ollama stream death is retried once before falling back. Set on the critic
    * record (0 when the first call succeeded); absent on the builder, which is
-   * not retried this build (Q5). Additive — old summary consumers ignore it (C5). */
+   * not retried this build. Additive — old summary consumers ignore it. */
   retries?: number;
-  /** The `cause_kind` of the retried provider error, recorded with `retries`
-   * (D8). Absent when no retry happened. */
+  /** The `cause_kind` of the retried provider error, recorded with `retries`.
+   * Absent when no retry happened. */
   retry_cause_kind?: CauseKind;
-  /** This local-critic verdict was rendered by the tool-less fallback rung
-   * (OQ-12/D3): the tool-bearing critique kept dying on the provider's stream
+  /** This local-critic verdict was rendered by the tool-less fallback rung:
+   * the tool-bearing critique kept dying on the provider's stream
    * even after the bounded retry, so the critic judged with no read access —
    * grounded only by the criteria, the raw check artifacts, and a workspace file
-   * inventory (D9). Set (true) on a degraded critic record; absent on a full
-   * critique and on the builder. Additive (C5), and a degraded verdict is *always*
-   * marked so it never passes silently as a full one (D3). */
+   * inventory. Set (true) on a degraded critic record; absent on a full
+   * critique and on the builder. Additive, and a degraded verdict is *always*
+   * marked so it never passes silently as a full one. */
   critic_degraded?: boolean;
 };
 
@@ -272,7 +272,7 @@ export type RunResult = {
   check_duration_ms: number;
   final_verdict: Verdict | null;
   /** The run branch teardown left behind because this run's work was never
-   * integrated (D13): under `--worktree` without `--git` a converged run has no
+   * integrated: under `--worktree` without `--git` a converged run has no
    * other copy of its effects, so teardown commits them onto `volley/<run id>`
    * and keeps the branch instead of force-deleting it. Null whenever nothing
    * survived — every non-worktree run, every integrated run, every discarded

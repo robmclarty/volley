@@ -87,7 +87,7 @@ describe('model_endpoint', () => {
   });
 });
 
-describe('preflight — all-Claude path never exits 5 from containment (C4)', () => {
+describe('preflight — all-Claude path never exits 5 from containment', () => {
   it('skips the containment checks even when the probes would fail', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -104,7 +104,7 @@ describe('preflight — all-Claude path never exits 5 from containment (C4)', ()
   });
 });
 
-describe('preflight — worktree fate prediction (D13)', () => {
+describe('preflight — worktree fate prediction', () => {
   /** The prediction is provider-independent, so these drive the all-Claude
    * config: no containment probes run, only the fate line. */
   function worktree_config(workspace: string, discard = false): ResolvedConfig {
@@ -247,7 +247,7 @@ describe('preflight — containment checks for a local builder', () => {
   });
 });
 
-describe('preflight — critic-seat canary (D5)', () => {
+describe('preflight — critic-seat canary', () => {
   /** Builder stays claude_cli: the canary keys off the *critic* seat alone, so
    * it must run even when no containment preflight applies. `lmstudio` (not
    * `ollama`) skips the ollama-only prewarm's real fetch. */
@@ -288,7 +288,7 @@ describe('preflight — critic-seat canary (D5)', () => {
       expect(engine.calls).toHaveLength(1);
       const call = engine.calls[0] as MockCall;
       // The exact production wiring: workspace read tools + the verdict schema,
-      // and a prompt that elicits a real tool call (D5 — a call that never
+      // and a prompt that elicits a real tool call (a call that never
       // enters the tool parser could not fail).
       expect(is_tool_call(call)).toBe(true);
       expect(call.opts.schema).toBe(verdict_schema);
@@ -339,7 +339,7 @@ describe('preflight — critic-seat canary (D5)', () => {
     }
   });
 
-  it('exits 5 on a non-provider error without trying the tool-less rung (D8)', async () => {
+  it('exits 5 on a non-provider error without trying the tool-less rung', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const { renderer } = capturing_renderer();
@@ -357,7 +357,7 @@ describe('preflight — critic-seat canary (D5)', () => {
     }
   });
 
-  it('provably skips the canary for a claude_cli critic (D2)', async () => {
+  it('provably skips the canary for a claude_cli critic', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const { renderer, output } = capturing_renderer();

@@ -234,7 +234,7 @@ describe('bash', () => {
     }
   });
 
-  // The sandbox swap (s2 D9) replaces the host `spawnSync` with a `docker exec`
+  // The sandbox swap replaces the host `spawnSync` with a `docker exec`
   // executor; the tool must route through whatever executor is injected and keep
   // its contract (exit code passthrough, truncation, the timeout marker) — so
   // both paths look identical to the model.
@@ -283,7 +283,7 @@ describe('finish', () => {
 });
 
 // ---------------------------------------------------------------------------
-// fetch — native readability pipeline + connector-level SSRF (D9)
+// fetch — native readability pipeline + connector-level SSRF
 // ---------------------------------------------------------------------------
 
 type TestServer = { origin: string; requests: string[]; close: () => Promise<void> };

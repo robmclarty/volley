@@ -1,5 +1,5 @@
 /**
- * Builder invocation (spec §6): one `engine.generate` call per iteration is
+ * Builder invocation: one `engine.generate` call per iteration is
  * one complete agentic Claude Code session in the workspace.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -48,7 +48,7 @@ export function presets_dir(): string {
   throw config_error('builder presets directory not found');
 }
 
-// D12: the CLI system prompt assumes CLI semantics (built-in tools, implicit
+// The CLI system prompt assumes CLI semantics (built-in tools, implicit
 // cwd), so the local builder gets its own — the volley tool set, the
 // workspace-is-cwd convention, and the harness-enforced `finish` stop.
 export function compose_builder_system_local(): string {
@@ -61,7 +61,7 @@ export function compose_builder_system_local(): string {
   return `${identity}\n\n${append.trimEnd()}`;
 }
 
-/** The builder system prompt for the active provider (D12): the `claude_cli`
+/** The builder system prompt for the active provider: the `claude_cli`
  * prompt (implicit built-in tools, "the current working directory") for the
  * CLI builder, or the local prompt (volley's tool set, workspace-is-cwd, and
  * the harness-enforced `finish` stop) for a local model. Mirrors the critic's
@@ -74,16 +74,16 @@ function resolve_builder_system(config: ResolvedConfig): string {
 
 // Salvage budget for a tool call a local model emits as assistant text instead
 // of a structured tool_call (Hermes / json-fenced / Qwen3-Coder XML). Must be
-// > 0 to turn salvage on (D5/C5); the budget is shared across the whole
-// generate call and each salvage is observable on the result for step 8's
-// health metric.
+// > 0 to turn salvage on; the budget is shared across the whole
+// generate call and each salvage is observable on the result for the
+// salvage-rate health metric.
 export const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
 
 /** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
  * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
  * permission mode) and brings its own built-in tools — this arm is unchanged
- * from v2 (C3). A local builder brings none, so volley supplies its whole
- * workspace tool surface plus the five per-call loop knobs (D5/C5) and **no**
+ * from v2. A local builder brings none, so volley supplies its whole
+ * workspace tool surface plus the five per-call loop knobs and **no**
  * schema (it produces a workspace, not a verdict); per-call values win over
  * engine defaults. */
 function builder_tool_options(
@@ -109,10 +109,10 @@ function builder_tool_options(
     };
   }
   return {
-    // Containment root re-points to the worktree under `--worktree` (s2 D3), so
+    // Containment root re-points to the worktree under `--worktree`, so
     // the model's writes, edits, and `bash` cwd land there and leave the
     // workspace untouched. When the sandbox is active its `docker exec` executor
-    // runs `bash` in the container against the bind-mounted worktree (D9); the
+    // runs `bash` in the container against the bind-mounted worktree; the
     // host `spawnSync` default stands in otherwise.
     tools: builder_tools(
       build_root(config.workspace, config.worktree),
@@ -167,7 +167,7 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
   return parts.join('\n');
 }
 
-// D7: a `max_steps` cutoff is not an error. The local builder burned its whole
+// A `max_steps` cutoff is not an error. The local builder burned its whole
 // step budget without calling `finish`, so its partial workspace goes to check
 // + critic exactly like a `finish`-terminated iteration (the critic sees
 // incomplete work and requests changes, the loop continues). The renderer
@@ -186,7 +186,7 @@ export type BuilderDeps = {
   on_chunk: (chunk: StreamChunk) => void;
   warn: (message: string) => void;
   /** The `bash` executor for a sandboxed local builder (`docker exec` against
-   * the run's container, D9), or null to use the host `spawnSync` default (the
+   * the run's container), or null to use the host `spawnSync` default (the
    * unsandboxed escape hatch, or `claude_cli` which supplies no volley tools). */
   bash_executor?: BashExecutor | null;
 };
@@ -230,7 +230,7 @@ export async function run_builder(
       on_chunk: deps.on_chunk,
       ...builder_tool_options(config, deps.bash_executor ?? null),
     });
-    // D7: `max_steps` is a backstop, not a failure — surface it and carry on.
+    // `max_steps` is a backstop, not a failure — surface it and carry on.
     if (result.finish_reason === 'max_steps') {
       deps.warn(builder_max_steps_warning(config.builder_max_steps));
     }

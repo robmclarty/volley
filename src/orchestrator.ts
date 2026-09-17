@@ -1,5 +1,5 @@
 /**
- * Loop orchestration (spec §6): compose fascicle's `loop` from four thin
+ * Loop orchestration: compose fascicle's `loop` from four thin
  * steps and execute it with a single `run` call. No hand-rolled runner —
  * rounds, abort threading, signal handlers, and cleanup order all belong to
  * the substrate.
@@ -74,7 +74,7 @@ function gate_edit_halt(config: ResolvedConfig, state: LoopState): boolean {
   return config.fail_on_gate_edit && (state.changes?.gate_edits.length ?? 0) > 0;
 }
 
-/** All stopping conditions live here (spec §2): acceptance, cost cap, the gate
+/** All stopping conditions live here: acceptance, cost cap, the gate
  * edit refusal, and — implicitly via `max_rounds` — the iteration budget.
  * Success wins when it and the cap land on the same iteration.
  *
@@ -142,8 +142,8 @@ async function execute_check(
   config: ResolvedConfig,
   abort: AbortSignal,
 ): Promise<CheckResult> {
-  // The check gates the tree the builder actually wrote (s2 D3): the worktree
-  // under `--worktree`, else the workspace — the re-point step 8 deferred.
+  // The check gates the tree the builder actually wrote: the worktree
+  // under `--worktree`, else the workspace.
   const root = build_root(config.workspace, config.worktree);
   if (config.check_resolved === 'checkride') {
     return run_checkride({ workspace: root, abort });
@@ -182,7 +182,7 @@ export async function run_volley(
 
   // Say what this run will do with its effects before it spends anything — the
   // same notice `--dry-run` prints, repeated here so a run started without a dry
-  // run still hears it (D7's predict-then-warn shape).
+  // run still hears it (the same predict-then-warn shape).
   report_worktree_fate(config, renderer);
 
   // The worktree lifecycle wraps the whole builder loop: created before the
@@ -201,9 +201,9 @@ export async function run_volley(
       salvage: (result) => fate === 'salvage' && result.status === 'success',
     },
     async () => {
-      // Whole-process containment (B′/D5): volley runs *inside* its hardened
+      // Whole-process containment: volley runs *inside* its hardened
       // container already — the operator/example's `docker run … <volley args>`
-      // (B′-2) — so there is no container lifecycle to orchestrate here. `bash`
+      // launched it — so there is no container lifecycle to orchestrate here. `bash`
       // is the local `host_bash_executor` running in-container (null executor,
       // the host `spawnSync` default) and the file tools write straight to the
       // bind-mounted worktree; the retired `docker exec` path is gone. The
@@ -215,7 +215,7 @@ export async function run_volley(
       // rather than guessing at them.
       const baseline = capture_baseline(build_root(config.workspace, config.worktree));
       const result = await run_loop(config, deps, resume_from, null, baseline);
-      // D13 integration: a *successful* `--worktree --git` run squash-merges the
+      // Integration: a *successful* `--worktree --git` run squash-merges the
       // phase branch's checkpoints onto the workspace branch before teardown
       // discards it. Any non-success outcome (cost cap, budget, interrupt,
       // error) is abandoned — teardown discards the branch wholesale, nothing
@@ -313,7 +313,7 @@ async function run_loop(
   });
 
   // A builder-crossed cap short-circuits to the guard: the check and critic
-  // are skipped so a doomed iteration spends nothing more (spec §6).
+  // are skipped so a doomed iteration spends nothing more.
   const check = step('check', async (s: LoopState, ctx) => {
     if (cost_cap_hit(config, s)) {
       renderer.warn('cost cap crossed during build; skipping check and critic');

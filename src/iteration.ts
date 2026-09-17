@@ -1,6 +1,6 @@
 /**
- * Iteration archiving, run-level summary, and resume-state recovery
- * (spec §3, §5). `feedback.md` and `verdict` are harness-written projections
+ * Iteration archiving, run-level summary, and resume-state recovery.
+ * `feedback.md` and `verdict` are harness-written projections
  * of the critic's validated structured output.
  */
 import {
@@ -54,16 +54,16 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
     finish_reason: record.finish_reason,
     tool_calls: record.tool_calls,
     salvaged_tool_calls: record.salvaged_tool_calls,
-    // Salvage rate (D5 health metric): the share of tool calls recovered from
+    // Salvage rate (a health metric): the share of tool calls recovered from
     // assistant text. A high rate on a local run means the model's native
     // tool-call encoding is drifting from its runtime's parser (pin them as one
     // unit). 0 when the phase made no tool calls (the CLI builder's own loop).
     salvage_rate: record.tool_calls === 0 ? 0 : record.salvaged_tool_calls / record.tool_calls,
-    // Degradation-ladder bookkeeping (OQ-11/OQ-12), critic-only: the provider-error
+    // Degradation-ladder bookkeeping, critic-only: the provider-error
     // retries that preceded this verdict, their cause, and whether it was rendered
     // by the tool-less fallback. Emitted only when set, so the builder record and
-    // old summary consumers are untouched (C5). `critic_degraded` is the on-disk
-    // half of the done-when — the comparison block reads it back from here.
+    // old summary consumers are untouched. `critic_degraded` is the on-disk
+    // half of the contract — the comparison block reads it back from here.
     ...(record.retries !== undefined ? { retries: record.retries } : {}),
     ...(record.retry_cause_kind !== undefined
       ? { retry_cause_kind: record.retry_cause_kind }
@@ -73,7 +73,7 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
 }
 
 /** Archive one completed iteration: verdict files, check artifacts, and the
- * per-iteration summary (spec §3 shape). */
+ * per-iteration summary. */
 export function archive_iteration(config: ResolvedConfig, state: LoopState): void {
   const dir = iteration_dir(config.workspace, state.iteration);
   mkdirSync(join(dir, 'check'), { recursive: true });
@@ -123,12 +123,12 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
     // What the builder reached for this iteration (`src/changes.ts`), archived
     // beside the check's verdict so the two can be read against each other after
     // the fact: green + a gate edit is a different result from green alone.
-    // Null when the build root is not a git repository. Additive (C5).
+    // Null when the build root is not a git repository. Additive.
     changes: state.changes,
     verdict: state.verdict,
     // The criteria the critic judged unmet, verbatim. The run-level summary
     // reads the last iteration's list, so a non-converged run says what it was
-    // still missing when it stopped instead of only that it stopped. Additive (C5).
+    // still missing when it stopped instead of only that it stopped. Additive.
     unmet_criteria: state.unmet_criteria,
     iteration_cost_usd: state.iteration_cost_usd,
     iteration_total_cost_usd: state.total_cost_usd,
@@ -154,8 +154,8 @@ export function run_result_from_state(
     check_duration_ms: state.check_duration_ms,
     final_verdict: state.verdict,
     // The loop itself never salvages: the orchestrator re-stamps this after
-    // teardown when a converged `--worktree` run's work was kept on its branch
-    // (D13), which is the only moment the branch's survival is known.
+    // teardown when a converged `--worktree` run's work was kept on its branch,
+    // which is the only moment the branch's survival is known.
     salvaged_branch: null,
   };
 }
@@ -168,7 +168,7 @@ export type ResumeState = {
   iterations_completed: number;
 };
 
-/** Recover a resumable run from `.volley/` (spec §5): settings from
+/** Recover a resumable run from `.volley/`: settings from
  * config.json, totals from summary.json, feedback from feedback.md. An
  * iteration directory without a summary.json was interrupted mid-phase and
  * is discarded. */

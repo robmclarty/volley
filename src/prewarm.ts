@@ -22,7 +22,7 @@ export const PREWARM_TIMEOUT_MS = 300_000;
  * timeout — never throws, never gates the phase. An already-resident model
  * returns immediately, so warming the same model for both roles is free.
  *
- * Load-bearing only on the ai_sdk transport (D3): the cold-load death this
+ * Load-bearing only on the ai_sdk transport: the cold-load death this
  * absorbs is the ai-sdk/undici in-request header timeout, not an Ollama
  * limit. On fascicle's native transport — the deferred future bridge, see
  * `local_provider_config` in engine.ts — the per-turn call is a bare

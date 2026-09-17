@@ -1,5 +1,5 @@
 /**
- * The ONLY module that calls fascicle's `create_engine` (spec §7). Every
+ * The ONLY module that calls fascicle's `create_engine`. Every
  * other module receives an `Engine`-shaped value, which keeps the engine
  * mockable in tests and confines provider knowledge to one seam.
  */
@@ -19,15 +19,15 @@ export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_LMSTUDIO_URL = 'http://localhost:1234/v1';
 
 /** Loopback authorities the container→host crossing rewrites. A base URL
- * pointing at one of these is local to wherever volley runs; under B′ that is
+ * pointing at one of these is local to wherever volley runs; contained, that is
  * *inside* the sandbox container, where the host LLM daemon is unreachable
  * except across the boundary at `VOLLEY_MODEL_HOST`. */
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
-/** Cross a loopback base URL to the host LLM endpoint (B′/D5, OQ-8). When volley
+/** Cross a loopback base URL to the host LLM endpoint. When volley
  * runs inside its sandbox container the local model daemon is on the *host*, so
  * the example's `docker run` injects `VOLLEY_MODEL_HOST=host.docker.internal`
- * (the D12 host-gateway allowlist target; see `sandbox_invocation` in
+ * (the host-gateway allowlist target; see `sandbox_invocation` in
  * `src/sandbox.ts`). This normalizer *consumes that override* and swaps a
  * loopback host for the gateway, so an unchanged `http://localhost:11434` still
  * reaches the host from in-container. A non-loopback URL (a real remote daemon)
@@ -57,7 +57,7 @@ export function cross_to_host_gateway(
  * normalized to the server root. A trailing `/api` (the pre-v0.3.1 documented
  * default, and a natural mistake since Ollama's REST paths all start with it)
  * is stripped rather than left to 404 every request, then a loopback authority
- * is crossed to the host LLM endpoint when volley runs contained (B′/D5, OQ-8). */
+ * is crossed to the host LLM endpoint when volley runs contained. */
 export function resolve_ollama_base_url(env: Record<string, string | undefined>): string {
   const raw = env['VOLLEY_OLLAMA_URL'] ?? DEFAULT_OLLAMA_URL;
   const normalized = raw.replace(/\/+$/, '').replace(/\/api$/, '');
@@ -114,7 +114,7 @@ function is_local_provider(
  * in the model-vs-transport comparison.
  *
  * Both providers' base URLs cross a loopback authority to `VOLLEY_MODEL_HOST` when
- * volley runs contained (B′/D5, OQ-8), so an in-container model client reaches the
+ * volley runs contained, so an in-container model client reaches the
  * host LLM endpoint at `host.docker.internal`; on the host / unsandboxed path the
  * override is unset and this is a no-op. */
 function local_provider_config(
@@ -131,7 +131,7 @@ function local_provider_config(
 /** Per-run engine. `claude_cli` is always configured with the workspace as its
  * session cwd; any local provider selected by the builder or critic role is
  * wired in alongside it so one engine drives both roles. Binary, auth mode,
- * provider URLs, and pricing come from the environment (spec §12). */
+ * provider URLs, and pricing come from the environment. */
 export function create_volley_engine(options: EngineOptions): Engine {
   const env = options.env ?? process.env;
 

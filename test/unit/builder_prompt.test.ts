@@ -55,7 +55,7 @@ describe('compose_builder_prompt', () => {
   });
 });
 
-describe('compose_builder_system_local (D12)', () => {
+describe('compose_builder_system_local', () => {
   // Assertions run on whitespace-flattened text so the preset's markdown can
   // be re-wrapped without breaking phrase matches.
   const flat = compose_builder_system_local().replace(/\s+/g, ' ');
@@ -101,7 +101,7 @@ describe('compose_builder_system_local (D12)', () => {
   });
 });
 
-describe('claude_cli builder system prompt (C3: unchanged)', () => {
+describe('claude_cli builder system prompt (unchanged)', () => {
   it('is byte-for-byte the v2 prompt', () => {
     expect(compose_builder_system()).toBe(
       [

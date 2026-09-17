@@ -55,7 +55,7 @@ describe('cost_cap', () => {
       expect(result.status).toBe('cost_cap_reached');
       expect(exit_code_for_status(result.status)).toBe(7);
       expect(result.iterations_completed).toBe(1);
-      // No critic spend after the builder alone crossed the cap (spec §6).
+      // No critic spend after the builder alone crossed the cap.
       expect(engine.calls.filter((c) => c.role === 'critic')).toHaveLength(0);
       const summary = JSON.parse(
         readFileSync(join(workspace, '.volley', 'summary.json'), 'utf8'),

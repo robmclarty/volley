@@ -1,5 +1,5 @@
 /**
- * Config resolution (spec §5): merge CLI flags over an optional config file
+ * Config resolution: merge CLI flags over an optional config file
  * over defaults, expand `@file` references, validate, and produce the
  * immutable `ResolvedConfig` that `.volley/config.json` records.
  */
@@ -28,7 +28,7 @@ export const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
 export const DEFAULT_CRITIC_PROVIDER: CriticProvider = 'claude_cli';
 export const DEFAULT_PERMISSION_MODE: BuilderPermissionMode = 'acceptEdits';
 /** The image volley's own `Dockerfile` builds; the local-builder sandbox runs
- * it unless `--sandbox-image` / `VOLLEY_SANDBOX_IMAGE` overrides it (s2 D5). */
+ * it unless `--sandbox-image` / `VOLLEY_SANDBOX_IMAGE` overrides it. */
 export const DEFAULT_SANDBOX_IMAGE = 'volley-sandbox:latest';
 
 const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
@@ -38,8 +38,8 @@ const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
 ];
 
 /** Builder providers that run a local model through volley's own tool loop —
- * a real `bash` (write + exec). Refused (D11 → B′/D5) unless volley is running
- * inside a container (B′-2, the correct blast-radius default) or the operator
+ * a real `bash` (write + exec). Refused unless volley is running
+ * inside a container (the correct blast-radius default) or the operator
  * explicitly opts out; `claude_cli` has its own permission model and is
  * exempt. */
 const LOCAL_BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
@@ -167,8 +167,8 @@ function validate_builder_max_steps(value: number, original: unknown): number {
 
 /** `--sandbox-image` (a merged flag/config value) wins over the
  * `VOLLEY_SANDBOX_IMAGE` env var, which wins over the default image. Used only
- * on the local-builder Docker sandbox path (s2 D5); the `claude_cli` path never
- * runs Docker (C4). */
+ * on the local-builder Docker sandbox path; the `claude_cli` path never
+ * runs Docker. */
 function resolve_sandbox_image(
   raw: VolleyConfig,
   env: Record<string, string | undefined>,
@@ -185,8 +185,7 @@ function resolve_sandbox_image(
 
 /** The `--allow-unsandboxed-builder` flag/config value wins; otherwise
  * `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` (or `=true`) opts out. Any other value
- * (incl. `0`/`false`/unset) leaves the local builder refused unless contained
- * (D11 → B′/D5). */
+ * (incl. `0`/`false`/unset) leaves the local builder refused unless contained. */
 function resolve_allow_unsandboxed_builder(
   raw: VolleyConfig,
   env: Record<string, string | undefined>,
@@ -196,7 +195,7 @@ function resolve_allow_unsandboxed_builder(
   return env_value === '1' || env_value === 'true';
 }
 
-/** B′-2: volley *detects* it is running inside its sandbox container rather than
+/** volley *detects* it is running inside its sandbox container rather than
  * starting the container itself. The signal is the `VOLLEY_CONTAINED=1` marker
  * volley's own image bakes in (`Dockerfile` `ENV`), so a `docker run <hardened
  * flags> <image> volley run …` is recognized as contained out of the box. Kept
@@ -262,9 +261,9 @@ export function resolve_config(
     );
   }
 
-  // Safety gate (D11 → B′/D5): a local builder gets a real `bash` (write + exec),
+  // Safety gate: a local builder gets a real `bash` (write + exec),
   // so refuse it — before any model spend — unless volley is running *inside* a
-  // container (B′-2, the correct blast-radius default) or the operator explicitly
+  // container (the correct blast-radius default) or the operator explicitly
   // opts out to run uncontained on the host.
   const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, env);
   const contained = detect_containment(env);
@@ -290,12 +289,12 @@ export function resolve_config(
     );
   }
 
-  // Containment auth gate (B′/D5): `claude_cli`'s subscription/OAuth credentials
+  // Containment auth gate: `claude_cli`'s subscription/OAuth credentials
   // do not survive containerization — the token is mangled inside the container —
   // so a contained run may drive Claude only by API key (a plain env var that
   // travels the boundary). Refuse a contained `claude_cli` role (builder and/or
   // critic) that is not explicitly in `api_key` mode; the all-Claude path stays
-  // on the host and Docker-free by design (C4/D10), where subscription auth works.
+  // on the host and Docker-free by design, where subscription auth works.
   if (contained) {
     const claude_roles = [
       builder_provider === 'claude_cli' ? 'builder' : null,
@@ -316,13 +315,13 @@ export function resolve_config(
   }
 
   // A worktree is checked out from the workspace's git history, so refuse the
-  // flag before any model spend when the workspace is not a repository (s2 D3).
+  // flag before any model spend when the workspace is not a repository.
   const worktree = raw.worktree ?? false;
   if (worktree && !existsSync(resolve(workspace, '.git'))) {
     throw config_error(`--worktree requires the workspace to be a git repository: ${workspace}`);
   }
 
-  // `--discard-worktree` (D13): opt in to the throw-away mode — a converged run's
+  // `--discard-worktree`: opt in to the throw-away mode — a converged run's
   // effects go away with its branch instead of being kept on it. Only meaningful
   // under `--worktree`, so a lone flag is refused rather than silently ignored:
   // it would otherwise read as isolation the run does not have.

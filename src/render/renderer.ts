@@ -1,5 +1,5 @@
 /**
- * Live output renderer (spec §2, §6): consumes `StreamChunk`s from each
+ * Live output renderer: consumes `StreamChunk`s from each
  * `generate` call plus volley's own phase/cost lines, and writes human
  * progress to stderr. Streaming is a display concern only — the trajectory
  * jsonl is the durable record.

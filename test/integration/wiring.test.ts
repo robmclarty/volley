@@ -14,7 +14,7 @@ function claude_cli_options(opts: { provider_options?: Record<string, unknown> }
   return (opts.provider_options?.['claude_cli'] ?? {}) as ClaudeCliOptions;
 }
 
-describe('role permission wiring (spec §4)', () => {
+describe('role permission wiring', () => {
   it('builder gets full tools + permission mode; critic is read-only with a schema', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -54,7 +54,7 @@ describe('role permission wiring (spec §4)', () => {
   });
 });
 
-describe('check pipeline failures (spec §9)', () => {
+describe('check pipeline failures', () => {
   it('a check command that cannot start maps to exit 4', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {

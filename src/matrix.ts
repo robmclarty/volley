@@ -1,17 +1,17 @@
 /**
- * `volley matrix` (v0.4.1, D6/D11): sweep a set of builder×critic *model*
+ * `volley matrix` (v0.4.1): sweep a set of builder×critic *model*
  * combinations serially over one otherwise-fixed config, then aggregate every
  * run's `comparison` block into a single table. A subcommand — not a bash
  * wrapper around `docker run` — so it reuses `resolve_config`, the forced
- * per-combo worktree reset (D11), and the enriched summary writer instead of
+ * per-combo worktree reset, and the enriched summary writer instead of
  * reimplementing them.
  *
- * Execution is serial by design (D6): the local providers share one GPU, so
+ * Execution is serial by design: the local providers share one GPU, so
  * parallel combos would thrash the Ollama model loader. Each combo forces
- * `--worktree --discard-worktree` for a clean per-combo reset (D11): a sweep
+ * `--worktree --discard-worktree` for a clean per-combo reset: a sweep
  * wants verdicts, not effects, so every seat's work is thrown away with its
  * branch — never salvaged onto one, never squash-merged onto the operator's
- * branch (D13).
+ * branch.
  *
  * **A seat is measured over `repeat` attempts, not one.** A single run answers
  * "did this pairing converge that time", which is the only question n=1 can
@@ -26,7 +26,7 @@
  * unmet, a cost cap, or a gate edit are. Each is read from the attempt's
  * `comparison` block and folded into one `reason`.
  *
- * Sweep-level exit semantics (D11): an attempt that *runs* — even to a
+ * Sweep-level exit semantics: an attempt that *runs* — even to a
  * non-success status — is a *result*, shown in the table; the sweep only
  * "breaks" (nonzero) when an attempt yields no recoverable summary at all.
  */
@@ -42,10 +42,10 @@ import { config_error } from './types.js';
 import type { RunStatus, Verdict, VolleyConfig } from './types.js';
 import { volley_path } from './workspace.js';
 
-/** The sweep's nonzero exit: at least one attempt produced no summary at all
- * (D11). Distinct from an attempt that merely did not converge — that is still a
+/** The sweep's nonzero exit: at least one attempt produced no summary at all.
+ * Distinct from an attempt that merely did not converge — that is still a
  * result and the sweep exits 0. Kept matrix-local (not a phase exit code) so the
- * existing exit-code semantics are untouched (C4). */
+ * existing exit-code semantics are untouched. */
 export const EXIT_MATRIX_INCOMPLETE = 1;
 
 /** How many times each seat runs when `--repeat` is not given. One attempt is
@@ -98,7 +98,7 @@ export type MatrixRow = {
   /** Salvaged tool calls over total tool calls across all attempts — a ratio of
    * totals, not a mean of ratios, so a busy attempt weighs more than a quiet one. */
   salvage_rate: number | null;
-  /** True when *any* attempt's critic degraded to the tool-less rung (OQ-12). */
+  /** True when *any* attempt's critic degraded to the tool-less rung. */
   critic_degraded: boolean;
   /** Every gate path any attempt's builder edited (`src/changes.ts`). */
   gate_edits: string[];
@@ -154,9 +154,9 @@ export function parse_repeat(value: number | string | undefined): number {
 }
 
 /** The config one seat runs under: the base task with this combo's models and a
- * forced throw-away worktree (D11) — `--worktree` isolates the seat's effects and
+ * forced throw-away worktree — `--worktree` isolates the seat's effects and
  * `--discard-worktree` throws them away at teardown, so a sweep of N seats leaves
- * neither N branches behind nor N squash commits on the operator's branch (D13). */
+ * neither N branches behind nor N squash commits on the operator's branch. */
 export function combo_config(base: VolleyConfig, combo: MatrixCombo): VolleyConfig {
   return {
     ...base,
@@ -381,7 +381,7 @@ async function run_combo_attempts(
 }
 
 /** Run the builder×critic cross product serially — `repeat` attempts per seat —
- * persisting every attempt's summary and aggregating them into one table (D11). */
+ * persisting every attempt's summary and aggregating them into one table. */
 export async function run_matrix(options: RunMatrixOptions): Promise<MatrixOutcome> {
   const { base, matrix_dir, renderer } = options;
   const run_combo = options.run_combo ?? default_run_combo;
@@ -467,8 +467,8 @@ function cell_values(row: MatrixRow): string[] {
   ];
 }
 
-/** Render the aggregate table as a padded, self-aligning block (stderr, C3).
- * Sourced entirely from the rows' `comparison`-derived fields (D11). */
+/** Render the aggregate table as a padded, self-aligning block (stderr).
+ * Sourced entirely from the rows' `comparison`-derived fields. */
 export function render_matrix_table(rows: MatrixRow[]): string {
   const header: string[] = [...MATRIX_COLUMNS];
   const body = rows.map(cell_values);
