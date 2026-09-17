@@ -3,7 +3,7 @@ name: version
 description: Bump the root package.json version (major|minor|patch), summarize every change since the last release into a new CHANGELOG.md entry, and commit the result with a `vX.Y.Z` message. Use when cutting a release or tagging a new version of volley.
 argument-hint: "[major|minor|patch]"
 disable-model-invocation: true
-allowed-tools: Read, Edit, Write, Bash(pnpm version*), Bash(git log*), Bash(git diff*), Bash(git status*), Bash(git add *), Bash(git commit *), Bash(node -e *), Bash(cat *)
+allowed-tools: Read, Edit, Write, Bash(pnpm version*), Bash(git log*), Bash(git diff*), Bash(git status*), Bash(git add *), Bash(git commit *), Bash(git tag *), Bash(node -e *), Bash(cat *)
 ---
 
 # version
@@ -20,7 +20,7 @@ Bump the root `package.json` version, write a `CHANGELOG.md` entry summarizing e
 - Last release commit: !`git log -1 --extended-regexp --grep='^v[0-9]+\.[0-9]+\.[0-9]+$' --pretty=format:'%H %s'`
 - Working tree status: !`git status --short`
 
-The "last release commit" line finds the most recent commit whose message is a bare `vX.Y.Z` — that's how this skill marks releases (the release marker is the commit message, not a git tag). **If that line is empty, there is no prior release** and this is an initial release: summarize the full history.
+The "last release commit" line finds the most recent commit whose message is a bare `vX.Y.Z` — that's how this skill marks releases (the commit message is the marker this preflight greps for; step 7 also tags the same commit `vX.Y.Z`, and pushing that tag is what triggers `publish.yaml` and `release.yaml`). **If that line is empty, there is no prior release** and this is an initial release: summarize the full history.
 
 (Commits since the last release are fetched in step 4 — preflight blocks can't use `$(...)` substitution under Claude Code's permission system, so we look up the range there instead.)
 
@@ -90,7 +90,13 @@ The "last release commit" line finds the most recent commit whose message is a b
    ```
    The message is literally `vX.Y.Z` — no prefix, no body, no footer. That bare `vX.Y.Z` message is exactly what the next bump's preflight greps for to find "the last release," so it must not carry a conventional-commit prefix.
 
-8. **Report back.** Tell the user: the old version, the new version, the commit SHA, and the number of commits summarized. Do *not* push — publishing to `origin` is the user's call, and they may want to fold the release into a larger push. Do *not* create a git tag — releases are tracked by the `vX.Y.Z` commit message, not tags.
+   Then tag the release commit with an annotated tag of the same name:
+   ```bash
+   git tag -a vX.Y.Z -m "vX.Y.Z"
+   ```
+   The pushed tag is what ships the release: `publish.yaml` publishes to npm through trusted publishing (pausing for approval in the `npm-publish` environment) and `release.yaml` creates the GitHub Release with this CHANGELOG section as its notes.
+
+8. **Report back.** Tell the user: the old version, the new version, the commit SHA, and the number of commits summarized. Do *not* push — publishing to `origin` is the user's call, and they may want to fold the release into a larger push. Tell them the push that ships it: `git push origin main vX.Y.Z`.
 
 ## When to use this skill
 
