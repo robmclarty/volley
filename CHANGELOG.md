@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 — 2026-09-16
 
 ### Changed
 - **Published as `@robmclarty/volley`** — the bare `volley` name on npm belongs to an unrelated project. The binary is still `volley`; config files import `VolleyConfig` from the scoped name.
@@ -13,6 +13,7 @@
 
 ### Internal
 - Public-facing docs, code comments, and test names no longer cite spec decisions by their internal ids. The specs under `research/` and the build logs under `.plumbbob/` remain the decision record, ids included.
+- The `/version` release skill no longer claims volley has no remote. It still marks a release with a bare `vX.Y.Z` commit and leaves pushing to the operator, and its verify note names the current checkride slots.
 
 ## v0.5.0 — 2026-09-16
 
