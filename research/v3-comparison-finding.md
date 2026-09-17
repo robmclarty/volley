@@ -185,8 +185,8 @@ host-gateway crossing, and the in-process SSRF deny-list all still apply); and
 `--memory-swappiness` is discarded on cgroup v2 kernels.
 
 One machine-local confound worth naming because it *looks* like a model
-failure: another local-LLM service (lodestar, launched by a leftover
-editor-agent session) held Ollama models on a self-refreshing keep-alive lease.
+failure: another local-LLM service, launched by a leftover
+editor-agent session, held Ollama models on a self-refreshing keep-alive lease.
 On a 34 GB machine, its 7.4 GB adjudication model evicted the 23 GB qwen3.6
 mid-preflight. A local-model harness comparison is only as clean as the
 machine's other tenants — check `ollama ps` before believing a timeout.
