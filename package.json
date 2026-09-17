@@ -1,9 +1,41 @@
 {
-  "name": "volley",
+  "name": "@robmclarty/volley",
   "version": "0.5.0",
   "description": "A CLI harness that runs a builder/critic loop until a task passes both a deterministic check pipeline and a natural-language acceptance review.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Rob McLarty",
+    "email": "hello@robmclarty.com",
+    "url": "https://robmclarty.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robmclarty/volley.git"
+  },
+  "homepage": "https://github.com/robmclarty/volley#readme",
+  "bugs": {
+    "url": "https://github.com/robmclarty/volley/issues"
+  },
+  "keywords": [
+    "agents",
+    "agentic",
+    "harness",
+    "builder-critic",
+    "code-review",
+    "claude-code",
+    "ollama",
+    "lmstudio",
+    "local-llm",
+    "evaluation",
+    "cli",
+    "typescript",
+    "fascicle",
+    "checkride"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=24"
   },
