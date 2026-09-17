@@ -1,5 +1,7 @@
 # volley
 
+[![CI](https://github.com/robmclarty/volley/actions/workflows/ci.yml/badge.svg)](https://github.com/robmclarty/volley/actions/workflows/ci.yml)
+
 A Converging Loop:
 A CLI harness that runs a **builder/critic loop** until a task passes both a
 deterministic check pipeline and a natural-language acceptance review.
@@ -13,11 +15,33 @@ volley is built on two substrates:
   check: one command, exit 0 = done, with a stable `.check/summary.json`
   contract whose raw per-tool output is fed straight to the critic.
 
+## Status
+
+volley is a personal research harness. I built it to study builder/critic
+loops on local models, and that is what I use it for. It is not (yet) meant
+for broad use:
+
+- **v0.x.** CLI flags, the config shape, and the `--json` output change
+  without notice. Read [CHANGELOG.md](./CHANGELOG.md) before upgrading.
+- **Pinned substrates.** It pins specific versions of fascicle and checkride
+  and is only tested against those.
+- **A local builder runs a real shell.** Read [Local builder](#local-builder)
+  before pointing one at anything you care about.
+- **No support commitment.** Issues and findings are welcome; open an issue
+  before sending a large PR.
+
+The design record lives in [`research/`](./research/) (specs and run
+findings) and [`.plumbbob/`](./.plumbbob/) (build plans and logs).
+
 ## Set a cost cap
 
-**Start here.** Since Anthropic's 2026-06-15 programmatic-billing change,
-unattended runs are metered even for subscription users. Always run with
-`--max-cost-usd`:
+**Start here.** A volley run is a loop of complete agentic sessions, so it
+spends faster than anything you drive by hand. With `ANTHROPIC_API_KEY` set,
+every session bills the key at API rates. On a subscription, `claude_cli`
+draws from your plan's usage limits — Anthropic announced a separate metered
+credit for programmatic use in May 2026, then
+[paused it on June 15](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+before it took effect. Either way, always run with `--max-cost-usd`:
 
 ```sh
 volley \
@@ -69,8 +93,19 @@ the loop optimizes for: `--critic reviewer` (default), `optimizer`,
 Requires Node ≥ 24, pnpm, and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 installed and authenticated.
 
+From a checkout:
+
 ```sh
-pnpm add -g volley
+git clone https://github.com/robmclarty/volley.git && cd volley
+pnpm install && pnpm build
+pnpm link --global   # puts `volley` on your PATH
+```
+
+Or from npm, where the package is scoped (the bare `volley` name belongs to an
+unrelated project); the binary is still `volley`:
+
+```sh
+pnpm add -g @robmclarty/volley
 ```
 
 ## Usage
@@ -133,7 +168,7 @@ checkride.
 
 ```ts
 // volley.config.ts
-import type { VolleyConfig } from 'volley';
+import type { VolleyConfig } from '@robmclarty/volley';
 
 const config: VolleyConfig = {
   prompt: '...',
@@ -421,13 +456,20 @@ Everything volley knows lives in the workspace:
 .volley/
   config.json          # resolved run config (immutable per run)
   summary.json         # run-level usage, cost, status
-  trajectory.jsonl     # every fascicle trajectory event (fascicle-viewer replays it)
+  trajectory.jsonl     # every fascicle trajectory event (replayable, below)
   feedback.md          # current critic feedback (harness-written)
   verdict              # approved | changes_requested (harness-written)
   iterations/NNN/      # per-iteration archive: feedback, verdict, check artifacts, summary
 ```
 
 A stale `.volley/` from a previous run is rotated to `.volley.bak.<timestamp>/`.
+
+The trajectory replays in fascicle's bundled viewer — the `fascicle-viewer` bin
+ships inside the `fascicle` package; there is no separate viewer package:
+
+```sh
+pnpm dlx --package=fascicle fascicle-viewer .volley/trajectory.jsonl
+```
 
 ## Environment variables
 
@@ -461,7 +503,12 @@ VOLLEY_LIVE=1 VOLLEY_LIVE_BUILDER_PROVIDER=ollama \
 
 ## Relationship to ridgeline
 
-volley is a deliberate sibling to ridgeline, not a replacement. ridgeline
+volley is a deliberate sibling to
+[ridgeline](https://github.com/robmclarty/ridgeline), not a replacement. ridgeline
 fixes plan/build/evaluate as three phases with strong context boundaries;
 volley collapses planning into the builder's autonomy and makes evaluation
 fully pluggable. Same substrate (fascicle), different opinions.
+
+## License
+
+[Apache 2.0](./LICENSE)

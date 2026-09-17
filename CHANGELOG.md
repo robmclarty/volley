@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Published as `@robmclarty/volley`** — the bare `volley` name on npm belongs to an unrelated project. The binary is still `volley`; config files import `VolleyConfig` from the scoped name.
+- **License is Apache-2.0**, with the license file now in the tree, matching fascicle, checkride, plumbbob, and ridgeline; the manifest had said MIT and shipped no license text.
+- **README corrections.** Anthropic paused its programmatic-billing change on 2026-06-15 rather than shipping it, so the cost-cap section no longer claims subscription runs are metered; the trajectory viewer is named by the bin fascicle actually ships; ridgeline is linked.
+
+### Added
+- A README **Status** section saying what this is — a personal research harness at v0.x with pinned substrates and no support commitment — and where the design record lives.
+- **GitHub Actions CI**: the full checkride gate plus a build on every push to `main` and every pull request.
+
+### Internal
+- Public-facing docs, code comments, and test names no longer cite spec decisions by their internal ids. The specs under `research/` and the build logs under `.plumbbob/` remain the decision record, ids included.
+
 ## v0.5.0 — 2026-09-16
 
 ### Changed
