@@ -41,7 +41,7 @@
   },
   "packageManager": "pnpm@11.1.2",
   "bin": {
-    "volley": "./dist/cli.js"
+    "volley": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
