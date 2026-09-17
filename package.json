@@ -54,7 +54,8 @@
   "files": [
     "dist",
     "src/builder/presets",
-    "src/critic/presets"
+    "src/critic/presets",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",
