@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 — 2026-09-16
 
 ### Changed
 - **`volley matrix` row and run-state shapes.** A row is now a seat aggregated over its attempts (`runs`, `converged`, `mean_iterations`, `mean_wall_clock_ms`, `mean_cost_usd`, `reason`, plus every `attempt`) rather than one run's fields, and per-attempt state moved from `.volley-matrix/<builder>__<critic>/summary.json` to `…/run-NN/summary.json`. Both `--json` consumers and on-disk readers of the v0.4.1 layout need updating.
@@ -11,6 +11,13 @@
 - **The matrix table says *why* a seat fell off.** `budget_exhausted` is a status, not a diagnosis. A row's new `why` column names the failing check slots, the criteria the critic still judged unmet, a cost cap, a gate edit, or the error that broke the run; `flags` separates what qualifies a pass (`deg` for a degraded critic, `gate` for a builder that edited the gate) from what explains a failure. Mean cost per run joins the table, and every attempt's full detail — status, verdict, failing slots, unmet criteria, gate edits — is in the `--json` aggregate.
 - **`comparison.unmet_criteria` in the run summary**: what the critic still judged unmet when the run stopped, verbatim, so a non-converged run says what it was missing rather than only that it stopped. Archived per iteration too.
 - **Gate-edit detection.** Changed paths matching the *gate* — the tests, fixtures, and check configuration that decide whether the work passes — are called out to the critic, warned about on stderr, and recorded in the summary. This mechanizes the by-hand verification `research/reckon-local-run-finding.md` recommends making routine: a green check plus an empty `gate_edits` is worth more than a green check alone, because a builder can also pass by editing the test. Reported, not refused, by default (plenty of tasks are legitimately about the tests); `--fail-on-gate-edit` halts the run with the new **exit 8** instead, and beats success rather than losing to it. `--gate-paths` / `gate_paths` replaces the built-in pattern list, and `--dry-run` predicts the posture — including a warning that the refusal cannot fire outside a git repository.
+
+### Fixed
+- **`volley --version` reports the real version.** It was a literal in `src/cli.ts`, frozen at `0.2.0` since v0.2 while `pnpm version` bumped only `package.json`; it now reads the manifest at startup, so it cannot drift from a release again. The fixing commit filed this under v0.4.1 below, but it landed after that release; v0.5.0 is the first version that ships it.
+
+### Internal
+- `research/reckon-local-run-finding.md`: the first multi-module, all-local run finding — four modules with a real dependency order and a `node --test` gate — and the by-hand verification that gate-edit detection now automates.
+- Change-detection tests pin the `--worktree` seam (the diff runs against the worktree, not the workspace) and the exact promise the gate-edit warning makes; preflight tests cover the `--dry-run` gate-edit posture line.
 
 ## v0.4.1 — 2026-07-24
 
