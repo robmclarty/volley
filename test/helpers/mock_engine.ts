@@ -98,7 +98,7 @@ export function mock_engine(
     list_prices: () => ({}),
     // A scripted mock has no providers to merge, so deriving is a no-op that
     // returns this same engine (keeping the responder and `calls` log intact).
-    // Present to satisfy fascicle 0.9.5's Engine.with_providers.
+    // Present to satisfy fascicle 0.12.8's Engine.with_providers.
     with_providers: () => engine,
     dispose: async () => {},
     calls,

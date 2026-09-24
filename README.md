@@ -290,7 +290,7 @@ Providers and their setup:
 Install the peer for your provider in the project running volley (e.g.
 `pnpm add ai-sdk-ollama@^4`); fascicle loads it lazily only when the local
 critic actually runs. The major matters: it must satisfy fascicle's declared
-peer range (`^4` for fascicle 0.9.5, which tracks the AI SDK v7 line; a bare
+peer range (`^4` for fascicle 0.12.8, which tracks the AI SDK v7 line; a bare
 `pnpm add ai-sdk-ollama` installs v4, which is exactly what this major wants).
 The Ollama base URL is the **server root** — `ai-sdk-ollama` adds the `/api`
 prefix itself (volley strips a trailing `/api` from `VOLLEY_OLLAMA_URL` for
