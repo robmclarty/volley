@@ -17,11 +17,11 @@ import type { Tool } from 'fascicle';
 
 export const READ_FILE_MAX_BYTES = 200_000;
 export const SEARCH_MAX_MATCHES = 200;
-export const LIST_MAX_ENTRIES = 2000;
+const LIST_MAX_ENTRIES = 2000;
 
 /** Directories never worth handing a critic; they bury signal and blow the
  * traversal budget. */
-export const IGNORED_DIRS = new Set([
+const IGNORED_DIRS = new Set([
   'node_modules',
   '.git',
   '.volley',

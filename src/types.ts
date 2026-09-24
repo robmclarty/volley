@@ -280,13 +280,11 @@ export type RunResult = {
   salvaged_branch: string | null;
 };
 
+export type VolleyPhase = 'builder' | 'critic' | 'check';
+
 /** Recoverable domain failures surface as `kind`-tagged Error values (the
  * same discrimination style as fascicle's error taxonomy) so the top-level
  * handler maps them to exit codes without string matching or instanceof. */
-export type VolleyErrorKind = 'config_error' | 'check_error' | 'phase_error';
-
-export type VolleyPhase = 'builder' | 'critic' | 'check';
-
 export type ConfigError = Error & { kind: 'config_error' };
 
 export type CheckError = Error & { kind: 'check_error' };

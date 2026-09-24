@@ -15,9 +15,9 @@ import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
 import { read_only_tools, workspace_inventory } from './tools.js';
 
-export const CRITIC_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'] as const;
+const CRITIC_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 
-export const CRITIC_DISALLOWED_TOOLS = 'Write,Edit,MultiEdit,NotebookEdit,Bash';
+const CRITIC_DISALLOWED_TOOLS = 'Write,Edit,MultiEdit,NotebookEdit,Bash';
 
 export const verdict_schema = z.object({
   verdict: z.enum(['approved', 'changes_requested']),

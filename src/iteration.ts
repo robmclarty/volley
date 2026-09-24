@@ -32,7 +32,7 @@ function write_json(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function persist_verdict_files(
+function persist_verdict_files(
   workspace: string,
   feedback: string,
   verdict: Verdict,

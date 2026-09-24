@@ -8,9 +8,15 @@ entry = [
   "test/**/*.test.ts",
 ]
 
+# examples/ holds sample configs and task workspaces handed to a builder, not
+# part of volley's module graph; several are deliberately incomplete (a test
+# importing the module the builder is asked to write).
+ignorePatterns = ["examples/**"]
+
 # CLI/build tooling: invoked via package scripts or by checkride's adapters,
-# never imported from source, so fallow can't see the usage.
-ignoreDependencies = ["@ast-grep/cli"]
+# never imported from source, so fallow can't see the usage. `ai` and
+# `ai-sdk-ollama` are fascicle peers: fascicle loads them, volley never does.
+ignoreDependencies = ["@ast-grep/cli", "ai", "ai-sdk-ollama"]
 
 [rules]
 unused-exports = "error"

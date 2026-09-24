@@ -161,11 +161,6 @@ export type OrchestratorDeps = {
   install_signal_handlers?: boolean;
 };
 
-export type RunOutcome = {
-  result: RunResult;
-  status: RunStatus;
-};
-
 export async function run_volley(
   config: ResolvedConfig,
   deps: OrchestratorDeps,

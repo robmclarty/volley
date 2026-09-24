@@ -51,7 +51,7 @@ export const EXIT_MATRIX_INCOMPLETE = 1;
 /** How many times each seat runs when `--repeat` is not given. One attempt is
  * enough to smoke-test a pairing and is what a quick sweep wants; anything that
  * compares seats should raise it. */
-export const DEFAULT_REPEAT = 1;
+const DEFAULT_REPEAT = 1;
 
 /** One builder×critic model pairing in the cross product. */
 export type MatrixCombo = { builder: string; critic: string };
@@ -172,7 +172,7 @@ export function combo_config(base: VolleyConfig, combo: MatrixCombo): VolleyConf
  * If the run throws (an unsalvageable phase failure), recover the best-effort
  * `summary.json` the orchestrator wrote so the attempt is still a result;
  * rethrow only when nothing is recoverable — then the sweep breaks. */
-export const default_run_combo: ComboRunner = async (base, combo, renderer) => {
+const default_run_combo: ComboRunner = async (base, combo, renderer) => {
   const config = resolve_config(combo_config(base, combo));
   config.check_resolved = resolve_check_runner(config.check, config.workspace);
   try {

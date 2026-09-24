@@ -56,7 +56,7 @@ export const BASH_TIMEOUT_MS = 600_000;
 // Model-facing cap on each of stdout/stderr; oversize output is truncated
 // with a marker. Not a memory guard — `BASH_CAPTURE_MAX_BYTES`
 // below bounds what `spawnSync` buffers before we ever truncate.
-export const BASH_MAX_OUTPUT_BYTES = 100_000;
+const BASH_MAX_OUTPUT_BYTES = 100_000;
 
 // OOM backstop on `spawnSync`'s captured output, well above the display cap:
 // a command that floods gigabytes is bounded here, then truncated to the
@@ -66,11 +66,11 @@ const BASH_CAPTURE_MAX_BYTES = 10_000_000;
 // Hard cap on bytes read from the HTTP stream before conversion: a page
 // larger than this is truncated at the socket, so raw HTML never reaches the
 // model and a huge page cannot OOM the tool.
-export const FETCH_MAX_BYTES = 200_000;
+const FETCH_MAX_BYTES = 200_000;
 
 // Default page-size for the model-facing markdown slice; `start_index`
 // paginates through the rest (MCP fetch-server contract).
-export const FETCH_MAX_CHARS = 5000;
+const FETCH_MAX_CHARS = 5000;
 
 // How many redirect hops to follow. Each hop re-dispatches through the same
 // SSRF-guarded connector, so a redirect into a private range is still refused.
@@ -448,7 +448,7 @@ async function run_fetch(raw: unknown, ctx: ToolExecContext, config: FetchConfig
  * `--allow-unsandboxed-builder` host escape hatch. `status` is null
  * when a signal (the timeout SIGKILL) killed the process.
  */
-export function host_bash_executor(cwd: string): BashExecutor {
+function host_bash_executor(cwd: string): BashExecutor {
   return (command, options) => {
     const result = spawnSync(command, {
       shell: true,

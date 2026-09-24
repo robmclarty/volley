@@ -13,7 +13,7 @@ import type { CheckArtifact, CheckResult } from '../types.js';
 
 export const CHECK_ARTIFACT_MAX_CHARS = 8000;
 
-export const CHECKRIDE_SCHEMA_VERSION = 1;
+const CHECKRIDE_SCHEMA_VERSION = 1;
 
 export type CheckrideSummaryCheck = {
   name: string;

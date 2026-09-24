@@ -19,14 +19,14 @@ import type {
 } from './types.js';
 
 export const DEFAULT_BUILDER_MODEL = 'opus';
-export const DEFAULT_CRITIC_MODEL = 'opus';
+const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_BUILDER_MAX_STEPS = 50;
 export const DEFAULT_CHECK = 'auto';
-export const DEFAULT_CRITIC = 'reviewer';
-export const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
-export const DEFAULT_CRITIC_PROVIDER: CriticProvider = 'claude_cli';
-export const DEFAULT_PERMISSION_MODE: BuilderPermissionMode = 'acceptEdits';
+const DEFAULT_CRITIC = 'reviewer';
+const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
+const DEFAULT_CRITIC_PROVIDER: CriticProvider = 'claude_cli';
+const DEFAULT_PERMISSION_MODE: BuilderPermissionMode = 'acceptEdits';
 /** The image volley's own `Dockerfile` builds; the local-builder sandbox runs
  * it unless `--sandbox-image` / `VOLLEY_SANDBOX_IMAGE` overrides it. */
 export const DEFAULT_SANDBOX_IMAGE = 'volley-sandbox:latest';
@@ -74,7 +74,7 @@ export function expand_at_file(value: string, cwd: string): string {
   return readFileSync(path, 'utf8');
 }
 
-export function is_critic_preset(value: string): value is CriticPreset {
+function is_critic_preset(value: string): value is CriticPreset {
   return (CRITIC_PRESETS as ReadonlyArray<string>).includes(value);
 }
 

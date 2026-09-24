@@ -83,7 +83,7 @@ export function model_endpoint(
 }
 
 /** Which required executables are not runnable on the current PATH. */
-export function toolchain_missing(tools: ReadonlyArray<string> = REQUIRED_TOOLCHAIN): string[] {
+function toolchain_missing(tools: ReadonlyArray<string> = REQUIRED_TOOLCHAIN): string[] {
   return tools.filter((tool) => {
     const result = spawnSync(tool, ['--version'], { stdio: 'ignore' });
     return result.error !== undefined || result.status !== 0;
@@ -93,7 +93,7 @@ export function toolchain_missing(tools: ReadonlyArray<string> = REQUIRED_TOOLCH
 /** Non-destructive check that a git worktree could be created here: git runs and
  * `workspace` is a git work tree. Does not create anything (create/rotate is the
  * run's job — worktree.ts). */
-export function worktree_creatable(workspace: string): { ok: boolean; detail: string } {
+function worktree_creatable(workspace: string): { ok: boolean; detail: string } {
   const repo = resolve(workspace);
   const version = spawnSync('git', ['--version'], { stdio: 'ignore' });
   if (version.error !== undefined || version.status !== 0) {
@@ -114,7 +114,7 @@ export function worktree_creatable(workspace: string): { ok: boolean; detail: st
 /** Reachability probe: any HTTP response (even a 404) proves the TCP connect
  * landed; a thrown error (connection refused, DNS failure, timeout) means the
  * endpoint is unreachable. */
-export async function endpoint_reachable(
+async function endpoint_reachable(
   url: string,
   timeout_ms: number = ENDPOINT_PROBE_TIMEOUT_MS,
 ): Promise<boolean> {
@@ -166,7 +166,7 @@ function default_canary_engine(
  * operator who asked for the refusal should learn that now, not from a summary
  * whose `gate_edits` is empty for the wrong reason.
  */
-export function report_gate_posture(config: ResolvedConfig, renderer: Renderer): void {
+function report_gate_posture(config: ResolvedConfig, renderer: Renderer): void {
   const root = build_root(config.workspace, config.worktree);
   const detectable = capture_baseline(root) !== null || existsSync(join(root, '.git'));
   if (config.fail_on_gate_edit && !detectable) {

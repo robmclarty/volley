@@ -77,7 +77,7 @@ function resolve_builder_system(config: ResolvedConfig): string {
 // > 0 to turn salvage on; the budget is shared across the whole
 // generate call and each salvage is observable on the result for the
 // salvage-rate health metric.
-export const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
+const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
 
 /** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
  * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
@@ -173,7 +173,7 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
 // incomplete work and requests changes, the loop continues). The renderer
 // surfaces this as a warning and `finish_reason: 'max_steps'` is recorded in
 // the iteration summary — non-convergence is data, not an exception.
-export function builder_max_steps_warning(max_steps: number): string {
+function builder_max_steps_warning(max_steps: number): string {
   return (
     `builder hit the ${String(max_steps)}-step limit without calling finish; ` +
     'handing the partial workspace to check + critic (raise --builder-max-steps if this recurs)'

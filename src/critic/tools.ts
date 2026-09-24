@@ -7,8 +7,6 @@
  * still has no write path and cannot escape the workspace.
  */
 export {
-  IGNORED_DIRS,
-  LIST_MAX_ENTRIES,
   READ_FILE_MAX_BYTES,
   SEARCH_MAX_MATCHES,
   contain,

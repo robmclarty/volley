@@ -15,7 +15,7 @@
 
 /** Generous ceiling on the load itself: a disk-cold 30B-class model takes
  * tens of seconds to minutes. Past this, give up and let the real call try. */
-export const PREWARM_TIMEOUT_MS = 300_000;
+const PREWARM_TIMEOUT_MS = 300_000;
 
 /** Load `model` into the Ollama server's memory (`base_url` is the server
  * root). Resolves when the model is resident, on any failure, or at the

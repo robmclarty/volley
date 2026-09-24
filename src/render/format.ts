@@ -4,8 +4,6 @@
  */
 import pc from 'picocolors';
 
-export const GLYPH_TEXT = '💬';
-export const GLYPH_THINKING = '💭';
 export const GLYPH_TOOL = '🔧';
 export const GLYPH_OK = '✅';
 export const GLYPH_ERR = '❌';
