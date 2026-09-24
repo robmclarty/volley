@@ -46,7 +46,7 @@ describe('exit_code_for_error', () => {
   });
 
   it('critic failures -> 6, including schema validation', () => {
-    const schema_err = new schema_validation_error('invalid', {}, 'raw');
+    const schema_err = new schema_validation_error('invalid', [], 'raw');
     expect(exit_code_for_error(phase_error('critic', 2, schema_err))).toBe(EXIT_CRITIC_ERROR);
     expect(exit_code_for_error(schema_err)).toBe(EXIT_CRITIC_ERROR);
   });

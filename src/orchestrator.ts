@@ -377,12 +377,12 @@ async function run_loop(
     return s;
   });
 
-  const flow = loop<RunInput, LoopState, LoopState>({
+  const flow = loop<RunInput, LoopState, { value: LoopState; converged: boolean }>({
     name: 'volley',
     init: (input) => input.resume_from ?? initial_state(),
     body: sequence([build, check, critique, record]),
     guard: step('gate', (s: LoopState) => gate(config, s)),
-    finish: (s) => s,
+    finish: (s, { converged }) => ({ value: s, converged }),
     max_rounds: config.max_iterations - (resume_from?.iteration ?? 0),
   });
 

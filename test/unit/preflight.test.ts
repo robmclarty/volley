@@ -344,7 +344,7 @@ describe('preflight — critic-seat canary', () => {
     try {
       const { renderer } = capturing_renderer();
       const engine = mock_engine(() =>
-        err_reply(new schema_validation_error('verdict did not validate', {}, '{}')),
+        err_reply(new schema_validation_error('verdict did not validate', [], '{}')),
       );
       const code = await preflight(canary_config(workspace), renderer, {}, {
         ...ALL_GREEN,

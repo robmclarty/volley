@@ -136,7 +136,7 @@ describe('run_critic local retry', () => {
 
   it('does not retry a schema validation failure — deterministic, not transient', async () => {
     const { engine, invoke, cleanup } = make(() =>
-      err_reply(new schema_validation_error('verdict did not validate', {}, '{}')),
+      err_reply(new schema_validation_error('verdict did not validate', [], '{}')),
     );
     try {
       await expect(invoke()).rejects.toMatchObject({ kind: 'phase_error', phase: 'critic' });
