@@ -5,6 +5,7 @@
     "lint": "oxlint",
     "struct": "ast-grep",
     "dead": "fallow",
+    "dupes": "fallow",
     "test": {
       "use": "vitest",
       "args": ["exec", "vitest", "run", "--reporter=default", "--reporter=json", "--outputFile=.check/test.json"]
