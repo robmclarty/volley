@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.3 — 2026-09-24
+
+### Fixed
+- **Local phases report a true decode rate.** The `throughput` block for Ollama and LM Studio builder and critic phases was labeled `basis: 'decode'` but still counted prompt prefill, because fascicle started the clock on the stream's opening framing rather than the first token. Rates now exclude prefill and read higher than the ones v0.5.2 archived; `claude_cli` rates are unchanged.
+
+### Changed
+- **A local stream that dies before its first token is retried by the engine.** fascicle now treats that failure as retryable on the ai_sdk transport, as it already did on native, so some local-critic stream deaths are absorbed before volley's critic retry and tool-less fallback see them.
+
+### Internal
+- Built on fascicle 0.12.10.
+
 ## v0.5.2 — 2026-09-24
 
 ### Added
