@@ -63,13 +63,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "check": "checkride"
+    "check": "checkride",
+    "diagram": "fascicle-diagram src/diagram.ts"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
     "ai": "7.0.111",
     "cac": "7.0.0",
-    "fascicle": "0.12.10",
+    "fascicle": "0.12.13",
     "ipaddr.js": "2.5.0",
     "linkedom": "0.18.13",
     "picocolors": "1.1.1",

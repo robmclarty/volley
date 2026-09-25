@@ -212,6 +212,7 @@ export function make_builder_step(deps: BuilderDeps): BuilderStep {
   return model_call({
     engine: deps.engine,
     id: 'builder',
+    description: 'model call: one agentic session in the build root',
     provider: config.builder_provider,
     model: config.builder_model,
     system: resolve_builder_system(config),

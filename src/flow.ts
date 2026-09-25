@@ -5,23 +5,26 @@
  * around the flow (workspace setup, the worktree lifecycle, `run`, the final
  * summary) in `./orchestrator.ts`.
  *
- *   volley                             loop, one round per iteration, up to max_iterations
- *   │  init                            the resumed run's state, or a fresh one
- *   ├─ iteration                       sequence
- *   │  ├─ build                        open the iteration, run the builder, measure the change
- *   │  │  └─ builder                   model_call: one agentic session in the build root
- *   │  ├─ verify                       branch: did the build alone cross the cost cap?
- *   │  │  ├─ then  skip_verify         record the check as skipped and call no critic
+ * fascicle's `describe.diagram` draws the tree below from the flow itself, and
+ * `test/unit/flow_diagram.test.ts` holds it to the code: change a row by changing
+ * its step's `description`, then paste `pnpm diagram --prefix ' *   '` over it.
+ *
+ *   volley                                loop: one round per iteration, up to max_iterations
+ *   ├─ iteration                          sequence
+ *   │  ├─ build                           open the iteration, run the builder, measure the change
+ *   │  │  └─ builder                      model call: one agentic session in the build root
+ *   │  ├─ verify                          branch: did the build alone cross the cost cap?
+ *   │  │  ├─ then  skip_verify            record the check as skipped and call no critic
  *   │  │  └─ else  sequence
- *   │  │     ├─ check                  the deterministic gate: checkride, a command, or none
- *   │  │     └─ critique               the read-only critic's verdict and feedback
- *   │  │        └─ critic              fallback: judge without tools if a local critic's stream keeps dying
- *   │  │           ├─ retry            one more try after a stream death, local providers only
- *   │  │           │  └─ critic_tools  model_call with read-only workspace tools
- *   │  │           └─ critic_toolless  model_call judging from the check output and a file list
- *   │  └─ record                       archive the iteration and rewrite the run summary
- *   └─ gate                            guard: stop on approval over a green check, the cost cap, or a gate edit
- *      finish                          { value: the final state, converged }
+ *   │  │     ├─ check                     the deterministic gate: checkride, a command, or none
+ *   │  │     └─ critique                  the read-only critic's verdict and feedback
+ *   │  │        └─ critic                 fallback: judge without tools if a local critic's stream keeps dying
+ *   │  │           ├─ retry               one more try after a stream death, local providers only
+ *   │  │           │  └─ critic_tools     model call with read-only workspace tools
+ *   │  │           └─ pipe                mark the verdict degraded
+ *   │  │              └─ critic_toolless  model call judging from the check output and a file list
+ *   │  └─ record                          archive the iteration and rewrite the run summary
+ *   └─ guard  gate                        stop on approval over a green check, the cost cap, or a gate edit
  */
 import { branch, fallback, loop, pipe, retry, sequence, step } from 'fascicle';
 import type { Engine, Step } from 'fascicle';
@@ -71,14 +74,18 @@ export function build_critic(deps: CriticDeps): CriticStep {
   const retryable = critic_retryable(deps.config);
   return fallback(
     retry(make_critic_tools_step(deps), {
+      description: 'one more try after a stream death, local providers only',
       max_attempts: MAX_CRITIC_RETRIES + 1,
       backoff_ms: 0,
       when: retryable,
       project: with_retries,
     }),
-    pipe(make_critic_toolless_step(deps), as_degraded),
+    pipe(make_critic_toolless_step(deps), as_degraded, {
+      description: 'mark the verdict degraded',
+    }),
     {
       name: 'critic',
+      description: "judge without tools if a local critic's stream keeps dying",
       when: retryable,
       handoff: (prompt) => toolless_critic_prompt(deps.config, prompt),
       project: with_fallback_cause,
@@ -102,17 +109,30 @@ export function build_flow(
 
   // `build` and `critique` hand their model boundary to `ctx.call` from inside
   // the body, because the prompt comes from the carried state and the result
-  // folds back into it. A plain step cannot declare that arm for `describe`
-  // yet (robmclarty/fascicle#8), so the diagram above is the only place the
-  // two boundaries appear in the tree.
-  const build = step('build', (s: LoopState, ctx) => build_phase(deps, builder, s, ctx));
-  const skip_verify = step('skip_verify', (s: LoopState) => skip_verify_phase(deps, s));
-  const check = step('check', (s: LoopState, ctx) => check_phase(deps, s, ctx));
-  const critique = step('critique', (s: LoopState, ctx) => critique_phase(deps, critic, s, ctx));
-  const record = step('record', (s: LoopState) => record_phase(deps, s));
+  // folds back into it. Each declares that boundary as its `arm`, so it shows
+  // up under the step in `describe` and the trajectory's flow structure.
+  const build = step('build', (s: LoopState, ctx) => build_phase(deps, builder, s, ctx), {
+    description: 'open the iteration, run the builder, measure the change',
+    arm: builder,
+  });
+  const skip_verify = step('skip_verify', (s: LoopState) => skip_verify_phase(deps, s), {
+    description: 'record the check as skipped and call no critic',
+  });
+  const check = step('check', (s: LoopState, ctx) => check_phase(deps, s, ctx), {
+    description: 'the deterministic gate: checkride, a command, or none',
+  });
+  const critique = step(
+    'critique',
+    (s: LoopState, ctx) => critique_phase(deps, critic, s, ctx),
+    { description: "the read-only critic's verdict and feedback", arm: critic },
+  );
+  const record = step('record', (s: LoopState) => record_phase(deps, s), {
+    description: 'archive the iteration and rewrite the run summary',
+  });
 
   const verify: Step<LoopState, LoopState> = branch({
     name: 'verify',
+    description: 'did the build alone cross the cost cap?',
     when: (s: LoopState) => cost_cap_hit(config, s),
     // fascicle names this arm `then`. It holds a Step object, never a function,
     // so nothing can mistake the config for a thenable.
@@ -127,9 +147,12 @@ export function build_flow(
 
   return loop<RunInput, LoopState, LoopOutcome>({
     name: 'volley',
+    description: 'one round per iteration, up to max_iterations',
     init: (input) => input.resume_from ?? initial_state(),
     body: iteration,
-    guard: step('gate', (s: LoopState) => gate(config, s)),
+    guard: step('gate', (s: LoopState) => gate(config, s), {
+      description: 'stop on approval over a green check, the cost cap, or a gate edit',
+    }),
     finish: (s, { converged }) => ({ value: s, converged }),
     max_rounds: remaining_iterations(config, resume_from),
   });

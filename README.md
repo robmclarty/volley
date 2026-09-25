@@ -88,6 +88,38 @@ workspace filesystem and the critic's feedback. Swap the critic to change what
 the loop optimizes for: `--critic reviewer` (default), `optimizer`,
 `researcher`, or a path to your own system prompt.
 
+### The flow
+
+Under the hood the loop is one [fascicle](https://www.npmjs.com/package/fascicle)
+composition in [`src/flow.ts`](./src/flow.ts), and fascicle's `describe.diagram`
+draws it straight from the code. It shows what the sketch above leaves out: the
+branch that skips verification once the builder alone crosses the cost cap, the
+critic's retry-then-tool-less fallback for local models whose streams die, and
+the guard that decides when the loop stops.
+
+<!-- flow diagram: pnpm diagram -->
+```text
+volley                                loop: one round per iteration, up to max_iterations
+├─ iteration                          sequence
+│  ├─ build                           open the iteration, run the builder, measure the change
+│  │  └─ builder                      model call: one agentic session in the build root
+│  ├─ verify                          branch: did the build alone cross the cost cap?
+│  │  ├─ then  skip_verify            record the check as skipped and call no critic
+│  │  └─ else  sequence
+│  │     ├─ check                     the deterministic gate: checkride, a command, or none
+│  │     └─ critique                  the read-only critic's verdict and feedback
+│  │        └─ critic                 fallback: judge without tools if a local critic's stream keeps dying
+│  │           ├─ retry               one more try after a stream death, local providers only
+│  │           │  └─ critic_tools     model call with read-only workspace tools
+│  │           └─ pipe                mark the verdict degraded
+│  │              └─ critic_toolless  model call judging from the check output and a file list
+│  └─ record                          archive the iteration and rewrite the run summary
+└─ guard  gate                        stop on approval over a green check, the cost cap, or a gate edit
+```
+
+`pnpm diagram` prints the same tree from a checkout. A test holds this copy and
+the one in the `src/flow.ts` header to what the code builds, so neither drifts.
+
 ## Install
 
 Requires Node ≥ 24, pnpm, and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
@@ -290,7 +322,7 @@ Providers and their setup:
 Install the peer for your provider in the project running volley (e.g.
 `pnpm add ai-sdk-ollama@^4`); fascicle loads it lazily only when the local
 critic actually runs. The major matters: it must satisfy fascicle's declared
-peer range (`^4` for fascicle 0.12.10, which tracks the AI SDK v7 line; a bare
+peer range (`^4` for fascicle 0.12.13, which tracks the AI SDK v7 line; a bare
 `pnpm add ai-sdk-ollama` installs v4, which is exactly what this major wants).
 The Ollama base URL is the **server root** — `ai-sdk-ollama` adds the `/api`
 prefix itself (volley strips a trailing `/api` from `VOLLEY_OLLAMA_URL` for
@@ -485,6 +517,7 @@ pnpm test          # vitest
 pnpm typecheck     # tsc --noEmit
 pnpm check         # checkride — volley dogfoods its own definition of done
 pnpm build         # tsup → dist/
+pnpm diagram       # draw the flow from src/flow.ts with describe.diagram
 ```
 
 Live smoke tests against the real `claude` CLI and real checkride are opt-in:
