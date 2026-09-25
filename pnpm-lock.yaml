@@ -18,8 +18,8 @@ importers:
         specifier: 7.0.0
         version: 7.0.0
       fascicle:
-        specifier: 0.12.8
-        version: 0.12.8(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
+        specifier: 0.12.9
+        version: 0.12.9(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -1283,8 +1283,8 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  fascicle@0.12.8:
-    resolution: {integrity: sha512-eyspnD6qMeaWzsoqsiRzXMaBIndenqoDDHG/zin6tGuF0TE80H+bXqAI26Dndeje5v2Vu5D334j9ULRPD1jNVw==}
+  fascicle@0.12.9:
+    resolution: {integrity: sha512-BSWfRTRSgUrIwuhU8l1oJAKtUm/x3o4lRqb0WKSEAqqeGxJG8IswXhRckBXJg8W49gYj49ki5+iiF4Ofjr/CLg==}
     engines: {node: '>=24.0.0', pnpm: '>=10.13.0'}
     hasBin: true
     peerDependencies:
@@ -2466,7 +2466,7 @@ snapshots:
       '@fallow-cli/win32-x64-msvc': 3.28.0
       fallow-type-aware: 3.28.0
 
-  fascicle@0.12.8(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.12.9(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3):
     optionalDependencies:
       ai: 7.0.111(zod@4.4.3)
       ai-sdk-ollama: 4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3)

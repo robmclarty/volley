@@ -103,7 +103,7 @@ function is_local_provider(
  * only when the provider actually runs.
  *
  * Native transport is the deferred future bridge, not adopted here: volley stays
- * on the ai_sdk transport, which fascicle 0.12.8 already selects by default
+ * on the ai_sdk transport, which fascicle 0.12.9 already selects by default
  * (`transport?: 'ai_sdk' | 'native'` defaults to `'ai_sdk'`), so no field is
  * needed today. Flipping later is a one-line change — add `transport: 'native'`
  * to the ollama/lmstudio config object returned below. No URL re-pointing is

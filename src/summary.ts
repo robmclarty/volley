@@ -27,7 +27,7 @@ import type {
 import { volley_path } from './workspace.js';
 
 /** How a role reached the model. volley stays on the `ai_sdk` transport for the
- * local providers (fascicle 0.12.8 defaults `transport` to `'ai_sdk'`, so
+ * local providers (fascicle 0.12.9 defaults `transport` to `'ai_sdk'`, so
  * volley sets no field); `claude_cli` drives Claude through its own CLI
  * subprocess, not an ai-sdk transport at all. Recording both keeps the transport
  * a clean second variable in the comparison (model vs transport). */
