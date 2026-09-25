@@ -7,7 +7,7 @@ import {
   cost_source_of,
   phase_record,
 } from '../../src/cost.js';
-import { initial_state } from '../../src/orchestrator.js';
+import { initial_state } from '../../src/loop_state.js';
 import { test_config } from '../helpers/harness.js';
 
 function result(overrides: Partial<GenerateResult<unknown>> = {}): GenerateResult<unknown> {

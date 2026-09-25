@@ -3,7 +3,7 @@
  * *effects* on a per-run branch checked out into a sibling worktree, then tear
  * the whole thing down when the run ends. The worktree lifecycle wraps the
  * fascicle loop — it is not itself a loop — so these are straight-line git
- * subprocess calls and the orchestrator's no-loops rule is unaffected.
+ * subprocess calls and the flow's no-loops rule is unaffected.
  *
  * Teardown is not one behaviour but three, decided by `worktree_fate` and
  * predicted out loud by `report_worktree_fate` before any model spend: a

@@ -1,37 +1,33 @@
 /**
- * Loop orchestration: compose fascicle's `loop` from four thin
- * steps and execute it with a single `run` call. No hand-rolled runner —
- * rounds, abort threading, signal handlers, and cleanup order all belong to
- * the substrate.
+ * The shell around the volley flow (`./flow.ts`): set up the workspace, wrap
+ * the run in the worktree lifecycle, execute the flow with a single `run` call,
+ * and turn its outcome into the run summary. No hand-rolled runner — rounds,
+ * abort threading, signal handlers, and cleanup order all belong to the
+ * substrate.
+ *
+ *   run_volley
+ *   ├─ initialize the workspace (or preserve it, on resume)
+ *   ├─ with_worktree                    off unless --worktree
+ *   │  ├─ capture the change baseline
+ *   │  ├─ run_loop                      run(build_flow(...)), then the final summary
+ *   │  └─ integrate                     a successful --worktree --git run only
+ *   └─ report a kept checkout, or a salvaged branch (re-stamping the summary)
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { loop, run, sequence, step } from 'fascicle';
+import { run } from 'fascicle';
 import { filesystem_logger } from 'fascicle/adapters';
 import type { Engine } from 'fascicle';
-import { run_builder } from './builder.js';
 import type { BashExecutor } from './builder/tools.js';
-import { capture_baseline, collect_changes } from './changes.js';
-import { run_checkride } from './check/checkride.js';
-import { run_command_check, skipped_check } from './check/command.js';
-import { cost_cap_hit } from './cost.js';
-import { EMPTY_USAGE } from './cost.js';
+import { capture_baseline } from './changes.js';
 import { create_volley_engine } from './engine.js';
-import { archive_iteration, run_result_from_state } from './iteration.js';
+import { build_flow } from './flow.js';
+import { run_result_from_state } from './iteration.js';
+import { initial_state, status_of } from './loop_state.js';
 import { write_run_summary } from './summary.js';
-import { run_critic } from './critic/run.js';
 import type { Renderer } from './render/renderer.js';
-import { error_kind, phase_error } from './types.js';
-import type {
-  ChangeSet,
-  CheckResult,
-  LoopState,
-  ResolvedConfig,
-  RunInput,
-  RunResult,
-  RunStatus,
-} from './types.js';
+import { error_kind } from './types.js';
+import type { LoopState, ResolvedConfig, RunResult, RunStatus } from './types.js';
 import {
-  git_checkpoint,
   initialize_workspace,
   integrate_worktree,
   volley_path,
@@ -44,115 +40,6 @@ import {
   worktree_branch,
   worktree_fate,
 } from './worktree.js';
-
-export function initial_state(): LoopState {
-  return {
-    iteration: 0,
-    iteration_started_at: new Date().toISOString(),
-    feedback: null,
-    verdict: null,
-    unmet_criteria: [],
-    check: null,
-    changes: null,
-    builder: null,
-    critic: null,
-    total_usage: EMPTY_USAGE,
-    total_cost_usd: 0,
-    builder_cost_usd: 0,
-    critic_cost_usd: 0,
-    check_duration_ms: 0,
-    iteration_cost_usd: 0,
-    halt: null,
-    cost_warned: false,
-  };
-}
-
-/** Did this iteration's builder edit the gate that judges it, with the operator
- * having asked for that to stop the run? Reported either way (the critic prompt
- * and the summary always carry it); only `--fail-on-gate-edit` makes it fatal. */
-function gate_edit_halt(config: ResolvedConfig, state: LoopState): boolean {
-  return config.fail_on_gate_edit && (state.changes?.gate_edits.length ?? 0) > 0;
-}
-
-/** All stopping conditions live here: acceptance, cost cap, the gate
- * edit refusal, and — implicitly via `max_rounds` — the iteration budget.
- * Success wins when it and the cap land on the same iteration.
- *
- * A gate edit is the one condition that *beats* success rather than losing to
- * it: the run passed a check the builder had rewritten, so the pass is exactly
- * what is in question. It stops the run instead of iterating, because a model
- * that just edited the gate is not a promising candidate to be asked again. */
-export function gate(
-  config: ResolvedConfig,
-  state: LoopState,
-): { stop: boolean; state: LoopState } {
-  const gate_edit = gate_edit_halt(config, state);
-  const success = state.check?.ok === true && state.verdict === 'approved' && !gate_edit;
-  const cap = cost_cap_hit(config, state);
-  const halt = gate_edit ? 'gate_edit' : !success && cap ? 'cost_cap' : null;
-  return {
-    stop: success || cap || gate_edit,
-    state: { ...state, halt },
-  };
-}
-
-export function status_of(value: LoopState, converged: boolean): RunStatus {
-  if (value.halt === 'gate_edit') return 'gate_edit_blocked';
-  if (value.halt === 'cost_cap') return 'cost_cap_reached';
-  return converged ? 'success' : 'budget_exhausted';
-}
-
-/** How many gate edits a warning names before it summarises the rest. */
-const LISTED_GATE_EDITS = 5;
-
-/**
- * Say what the builder reached for, every iteration. The count is an info line;
- * a gate edit is a warning, because it is the fact that changes how much a green
- * check is worth — and the operator should hear it from the harness rather than
- * discover it in the diff afterwards (the by-hand check that
- * `research/reckon-local-run-finding.md` recommends making routine).
- */
-function report_changes(
-  config: ResolvedConfig,
-  renderer: Renderer,
-  changes: ChangeSet | null,
-): void {
-  if (changes === null) return;
-  renderer.info(
-    `changes: ${String(changes.total)} file(s) changed since the run baseline` +
-      (changes.truncated ? ` (listing the first ${String(changes.files.length)})` : ''),
-  );
-  if (changes.gate_edits.length === 0) return;
-  const hidden = changes.gate_edits.length - LISTED_GATE_EDITS;
-  const listed = changes.gate_edits.slice(0, LISTED_GATE_EDITS).join(', ');
-  renderer.warn(
-    `gate edit: the builder changed ${String(changes.gate_edits.length)} file(s) that decide ` +
-      `whether its work passes — ${listed}${hidden > 0 ? ` (+${String(hidden)} more)` : ''}. ` +
-      'A green check proves less when the builder can edit the gate; the critic is told about ' +
-      'this and the run summary records it.' +
-      // The halt lands at the loop guard, after this iteration's check and
-      // critic have had their say — so promise the outcome, not the timing.
-      (config.fail_on_gate_edit
-        ? ' This run will end without success (--fail-on-gate-edit, exit 8).'
-        : ''),
-  );
-}
-
-async function execute_check(
-  config: ResolvedConfig,
-  abort: AbortSignal,
-): Promise<CheckResult> {
-  // The check gates the tree the builder actually wrote: the worktree
-  // under `--worktree`, else the workspace.
-  const root = build_root(config.workspace, config.worktree);
-  if (config.check_resolved === 'checkride') {
-    return run_checkride({ workspace: root, abort });
-  }
-  if (config.check_resolved === 'command') {
-    return run_command_check({ command: config.check, workspace: root, abort });
-  }
-  return skipped_check('none');
-}
 
 export type OrchestratorDeps = {
   renderer: Renderer;
@@ -261,130 +148,7 @@ async function run_loop(
       critic_provider: config.critic_provider,
     });
 
-  const build = step('build', async (s: LoopState, ctx) => {
-    const next: LoopState = {
-      ...s,
-      iteration: s.iteration + 1,
-      iteration_started_at: new Date().toISOString(),
-      iteration_cost_usd: 0,
-      builder: null,
-      critic: null,
-      check: null,
-      verdict: null,
-      unmet_criteria: [],
-    };
-    renderer.phase_start(next.iteration, 'builder');
-    const built = await run_builder(
-      { engine, config, on_chunk: renderer.builder_chunk, warn: renderer.warn, bash_executor },
-      next,
-      ctx,
-    );
-    renderer.phase_end(built.iteration, 'builder', true);
-    renderer.cost_line(
-      built.iteration,
-      'builder',
-      built.builder?.cost_usd ?? null,
-      built.total_cost_usd,
-    );
-    if (built.cost_warned && !s.cost_warned) {
-      renderer.warn('cost unavailable for this phase; recording null (run totals sum what is known)');
-    }
-    // What the builder actually did, measured before the check runs — so the
-    // check's verdict and the builder's reach are two independent facts about
-    // the same iteration rather than one inferred from the other.
-    const changes = collect_changes({
-      root: build_root(config.workspace, config.worktree),
-      baseline,
-      gate_patterns: config.gate_paths,
-    });
-    report_changes(config, renderer, changes);
-    if (config.git_checkpoints) {
-      git_checkpoint(
-        build_root(config.workspace, config.worktree),
-        `volley iter ${String(built.iteration)}: build`,
-      );
-    }
-    return { ...built, changes };
-  });
-
-  // A builder-crossed cap short-circuits to the guard: the check and critic
-  // are skipped so a doomed iteration spends nothing more.
-  const check = step('check', async (s: LoopState, ctx) => {
-    if (cost_cap_hit(config, s)) {
-      renderer.warn('cost cap crossed during build; skipping check and critic');
-      return { ...s, check: skipped_check('cost_cap') };
-    }
-    renderer.phase_start(s.iteration, 'check');
-    try {
-      const result = await execute_check(config, ctx.abort);
-      if (result.ran) {
-        renderer.phase_end(
-          s.iteration,
-          'check',
-          result.ok,
-          result.failing_slots.length > 0
-            ? `failing: ${result.failing_slots.join(', ')}`
-            : undefined,
-        );
-      } else {
-        renderer.info('no deterministic check configured; loop is critic-gated only');
-      }
-      return {
-        ...s,
-        check: result,
-        check_duration_ms: s.check_duration_ms + result.duration_ms,
-      };
-    } catch (err) {
-      if (error_kind(err) === 'check_error') throw err;
-      throw phase_error('check', s.iteration, err);
-    }
-  });
-
-  const critique = step('critique', async (s: LoopState, ctx) => {
-    if (s.check !== null && !s.check.ran && cost_cap_hit(config, s)) {
-      return s;
-    }
-    renderer.phase_start(s.iteration, 'critic');
-    const critiqued = await run_critic(
-      { engine, config, on_chunk: renderer.critic_chunk },
-      s,
-      ctx,
-    );
-    renderer.phase_end(
-      critiqued.iteration,
-      'critic',
-      critiqued.verdict === 'approved',
-      critiqued.verdict ?? undefined,
-    );
-    renderer.cost_line(
-      critiqued.iteration,
-      'critic',
-      critiqued.critic?.cost_usd ?? null,
-      critiqued.total_cost_usd,
-    );
-    return critiqued;
-  });
-
-  const record = step('record', (s: LoopState) => {
-    archive_iteration(config, s);
-    write_run_summary(config, run_result_from_state(config, s, 'running', null));
-    if (config.git_checkpoints) {
-      git_checkpoint(
-        build_root(config.workspace, config.worktree),
-        `volley iter ${String(s.iteration)}: critique (${s.verdict ?? 'skipped'})`,
-      );
-    }
-    return s;
-  });
-
-  const flow = loop<RunInput, LoopState, { value: LoopState; converged: boolean }>({
-    name: 'volley',
-    init: (input) => input.resume_from ?? initial_state(),
-    body: sequence([build, check, critique, record]),
-    guard: step('gate', (s: LoopState) => gate(config, s)),
-    finish: (s, { converged }) => ({ value: s, converged }),
-    max_rounds: config.max_iterations - (resume_from?.iteration ?? 0),
-  });
+  const flow = build_flow({ engine, config, renderer, bash_executor, baseline }, resume_from);
 
   try {
     const { value, converged } = await run(

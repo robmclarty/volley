@@ -17,7 +17,7 @@ import type { RunContext } from 'fascicle';
 import { EMPTY_USAGE } from '../../src/cost.js';
 import { MAX_CRITIC_RETRIES, run_critic } from '../../src/critic/run.js';
 import { archive_iteration } from '../../src/iteration.js';
-import { initial_state } from '../../src/orchestrator.js';
+import { initial_state } from '../../src/loop_state.js';
 import { build_run_summary } from '../../src/summary.js';
 import { error_kind } from '../../src/types.js';
 import type {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gate, initial_state, status_of } from '../../src/orchestrator.js';
+import { gate, initial_state, status_of } from '../../src/loop_state.js';
 import { skipped_check } from '../../src/check/command.js';
 import { test_config } from '../helpers/harness.js';
 import type { CheckResult, LoopState, Verdict } from '../../src/types.js';

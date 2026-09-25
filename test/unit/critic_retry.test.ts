@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { provider_error, schema_validation_error } from 'fascicle';
 import type { RunContext } from 'fascicle';
 import { MAX_CRITIC_RETRIES, run_critic } from '../../src/critic/run.js';
-import { initial_state } from '../../src/orchestrator.js';
+import { initial_state } from '../../src/loop_state.js';
 import { error_kind } from '../../src/types.js';
 import type { CauseKind, CheckResult, CriticProvider, LoopState, PhaseError } from '../../src/types.js';
 import { approve_reply, mock_engine } from '../helpers/mock_engine.js';
