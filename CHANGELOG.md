@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.4 — 2026-09-25
+
+### Added
+- **A diagram of the loop, drawn from the code.** The README's new "The flow" section shows the real composition: the branch that skips verification once the builder alone crosses the cost cap, the critic's retry-then-tool-less fallback for local models, and the guard that stops the loop. fascicle's `describe.diagram` renders it from `src/flow.ts`, and `pnpm diagram` prints it from a checkout.
+
+### Changed
+- **The trajectory's flow structure includes the builder and the critic.** They now appear as children of `build` and `critique` in the tree a run records at its start, so the fascicle viewer draws both model calls, and the critic's retry and fallback, before the run reaches them. Live output, verdicts, and exit codes are unchanged.
+
+### Internal
+- Built on fascicle 0.12.13. A test holds the `src/flow.ts` header diagram and the README's copy to `describe.diagram`, so neither can drift from the code.
+
 ## v0.5.3 — 2026-09-24
 
 ### Fixed
