@@ -6,12 +6,20 @@
  * use `lmstudio` to avoid the ollama-only prewarm's real fetch.
  */
 import { describe, expect, it } from 'vitest';
-import { provider_error, schema_validation_error } from 'fascicle';
-import type { RunContext } from 'fascicle';
+import { aborted_error, provider_error, run, schema_validation_error, step } from 'fascicle';
 import { MAX_CRITIC_RETRIES, run_critic } from '../../src/critic/run.js';
+import { EXIT_INTERRUPTED, exit_code_for_error } from '../../src/exit_codes.js';
+import { build_critic } from '../../src/flow.js';
 import { initial_state } from '../../src/loop_state.js';
 import { error_kind } from '../../src/types.js';
-import type { CauseKind, CheckResult, CriticProvider, LoopState, PhaseError } from '../../src/types.js';
+import type {
+  CauseKind,
+  CheckResult,
+  CriticProvider,
+  LoopState,
+  PhaseError,
+  ResolvedConfig,
+} from '../../src/types.js';
 import { approve_reply, mock_engine } from '../helpers/mock_engine.js';
 import type { MockCall, MockReply } from '../helpers/mock_engine.js';
 import { temp_workspace, test_config } from '../helpers/harness.js';
@@ -30,10 +38,20 @@ function critic_state(): LoopState {
   return { ...initial_state(), iteration: 1, check: failed_check };
 }
 
-/** Only `abort` and `trajectory` are read by `run_critic`; the mock engine
- * ignores the trajectory, so a cast to the full context is enough. */
-function ctx(abort: AbortSignal = new AbortController().signal): RunContext {
-  return { abort, trajectory: undefined } as unknown as RunContext;
+/** Drive `run_critic` the way the flow does: inside a real `run`, so the
+ * critic arm's `ctx.call` dispatches through fascicle's runner and the ladder's
+ * `retry` / `fallback` see the run's abort signal. */
+function invoke_critic(
+  engine: ReturnType<typeof mock_engine>,
+  config: ResolvedConfig,
+  signal?: AbortSignal,
+): Promise<LoopState> {
+  const critic = build_critic({ engine, config, on_chunk: () => {} });
+  return run(
+    step('critique', (s: LoopState, ctx) => run_critic({ critic, config }, s, ctx)),
+    critic_state(),
+    { install_signal_handlers: false, ...(signal !== undefined ? { abort: signal } : {}) },
+  );
 }
 
 function stream_death(cause_kind: CauseKind = 'provider_5xx'): Error {
@@ -58,7 +76,7 @@ function make(
   const engine = mock_engine(responder);
   const config = test_config({ workspace, critic_provider: provider, critic_model: 'local-critic' });
   const invoke = (): Promise<LoopState> =>
-    run_critic({ engine, config, on_chunk: () => {} }, critic_state(), ctx(signal));
+    invoke_critic(engine, config, signal);
   return { engine, invoke, cleanup };
 }
 
@@ -124,10 +142,25 @@ describe('run_critic local retry', () => {
 
   it('does not retry once the run is aborted — an abort must stay exit-130', async () => {
     const controller = new AbortController();
-    controller.abort();
-    const { engine, invoke, cleanup } = make(() => err_reply(stream_death()), 'lmstudio', controller.signal);
+    // The operator's Ctrl-C lands mid-call, and the provider's stream dies with
+    // it. fascicle's own SIGINT handler aborts with an `aborted_error` reason.
+    const { engine, invoke, cleanup } = make(
+      () => {
+        controller.abort(new aborted_error('received SIGINT', { reason: { signal: 'SIGINT' } }));
+        return err_reply(stream_death());
+      },
+      'lmstudio',
+      controller.signal,
+    );
     try {
-      await expect(invoke()).rejects.toMatchObject({ kind: 'phase_error' });
+      const err = await invoke().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      // The abort is what surfaces, not the stream death it caused, so the run
+      // exits interrupted rather than as a critic failure.
+      expect(exit_code_for_error(err)).toBe(EXIT_INTERRUPTED);
+      // No retry and no tool-less pass after the abort.
       expect(engine.calls).toHaveLength(1);
     } finally {
       cleanup();

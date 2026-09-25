@@ -104,11 +104,14 @@ describe('cost_source_of / phase_record', () => {
     expect(record.model).toBe('opus');
   });
 
-  it('phase_record times every provider with the caller\'s stopwatch, not the CLI\'s report', () => {
+  it('phase_record takes the call\'s measured timing, not the CLI\'s self-report', () => {
     // The fixture's claude_cli payload reports its own duration_ms of 900.
-    const record = phase_record(result(), 'opus', 1500);
+    const timed = result({ timing: { started_at: 0, duration_ms: 1500 } });
+    const record = phase_record(timed, 'opus');
     expect(record.session_id).toBe('abc');
     expect(record.duration_ms).toBe(1500);
+    // A caller that measured a wider span (the critic's whole ladder) wins.
+    expect(phase_record(timed, 'opus', 4000).duration_ms).toBe(4000);
   });
 
   it('phase_record carries throughput when fascicle timed the turns, and omits it otherwise', () => {

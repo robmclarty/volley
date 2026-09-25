@@ -1,11 +1,20 @@
 /**
- * Critic invocation: a read-only `claude_cli` session returning a
- * schema-validated structured verdict. The harness — not the critic — writes
- * `.volley/feedback.md` and `.volley/verdict`.
+ * Critic invocation: a read-only session (`claude_cli`, or a local model with
+ * volley's read tools) returning a schema-validated structured verdict. The
+ * harness — not the critic — writes `.volley/feedback.md` and `.volley/verdict`.
  */
 import { z } from 'zod';
-import type { Engine, GenerateOptions, GenerateResult, StreamChunk } from 'fascicle';
-import type { RunContext } from 'fascicle';
+import { model_call } from 'fascicle';
+import type {
+  Engine,
+  FallbackOutcome,
+  GenerateOptions,
+  GenerateResult,
+  RetryOutcome,
+  RunContext,
+  Step,
+  StreamChunk,
+} from 'fascicle';
 import { accumulate } from '../cost.js';
 import { resolve_ollama_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
@@ -49,7 +58,7 @@ export type CriticDeps = {
  *
  * The two providers also enforce `verdict_schema` by two different paths, both
  * verified live. The claude_cli critic compiles the schema for
- * `claude --json-schema`; that only works because fascicle 0.12.8's
+ * `claude --json-schema`; that only works because fascicle 0.12.9's
  * `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps (the
  * CLI rejects them) — `live_smoke` asserts a structured verdict comes back, so a
  * future fascicle regression there fails loudly rather than silently. The local
@@ -87,15 +96,12 @@ export const MAX_CRITIC_RETRIES = 1;
 
 /** Is this critic failure the transient local-provider stream death the ladder
  * retries? Local providers only (the `claude_cli` path is proven and its
- * retries cost real money), fascicle's typed `provider_error` only (no
- * message string-matching), and never a user abort, which must stay exit-130. */
-function is_retryable_critic_error(
-  config: ResolvedConfig,
-  ctx: RunContext,
-  err: unknown,
-): boolean {
+ * retries cost real money), and fascicle's typed `provider_error` only (no
+ * message string-matching). A user abort never gets here: `retry` and
+ * `fallback` pass control-flow signals through untouched, and `retry` checks the
+ * signal before every attempt, so an abort stays exit-130. */
+function is_retryable_critic_error(config: ResolvedConfig, err: unknown): boolean {
   if (config.critic_provider === 'claude_cli') return false;
-  if (ctx.abort.aborted) return false;
   return error_kind(err) === 'provider_error';
 }
 
@@ -150,7 +156,7 @@ function finalize_critic(
  * read tools are gone this pass and a paths+sizes workspace inventory, so
  * the critic still judges from the criteria, the raw check artifacts already in
  * the prompt, and the file layout — grounded, just shallower. */
-function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): string {
+export function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): string {
   return [
     tool_prompt,
     '',
@@ -162,6 +168,86 @@ function toolless_critic_prompt(config: ResolvedConfig, tool_prompt: string): st
     '------------------------',
     workspace_inventory(build_root(config.workspace, config.worktree)),
   ].join('\n');
+}
+
+/** What the critic arm answers with: the call that produced the verdict, and
+ * how the ladder reached it. */
+export type CriticAnswer = {
+  result: GenerateResult<VerdictOutput>;
+  mark: LadderMark;
+};
+
+/** The critic's model boundary: the whole degradation ladder behind one step
+ * (composed in `../flow.ts`). */
+export type CriticStep = Step<string, CriticAnswer>;
+
+/** One critic call returning the validated verdict in its `GenerateResult`. */
+export type CriticCall = Step<string, GenerateResult<VerdictOutput>>;
+
+function critic_call_config(deps: CriticDeps) {
+  const { config } = deps;
+  return {
+    engine: deps.engine,
+    provider: config.critic_provider,
+    model: config.critic_model,
+    system: resolve_critic_prompt(config),
+    schema: verdict_schema,
+    on_chunk: deps.on_chunk,
+  };
+}
+
+/** Rung 1's leaf: the critic with its read tools (or the CLI's read-only
+ * allowlist). */
+export function make_critic_tools_step(deps: CriticDeps): CriticCall {
+  return model_call({
+    ...critic_call_config(deps),
+    id: 'critic_tools',
+    ...critic_tool_options(deps.config),
+  });
+}
+
+/** Rung 2's leaf: the same critic with no tools at all, so nothing enters
+ * Ollama's broken tool parser; constrained decode (`schema`) still guarantees
+ * the verdict. */
+export function make_critic_toolless_step(deps: CriticDeps): CriticCall {
+  return model_call({ ...critic_call_config(deps), id: 'critic_toolless' });
+}
+
+/** The ladder's retry predicate for this run's critic provider. */
+export function critic_retryable(config: ResolvedConfig): (err: unknown) => boolean {
+  return (err) => is_retryable_critic_error(config, err);
+}
+
+/** Rung 1's projection: a verdict the tool-bearing critic produced, marked with
+ * how many stream deaths it took and the last one's cause. */
+export function with_retries(outcome: RetryOutcome<GenerateResult<VerdictOutput>>): CriticAnswer {
+  const last = outcome.errors.at(-1);
+  return {
+    result: outcome.value,
+    mark: {
+      retries: outcome.attempts - 1,
+      retry_cause_kind: last === undefined ? undefined : retry_cause_kind_of(last),
+    },
+  };
+}
+
+/** Rung 2's answer: every retry was spent, and the verdict is marked degraded
+ * so it never passes silently as a full critique. */
+export function as_degraded(result: GenerateResult<VerdictOutput>): CriticAnswer {
+  return {
+    result,
+    mark: { retries: MAX_CRITIC_RETRIES, retry_cause_kind: undefined, critic_degraded: true },
+  };
+}
+
+/** The ladder's projection: the tool-less backup cannot see why it ran, so the
+ * cause comes from the last stream death the retry rung gave up on. */
+export function with_fallback_cause(outcome: FallbackOutcome<CriticAnswer>): CriticAnswer {
+  if (outcome.source === 'primary') return outcome.value;
+  return {
+    ...outcome.value,
+    mark: { ...outcome.value.mark, retry_cause_kind: retry_cause_kind_of(outcome.primary_error) },
+  };
 }
 
 /** What the `--dry-run` canary learned about the critic seat:
@@ -252,12 +338,17 @@ export async function critic_canary(
   }
 }
 
+export type CriticRunDeps = {
+  critic: CriticStep;
+  config: ResolvedConfig;
+};
+
 export async function run_critic(
-  deps: CriticDeps,
+  deps: CriticRunDeps,
   state: LoopState,
   ctx: RunContext,
 ): Promise<LoopState> {
-  const { engine, config } = deps;
+  const { config } = deps;
   if (state.check === null) {
     throw phase_error('critic', state.iteration, new Error('check phase did not run'));
   }
@@ -273,71 +364,18 @@ export async function run_critic(
         ctx.abort,
       );
     }
-    // Shared across every rung of the ladder; only the prompt and the tool
-    // wiring differ between the tool-bearing attempts and the tool-less fallback.
-    const base: Omit<GenerateOptions<VerdictOutput>, 'prompt' | 'tools' | 'provider_options'> = {
-      provider: config.critic_provider,
-      model: config.critic_model,
-      system: resolve_critic_prompt(config),
-      schema: verdict_schema,
-      abort: ctx.abort,
-      trajectory: ctx.trajectory,
-      on_chunk: deps.on_chunk,
-    };
-    const tool_prompt = compose_critic_prompt({
+    const prompt = compose_critic_prompt({
       criteria: config.criteria,
       iteration: state.iteration,
       check,
       changes: state.changes,
     });
-
-    // Rung 1: retry a local critic's stochastic tool-phase stream
-    // death once before the fallback trades read access for survival. `attempt`
-    // is also the retry count folded into the record: 0 on a first-try success.
-    // A non-retryable failure (schema, abort, claude_cli) throws straight through
-    // to `phase_error`; a retryable one exhausted at the last attempt falls out of
-    // the loop to rung 2 rather than throwing.
-    let retry_cause_kind: CauseKind | undefined;
-    // The phase's duration spans every rung that ran, not just the one that
-    // answered: a retried or degraded verdict took that long to get.
+    // The phase's duration spans every rung that ran, not just the call that
+    // answered: a retried or degraded verdict took that long to get, and no one
+    // result's `timing` covers the attempts before it.
     const started = Date.now();
-    for (let attempt = 0; attempt <= MAX_CRITIC_RETRIES; attempt += 1) {
-      try {
-        const result = await engine.generate({
-          ...base,
-          prompt: tool_prompt,
-          ...critic_tool_options(config),
-        });
-        return finalize_critic(
-          state,
-          result,
-          config.critic_model,
-          { retries: attempt, retry_cause_kind },
-          Date.now() - started,
-        );
-      } catch (err) {
-        if (!is_retryable_critic_error(config, ctx, err)) throw err;
-        retry_cause_kind = retry_cause_kind_of(err);
-      }
-    }
-
-    // Rung 2: every tool-bearing attempt died on a retryable
-    // local provider stream error, so run one tool-less pass — no tools enter
-    // Ollama's broken parser, constrained decode (`schema`) still guarantees the
-    // verdict, and the workspace inventory keeps it grounded. Marked
-    // `critic_degraded`. A death here throws → the outer catch → `phase_error`,
-    // so exit-6 semantics are preserved.
-    const result = await engine.generate({
-      ...base,
-      prompt: toolless_critic_prompt(config, tool_prompt),
-    });
-    return finalize_critic(
-      state,
-      result,
-      config.critic_model,
-      { retries: MAX_CRITIC_RETRIES, retry_cause_kind, critic_degraded: true },
-      Date.now() - started,
-    );
+    const { result, mark } = await ctx.call(deps.critic, prompt);
+    return finalize_critic(state, result, config.critic_model, mark, Date.now() - started);
   } catch (err) {
     throw phase_error('critic', state.iteration, err);
   }

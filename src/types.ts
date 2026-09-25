@@ -197,10 +197,12 @@ export type PhaseRecord = {
   provider: string;
   model: string;
   session_id: string | null;
-  /** Wall-clock of the phase's model work as volley timed it: the generate call
-   * for the builder, the whole degradation ladder for the critic, and neither
-   * one's Ollama prewarm. One stopwatch for every provider, so an all-local run
-   * and an all-Claude run compare directly. */
+  /** Wall-clock of the phase's model work, the same measure for every provider
+   * so an all-local run and an all-Claude run compare directly. The builder's is
+   * fascicle's `GenerateResult.timing`: the whole call, every turn and the tools
+   * between them. The critic's spans its whole degradation ladder, failed
+   * attempts included, since no one result's timing covers the attempts before
+   * it. Neither counts the Ollama prewarm. */
   duration_ms: number;
   usage: UsageTotals;
   cost_usd: number | null;
@@ -233,9 +235,9 @@ export type PhaseRecord = {
   /** Output tokens per second over the model's own turns (tool execution and
    * retry backoff excluded), from fascicle's per-step timing. `basis` is
    * `decode` when every turn streamed, `blended` when any round trip counted
-   * prefill and network too. Absent when no turn carried timing, which includes
-   * every `claude_cli` phase — the CLI runs its own loop out of fascicle's
-   * sight. Additive. */
+   * prefill and network too — always the case for `claude_cli`, whose rate
+   * fascicle derives from the CLI's reported API time. Absent when no turn
+   * carried timing. Additive. */
   throughput?: Throughput;
 };
 

@@ -1,12 +1,21 @@
 /**
- * Builder invocation: one `engine.generate` call per iteration is
- * one complete agentic Claude Code session in the workspace.
+ * Builder invocation: one call to the builder leaf per iteration is one
+ * complete agentic session in the workspace — Claude Code under `claude_cli`,
+ * or a local model driving volley's tools.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Engine, GenerateOptions, StreamChunk } from 'fascicle';
-import type { RunContext } from 'fascicle';
+import { model_call } from 'fascicle';
+import type {
+  Engine,
+  GenerateOptions,
+  GenerateResult,
+  ModelCallInput,
+  RunContext,
+  Step,
+  StreamChunk,
+} from 'fascicle';
 import { warn_small_local_context } from './builder/context_check.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { accumulate } from './cost.js';
@@ -184,19 +193,45 @@ export type BuilderDeps = {
   engine: Engine;
   config: ResolvedConfig;
   on_chunk: (chunk: StreamChunk) => void;
-  warn: (message: string) => void;
   /** The `bash` executor for a sandboxed local builder (`docker exec` against
    * the run's container), or null to use the host `spawnSync` default (the
    * unsandboxed escape hatch, or `claude_cli` which supplies no volley tools). */
   bash_executor?: BashExecutor | null;
 };
 
+/** The builder's model boundary: one call is one complete agentic session in
+ * the build root, and its output is the whole `GenerateResult`, because the
+ * phase records usage, cost, timing, and tool calls from it. */
+export type BuilderStep = Step<ModelCallInput, GenerateResult>;
+
+/** Build the builder leaf for this run. Everything but the prompt is fixed for
+ * the whole run, so it is wired once here: the provider's system prompt, its
+ * tool surface, and the live chunk stream to the renderer. */
+export function make_builder_step(deps: BuilderDeps): BuilderStep {
+  const { config } = deps;
+  return model_call({
+    engine: deps.engine,
+    id: 'builder',
+    provider: config.builder_provider,
+    model: config.builder_model,
+    system: resolve_builder_system(config),
+    on_chunk: deps.on_chunk,
+    ...builder_tool_options(config, deps.bash_executor ?? null),
+  });
+}
+
+export type BuilderRunDeps = {
+  builder: BuilderStep;
+  config: ResolvedConfig;
+  warn: (message: string) => void;
+};
+
 export async function run_builder(
-  deps: BuilderDeps,
+  deps: BuilderRunDeps,
   state: LoopState,
   ctx: RunContext,
 ): Promise<LoopState> {
-  const { engine, config } = deps;
+  const { config } = deps;
   try {
     // Warn at builder start where a too-small context window is detectable —
     // it silently truncates tool schemas (the #1 local tool-calling failure) —
@@ -214,29 +249,21 @@ export async function run_builder(
       );
       await prewarm_ollama_model(base_url, config.builder_model, ctx.abort);
     }
-    // Timed after the prewarm: a cold model load is setup, not the phase's work.
-    const started = Date.now();
-    const result = await engine.generate({
-      provider: config.builder_provider,
-      model: config.builder_model,
-      system: resolve_builder_system(config),
-      prompt: compose_builder_prompt({
+    const result = await ctx.call(
+      deps.builder,
+      compose_builder_prompt({
         task: config.prompt,
         criteria: config.criteria,
         feedback: state.feedback,
         iteration: state.iteration,
         checkride: config.check_resolved === 'checkride',
       }),
-      abort: ctx.abort,
-      trajectory: ctx.trajectory,
-      on_chunk: deps.on_chunk,
-      ...builder_tool_options(config, deps.bash_executor ?? null),
-    });
+    );
     // `max_steps` is a backstop, not a failure — surface it and carry on.
     if (result.finish_reason === 'max_steps') {
       deps.warn(builder_max_steps_warning(config.builder_max_steps));
     }
-    return accumulate(state, 'builder', result, config.builder_model, Date.now() - started);
+    return accumulate(state, 'builder', result, config.builder_model);
   } catch (err) {
     throw phase_error('builder', state.iteration, err);
   }

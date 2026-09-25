@@ -2,7 +2,7 @@
  * Scripted `Engine` mock for integration tests: generate results
  * and side effects are driven by the test, no provider or subprocess involved.
  */
-import { engine_from_generate } from 'fascicle/testing';
+import { engine_from_generate, text_of } from 'fascicle/testing';
 import type {
   Engine,
   FinishReason,
@@ -58,9 +58,13 @@ export function mock_engine(
     };
     const index = calls.length;
     calls.push(call);
+    // Timed like the real engine's `GenerateResult.timing`: the whole call,
+    // side effect included, so a test can pace a phase with its `effect`.
+    const started_at = Date.now();
     const reply = responder(call, index);
     if (reply.error !== undefined) throw reply.error;
     await reply.effect?.(call.opts);
+    const timing = { started_at, duration_ms: Date.now() - started_at };
     const cost =
       reply.cost_usd === undefined
         ? {}
@@ -80,6 +84,7 @@ export function mock_engine(
       usage: reply.usage ?? DEFAULT_USAGE,
       ...cost,
       finish_reason: reply.finish_reason ?? 'stop',
+      timing,
       model_resolved: {
         provider: opts.provider ?? 'claude_cli',
         model_id: opts.model ?? 'opus',
@@ -97,10 +102,10 @@ export function mock_engine(
   return { ...engine_from_generate(generate), calls };
 }
 
-/** The prompt of a recorded call as text (volley always sends strings). */
+/** The user-visible prompt of a recorded call as text, whatever its shape (a
+ * `model_call` leaf sends a one-message array rather than a string). */
 export function prompt_text(call: MockCall | undefined): string {
-  const prompt = call?.opts.prompt;
-  return typeof prompt === 'string' ? prompt : JSON.stringify(prompt) ?? '';
+  return call === undefined ? '' : text_of(call.opts);
 }
 
 export function approve_reply(feedback = 'Looks good.'): MockReply {

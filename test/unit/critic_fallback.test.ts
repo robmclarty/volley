@@ -12,10 +12,10 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { provider_error } from 'fascicle';
-import type { RunContext } from 'fascicle';
+import { provider_error, run, step } from 'fascicle';
 import { EMPTY_USAGE } from '../../src/cost.js';
 import { MAX_CRITIC_RETRIES, run_critic } from '../../src/critic/run.js';
+import { build_critic } from '../../src/flow.js';
 import { archive_iteration } from '../../src/iteration.js';
 import { initial_state } from '../../src/loop_state.js';
 import { build_run_summary } from '../../src/summary.js';
@@ -27,6 +27,7 @@ import type {
   LoopState,
   PhaseError,
   PhaseRecord,
+  ResolvedConfig,
   RunResult,
 } from '../../src/types.js';
 import { iteration_dir } from '../../src/workspace.js';
@@ -59,10 +60,20 @@ function critic_state(): LoopState {
   return { ...initial_state(), iteration: 1, check: failed_check };
 }
 
-/** Only `abort` and `trajectory` are read by `run_critic`; the mock engine
- * ignores the trajectory, so a cast to the full context is enough. */
-function ctx(abort: AbortSignal = new AbortController().signal): RunContext {
-  return { abort, trajectory: undefined } as unknown as RunContext;
+/** Drive `run_critic` the way the flow does: inside a real `run`, so the
+ * critic arm's `ctx.call` dispatches through fascicle's runner and the ladder's
+ * `retry` / `fallback` see the run's abort signal. */
+function invoke_critic(
+  engine: ReturnType<typeof mock_engine>,
+  config: ResolvedConfig,
+  signal?: AbortSignal,
+): Promise<LoopState> {
+  const critic = build_critic({ engine, config, on_chunk: () => {} });
+  return run(
+    step('critique', (s: LoopState, ctx) => run_critic({ critic, config }, s, ctx)),
+    critic_state(),
+    { install_signal_handlers: false, ...(signal !== undefined ? { abort: signal } : {}) },
+  );
 }
 
 function stream_death(cause_kind: CauseKind = 'provider_5xx'): Error {
@@ -96,7 +107,7 @@ function make(
   const engine = mock_engine(responder);
   const config = test_config({ workspace, critic_provider: provider, critic_model: 'local-critic' });
   const invoke = (): Promise<LoopState> =>
-    run_critic({ engine, config, on_chunk: () => {} }, critic_state(), ctx(signal));
+    invoke_critic(engine, config, signal);
   return { engine, workspace, invoke, cleanup };
 }
 

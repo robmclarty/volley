@@ -5,13 +5,14 @@
  * what surrounds it: the renderer lines an operator watches, change detection,
  * git checkpoints, and the per-iteration archive.
  */
-import type { Engine, RunContext } from 'fascicle';
+import type { RunContext } from 'fascicle';
 import { run_builder } from './builder.js';
-import type { BashExecutor } from './builder/tools.js';
+import type { BuilderStep } from './builder.js';
 import { collect_changes } from './changes.js';
 import { run_checkride } from './check/checkride.js';
 import { run_command_check, skipped_check } from './check/command.js';
 import { run_critic } from './critic/run.js';
+import type { CriticStep } from './critic/run.js';
 import { archive_iteration, run_result_from_state } from './iteration.js';
 import type { Renderer } from './render/renderer.js';
 import { write_run_summary } from './summary.js';
@@ -22,12 +23,8 @@ import { build_root } from './worktree.js';
 
 /** What every step body closes over, fixed for the whole run. */
 export type PhaseDeps = {
-  engine: Engine;
   config: ResolvedConfig;
   renderer: Renderer;
-  /** The local builder's `bash` executor, or null for the host `spawnSync`
-   * default (and for `claude_cli`, which supplies no volley tools). */
-  bash_executor: BashExecutor | null;
   /** The commit every iteration's change set is measured against, read after
    * the worktree exists and before the builder writes anything. Null when the
    * build root is not a git repo — then the run reports no changes at all
@@ -107,23 +104,14 @@ function next_iteration(s: LoopState): LoopState {
  * it changed and, under `--git`, checkpoints it. */
 export async function build_phase(
   deps: PhaseDeps,
+  builder: BuilderStep,
   s: LoopState,
   ctx: RunContext,
 ): Promise<LoopState> {
   const { config, renderer } = deps;
   const next = next_iteration(s);
   renderer.phase_start(next.iteration, 'builder');
-  const built = await run_builder(
-    {
-      engine: deps.engine,
-      config,
-      on_chunk: renderer.builder_chunk,
-      warn: renderer.warn,
-      bash_executor: deps.bash_executor,
-    },
-    next,
-    ctx,
-  );
+  const built = await run_builder({ builder, config, warn: renderer.warn }, next, ctx);
   renderer.phase_end(built.iteration, 'builder', true);
   renderer.cost_line(
     built.iteration,
@@ -196,16 +184,13 @@ export async function check_phase(
 /** `critique`: the read-only critic's verdict, feedback, and unmet criteria. */
 export async function critique_phase(
   deps: PhaseDeps,
+  critic: CriticStep,
   s: LoopState,
   ctx: RunContext,
 ): Promise<LoopState> {
   const { renderer } = deps;
   renderer.phase_start(s.iteration, 'critic');
-  const critiqued = await run_critic(
-    { engine: deps.engine, config: deps.config, on_chunk: renderer.critic_chunk },
-    s,
-    ctx,
-  );
+  const critiqued = await run_critic({ critic, config: deps.config }, s, ctx);
   renderer.phase_end(
     critiqued.iteration,
     'critic',

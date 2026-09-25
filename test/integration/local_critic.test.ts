@@ -68,7 +68,7 @@ describe('local critic (ollama provider)', () => {
     }
   });
 
-  it('archives each phase\'s wall-clock from volley\'s stopwatch, which no local provider reports', async () => {
+  it('archives a measured wall-clock for every phase, local ones included', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const config = test_config({
