@@ -2,6 +2,7 @@
  * Scripted `Engine` mock for integration tests: generate results
  * and side effects are driven by the test, no provider or subprocess involved.
  */
+import { engine_from_generate } from 'fascicle/testing';
 import type {
   Engine,
   FinishReason,
@@ -91,19 +92,9 @@ export function mock_engine(
       },
     };
   };
-  const engine: MockEngine = {
-    generate,
-    register_price: () => {},
-    resolve_price: () => undefined,
-    list_prices: () => ({}),
-    // A scripted mock has no providers to merge, so deriving is a no-op that
-    // returns this same engine (keeping the responder and `calls` log intact).
-    // Present to satisfy fascicle 0.12.8's Engine.with_providers.
-    with_providers: () => engine,
-    dispose: async () => {},
-    calls,
-  };
-  return engine;
+  // fascicle's shell supplies the rest of the `Engine` surface, so a change to
+  // that interface lands in fascicle rather than here.
+  return { ...engine_from_generate(generate), calls };
 }
 
 /** The prompt of a recorded call as text (volley always sends strings). */
