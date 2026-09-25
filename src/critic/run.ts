@@ -58,7 +58,7 @@ export type CriticDeps = {
  *
  * The two providers also enforce `verdict_schema` by two different paths, both
  * verified live. The claude_cli critic compiles the schema for
- * `claude --json-schema`; that only works because fascicle 0.12.9's
+ * `claude --json-schema`; that only works because fascicle 0.12.10's
  * `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps (the
  * CLI rejects them) — `live_smoke` asserts a structured verdict comes back, so a
  * future fascicle regression there fails loudly rather than silently. The local

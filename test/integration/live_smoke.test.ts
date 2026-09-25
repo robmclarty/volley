@@ -54,7 +54,7 @@ describe.runIf(LIVE)('live_smoke (real claude CLI)', () => {
 
       // The all-Claude critic's structured verdict survived the trip
       // through `claude --json-schema`. The critic ran `verdict_schema` there
-      // this iteration; it only compiles because fascicle 0.12.9's
+      // this iteration; it only compiles because fascicle 0.12.10's
       // `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps
       // (the CLI rejects them). A non-null verdict on the claude_cli critic is
       // the tripwire that keeps that fix honest — a future fascicle regression
