@@ -214,6 +214,8 @@ export async function run_builder(
       );
       await prewarm_ollama_model(base_url, config.builder_model, ctx.abort);
     }
+    // Timed after the prewarm: a cold model load is setup, not the phase's work.
+    const started = Date.now();
     const result = await engine.generate({
       provider: config.builder_provider,
       model: config.builder_model,
@@ -234,7 +236,7 @@ export async function run_builder(
     if (result.finish_reason === 'max_steps') {
       deps.warn(builder_max_steps_warning(config.builder_max_steps));
     }
-    return accumulate(state, 'builder', result, config.builder_model);
+    return accumulate(state, 'builder', result, config.builder_model, Date.now() - started);
   } catch (err) {
     throw phase_error('builder', state.iteration, err);
   }

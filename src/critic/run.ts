@@ -124,8 +124,9 @@ function finalize_critic(
   result: GenerateResult<VerdictOutput>,
   model: string,
   mark: LadderMark,
+  duration_ms: number,
 ): LoopState {
-  const next = accumulate(state, 'critic', result, model);
+  const next = accumulate(state, 'critic', result, model, duration_ms);
   return {
     ...next,
     critic:
@@ -297,6 +298,9 @@ export async function run_critic(
     // to `phase_error`; a retryable one exhausted at the last attempt falls out of
     // the loop to rung 2 rather than throwing.
     let retry_cause_kind: CauseKind | undefined;
+    // The phase's duration spans every rung that ran, not just the one that
+    // answered: a retried or degraded verdict took that long to get.
+    const started = Date.now();
     for (let attempt = 0; attempt <= MAX_CRITIC_RETRIES; attempt += 1) {
       try {
         const result = await engine.generate({
@@ -304,10 +308,13 @@ export async function run_critic(
           prompt: tool_prompt,
           ...critic_tool_options(config),
         });
-        return finalize_critic(state, result, config.critic_model, {
-          retries: attempt,
-          retry_cause_kind,
-        });
+        return finalize_critic(
+          state,
+          result,
+          config.critic_model,
+          { retries: attempt, retry_cause_kind },
+          Date.now() - started,
+        );
       } catch (err) {
         if (!is_retryable_critic_error(config, ctx, err)) throw err;
         retry_cause_kind = retry_cause_kind_of(err);
@@ -324,11 +331,13 @@ export async function run_critic(
       ...base,
       prompt: toolless_critic_prompt(config, tool_prompt),
     });
-    return finalize_critic(state, result, config.critic_model, {
-      retries: MAX_CRITIC_RETRIES,
-      retry_cause_kind,
-      critic_degraded: true,
-    });
+    return finalize_critic(
+      state,
+      result,
+      config.critic_model,
+      { retries: MAX_CRITIC_RETRIES, retry_cause_kind, critic_degraded: true },
+      Date.now() - started,
+    );
   } catch (err) {
     throw phase_error('critic', state.iteration, err);
   }

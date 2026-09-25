@@ -5,7 +5,7 @@
  * Fascicle's usage/cost types are used verbatim so summaries carry the
  * substrate's shapes, not a re-derivation.
  */
-import type { FinishReason, UsageTotals } from 'fascicle';
+import type { FinishReason, Throughput, UsageTotals } from 'fascicle';
 
 export type Verdict = 'approved' | 'changes_requested';
 
@@ -197,6 +197,10 @@ export type PhaseRecord = {
   provider: string;
   model: string;
   session_id: string | null;
+  /** Wall-clock of the phase's model work as volley timed it: the generate call
+   * for the builder, the whole degradation ladder for the critic, and neither
+   * one's Ollama prewarm. One stopwatch for every provider, so an all-local run
+   * and an all-Claude run compare directly. */
   duration_ms: number;
   usage: UsageTotals;
   cost_usd: number | null;
@@ -226,6 +230,13 @@ export type PhaseRecord = {
    * critique and on the builder. Additive, and a degraded verdict is *always*
    * marked so it never passes silently as a full one. */
   critic_degraded?: boolean;
+  /** Output tokens per second over the model's own turns (tool execution and
+   * retry backoff excluded), from fascicle's per-step timing. `basis` is
+   * `decode` when every turn streamed, `blended` when any round trip counted
+   * prefill and network too. Absent when no turn carried timing, which includes
+   * every `claude_cli` phase — the CLI runs its own loop out of fascicle's
+   * sight. Additive. */
+  throughput?: Throughput;
 };
 
 export type HaltReason = 'cost_cap' | 'gate_edit' | null;

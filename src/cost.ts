@@ -3,6 +3,7 @@
  * fascicle; volley only folds `GenerateResult.usage` / `.cost` into loop
  * state and enforces the cap predicate in the guard.
  */
+import { throughput } from 'fascicle';
 import type { GenerateResult, UsageTotals } from 'fascicle';
 import type {
   CostSource,
@@ -33,30 +34,31 @@ export function cost_source_of(result: GenerateResult<unknown>): CostSource {
     : 'engine_derived';
 }
 
-function session_of(result: GenerateResult<unknown>): {
-  session_id: string | null;
-  duration_ms: number;
-} {
+/** The CLI's own session id, for correlating a phase with its `claude` session
+ * log. Null for every other provider. */
+function session_id_of(result: GenerateResult<unknown>): string | null {
   const reported = result.provider_reported?.['claude_cli'] as
-    | { session_id?: unknown; duration_ms?: unknown }
+    | { session_id?: unknown }
     | undefined;
-  return {
-    session_id:
-      typeof reported?.session_id === 'string' ? reported.session_id : null,
-    duration_ms:
-      typeof reported?.duration_ms === 'number' ? reported.duration_ms : 0,
-  };
+  return typeof reported?.session_id === 'string' ? reported.session_id : null;
 }
 
+/** One phase's record from its generate result. `duration_ms` is the caller's
+ * wall-clock: fascicle 0.12.8 reports a call-level duration only for
+ * `claude_cli` (in `provider_reported`), and its per-turn `StepTiming` leaves
+ * out tool execution, so neither measures a local phase end to end. Drop the
+ * parameter once `GenerateResult` carries a wall-clock for every adapter
+ * (robmclarty/fascicle#7). */
 export function phase_record(
   result: GenerateResult<unknown>,
   model: string,
+  duration_ms: number,
 ): PhaseRecord {
-  const { session_id, duration_ms } = session_of(result);
+  const rate = throughput(result);
   return {
     provider: result.model_resolved.provider,
     model,
-    session_id,
+    session_id: session_id_of(result),
     duration_ms,
     usage: result.usage,
     cost_usd: result.cost?.total_usd ?? null,
@@ -64,6 +66,7 @@ export function phase_record(
     finish_reason: result.finish_reason,
     tool_calls: result.tool_calls.length,
     salvaged_tool_calls: result.tool_calls.filter((call) => call.salvaged === true).length,
+    ...(rate !== undefined ? { throughput: rate } : {}),
   };
 }
 
@@ -74,8 +77,9 @@ export function accumulate(
   role: 'builder' | 'critic',
   result: GenerateResult<unknown>,
   model: string,
+  duration_ms: number,
 ): LoopState {
-  const record = phase_record(result, model);
+  const record = phase_record(result, model, duration_ms);
   const cost = record.cost_usd ?? 0;
   return {
     ...state,

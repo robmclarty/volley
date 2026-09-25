@@ -67,4 +67,43 @@ describe('local critic (ollama provider)', () => {
       cleanup();
     }
   });
+
+  it('archives each phase\'s wall-clock from volley\'s stopwatch, which no local provider reports', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        critic_provider: 'ollama',
+        critic_model: 'qwen3:32b',
+        max_iterations: 1,
+      });
+      const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30));
+      const engine = mock_engine((call) =>
+        call.role === 'builder'
+          ? // The mock's claude_cli payload claims 1234 ms; volley must not use it.
+            { content: 'built', cost_usd: 0.2, effect: pause }
+          : {
+              content: { verdict: 'approved', feedback: 'ok', unmet_criteria: [] },
+              cost_usd: 0,
+              effect: pause,
+            },
+      );
+
+      await run_volley(config, {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+
+      const iteration = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
+      ) as { builder: { duration_ms: number }; critic: { duration_ms: number; provider: string } };
+      expect(iteration.critic.provider).toBe('ollama');
+      expect(iteration.critic.duration_ms).toBeGreaterThanOrEqual(25);
+      expect(iteration.builder.duration_ms).toBeGreaterThanOrEqual(25);
+      expect(iteration.builder.duration_ms).toBeLessThan(1234);
+    } finally {
+      cleanup();
+    }
+  });
 });

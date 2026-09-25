@@ -50,12 +50,13 @@ describe('accumulate', () => {
 
   it('folds builder and critic costs into per-role and run totals', () => {
     let state = { ...initial_state(), iteration: 1 };
-    state = accumulate(state, 'builder', result(), config.builder_model);
+    state = accumulate(state, 'builder', result(), config.builder_model, 1000);
     state = accumulate(
       state,
       'critic',
       result({ cost: { total_usd: 0.1, input_usd: 0.06, output_usd: 0.04, currency: 'USD', is_estimate: true } }),
       config.critic_model,
+      1000,
     );
     expect(state.total_cost_usd).toBeCloseTo(0.35);
     expect(state.builder_cost_usd).toBeCloseTo(0.25);
@@ -71,14 +72,14 @@ describe('accumulate', () => {
     let state = { ...initial_state(), iteration: 1 };
     const no_cost = result();
     delete (no_cost as { cost?: unknown }).cost;
-    state = accumulate(state, 'builder', no_cost, 'opus');
+    state = accumulate(state, 'builder', no_cost, 'opus', 1000);
     expect(state.builder?.cost_usd).toBeNull();
     expect(state.builder?.cost_source).toBe('unknown');
     expect(state.total_cost_usd).toBe(0);
     expect(state.cost_warned).toBe(true);
 
     // Totals keep summing what is known after a null.
-    state = accumulate(state, 'critic', result(), 'opus');
+    state = accumulate(state, 'critic', result(), 'opus', 1000);
     expect(state.total_cost_usd).toBeCloseTo(0.25);
   });
 });
@@ -97,10 +98,46 @@ describe('cost_source_of / phase_record', () => {
   it('phase_record extracts session metadata with safe fallbacks', () => {
     const bare = result();
     delete (bare as { provider_reported?: unknown }).provider_reported;
-    const record = phase_record(bare, 'opus');
+    const record = phase_record(bare, 'opus', 4321);
     expect(record.session_id).toBeNull();
-    expect(record.duration_ms).toBe(0);
+    expect(record.duration_ms).toBe(4321);
     expect(record.model).toBe('opus');
+  });
+
+  it('phase_record times every provider with the caller\'s stopwatch, not the CLI\'s report', () => {
+    // The fixture's claude_cli payload reports its own duration_ms of 900.
+    const record = phase_record(result(), 'opus', 1500);
+    expect(record.session_id).toBe('abc');
+    expect(record.duration_ms).toBe(1500);
+  });
+
+  it('phase_record carries throughput when fascicle timed the turns, and omits it otherwise', () => {
+    const turn = (output_tokens: number, duration_ms: number) => ({
+      index: 0,
+      text: '',
+      tool_calls: [],
+      usage: { input_tokens: 10, output_tokens },
+      timing: { started_at: 0, duration_ms, first_chunk_ms: 500 },
+      finish_reason: 'tool_calls' as const,
+    });
+    const timed = phase_record(
+      result({
+        model_resolved: { provider: 'ollama', model_id: 'qwen3.6' },
+        steps: [turn(100, 2500), turn(50, 1500)],
+      }),
+      'qwen3.6',
+      9000,
+    );
+    // 150 output tokens over the two decode windows (2000 + 1000 ms).
+    expect(timed.throughput).toEqual({
+      tokens_per_second: 50,
+      basis: 'decode',
+      output_tokens: 150,
+      measured_ms: 3000,
+    });
+    // The wall clock and the model's own time are separate facts.
+    expect(timed.duration_ms).toBe(9000);
+    expect(phase_record(result(), 'opus', 1500).throughput).toBeUndefined();
   });
 
   it('phase_record captures finish_reason and counts salvaged tool calls', () => {
@@ -114,6 +151,7 @@ describe('cost_source_of / phase_record', () => {
         ],
       }),
       'qwen3-coder:30b',
+      1000,
     );
     expect(record.finish_reason).toBe('max_steps');
     expect(record.tool_calls).toBe(3);
@@ -142,6 +180,7 @@ describe('cost_cap_hit', () => {
         model_resolved: { provider: 'ollama', model_id: 'qwen3-coder:30b' },
       }),
       'qwen3-coder:30b',
+      1000,
     );
     expect(state.builder?.cost_usd).toBe(0);
     expect(state.builder?.cost_source).toBe('engine_derived');
@@ -156,7 +195,7 @@ describe('cost_cap_hit', () => {
     let state = { ...initial_state(), iteration: 1 };
     const no_cost = result();
     delete (no_cost as { cost?: unknown }).cost;
-    state = accumulate(state, 'builder', no_cost, 'qwen3-coder:30b');
+    state = accumulate(state, 'builder', no_cost, 'qwen3-coder:30b', 1000);
     expect(cost_cap_hit(capped, state)).toBe(false);
 
     // The cap stays live: a later priced phase still counts toward it.
@@ -165,6 +204,7 @@ describe('cost_cap_hit', () => {
       'critic',
       result({ cost: { total_usd: 1.5, input_usd: 0.9, output_usd: 0.6, currency: 'USD', is_estimate: true } }),
       'opus',
+      1000,
     );
     expect(cost_cap_hit(capped, state)).toBe(true);
   });

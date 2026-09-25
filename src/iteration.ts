@@ -69,6 +69,9 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
       ? { retry_cause_kind: record.retry_cause_kind }
       : {}),
     ...(record.critic_degraded === true ? { critic_degraded: true } : {}),
+    // Model speed, where fascicle could time the turns (never `claude_cli`).
+    // Emitted only when measured. Additive.
+    ...(record.throughput !== undefined ? { throughput: record.throughput } : {}),
   };
 }
 
