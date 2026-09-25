@@ -76,9 +76,9 @@ The "last release commit" line finds the most recent commit whose message is a b
 
 6. **Bump `package.json`.** Run:
    ```bash
-   pnpm version <bump> --no-git-tag-version
+   pnpm version <bump> --no-git-tag-version --no-git-checks
    ```
-   `--no-git-tag-version` is mandatory: it stops pnpm from auto-committing and auto-tagging, so we control the commit message and avoid surprise tags. Confirm the version pnpm wrote matches the version computed in step 3.
+   `--no-git-tag-version` is mandatory: it stops pnpm from auto-committing and auto-tagging, so we control the commit message and avoid surprise tags. `--no-git-checks` is mandatory too: pnpm refuses to bump a dirty tree, and step 5 has just modified `CHANGELOG.md`. Step 2 already proved the tree was clean before this run touched it, so the check has nothing left to catch. Confirm the version pnpm wrote matches the version computed in step 3.
 
 7. **Stage and commit.** Stage exactly `package.json` and `CHANGELOG.md`, nothing else:
    ```bash
