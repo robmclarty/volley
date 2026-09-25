@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.5.2 — 2026-09-24
+
+### Added
+- **Tokens per second for each phase.** The iteration archive (and `PhaseRecord`) gains a `throughput` block for the builder and the critic: the rate, whether it is a pure decode rate or blended with network and prefill, the output tokens, and the model's own time. `claude_cli` phases get a blended rate from the CLI's reported API time, so local models and Claude compare on speed as well as on iterations and cost.
+
+### Changed
+- **One clock for every provider's phase durations.** `duration_ms` in the iteration archive is the measured wall clock of the builder's whole call and of the critic's whole retry-then-fallback sequence, failed attempts included. `claude_cli` phases used to report the CLI's own figure; they now include its startup time and compare directly with local phases.
+- **The trajectory shows the model calls as steps of their own.** The builder, the critic, and the critic's retry and tool-less fallback now appear nested under `build` and `critique`, so the fascicle viewer shows where a local critic retried or fell back. Live output, verdicts, and exit codes are unchanged.
+- **Stray arguments are rejected.** `volley bogus` now exits 3 with "Unused args" instead of silently ignoring the extra argument.
+
+### Fixed
+- **Local phases no longer archive a duration of 0.** Every Ollama and LM Studio builder and critic phase recorded `duration_ms: 0`, because the duration was only ever read from what the `claude` CLI reports.
+- **undici 8.11.0** closes GHSA-4cwx-7wf7-3272.
+
+### Internal
+- Built on fascicle 0.12.9 (up from 0.9.5), checkride 0.13.0, vitest 5, and TypeScript 6. The run's topology now lives in `src/flow.ts` under a diagram of the flow, with the step bodies in `src/phases.ts` and the stopping rules in `src/loop_state.ts`; `gate`, `initial_state`, and `status_of` are still exported from the package root.
+- The check gate adds fallow's duplication slot, and exports nothing outside their module used are gone.
+- Pushing a `vX.Y.Z` tag publishes to npm through trusted publishing with provenance and cuts a GitHub Release, and `CHANGELOG.md` now ships in the npm tarball.
+
 ## v0.5.1 — 2026-09-16
 
 ### Changed
