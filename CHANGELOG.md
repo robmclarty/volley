@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.0 — 2026-09-27
+
+### Added
+- **The container spec is exported from the package root.** `sandbox_run_args`, `network_run_args`, `SANDBOX_NETWORK_NAME`, `SANDBOX_NETWORK_SUBNET`, and the `SandboxNetwork` type are now public, so a harness that launches volley's container renders volley's own hardened `docker run` flags instead of a copy that drifts from them. `sandbox_run_args` gains `labels` (one `--label KEY=VALUE` each, so a caller can find and reap its containers), and `store_volume` is now optional: leave it out and no pnpm store is mounted.
+- **`--run-id <id>` names a run.** The id names the run's `.volley/` state and its `volley/<id>` branch in place of a fresh UUID, so a harness that owns the id finds the run in both. Ids are limited to letters, digits, `-`, and `_`, starting with a letter or digit; anything else is a config error before any spend, and the CLI refuses a bare-number id rather than silently dropping its leading zeros.
+
+### Fixed
+- **Runs started from the SDK run their check.** `resolve_config` now resolves the check the way the CLI always did. It used to return `'none'` for every config, so an embedded run ran no check even with `check: 'auto'` in a checkride workspace or with a command check.
+
+### Internal
+- The version skill bumps `package.json` after writing the changelog, so pnpm's clean-tree check no longer blocks it.
+
 ## v0.5.4 — 2026-09-25
 
 ### Added
