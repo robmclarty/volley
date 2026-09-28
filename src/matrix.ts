@@ -32,7 +32,6 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolve_check_runner } from './check/detect.js';
 import { resolve_config } from './config.js';
 import { run_volley } from './orchestrator.js';
 import type { Renderer } from './render/renderer.js';
@@ -174,7 +173,6 @@ export function combo_config(base: VolleyConfig, combo: MatrixCombo): VolleyConf
  * rethrow only when nothing is recoverable — then the sweep breaks. */
 const default_run_combo: ComboRunner = async (base, combo, renderer) => {
   const config = resolve_config(combo_config(base, combo));
-  config.check_resolved = resolve_check_runner(config.check, config.workspace);
   try {
     const result = await run_volley(config, { renderer });
     return build_run_summary(config, result);

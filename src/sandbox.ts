@@ -17,10 +17,10 @@
  *
  * Hardening: non-root as the worktree owner, cap-drop-all,
  * no-new-privileges, default seccomp, tini as PID 1 (`--init`), memory/cpu/pids
- * caps, a read-only rootfs with tmpfs for the few writable paths, and the pnpm
- * store on a named volume. Never `--privileged`, never `--user 0`. volley's Node
- * process reaps its own bash children in-container, so the old reap-between-`exec`
- * rider falls away.
+ * caps, a read-only rootfs with tmpfs for the few writable paths, and, when the
+ * caller names one, the pnpm store on a named volume. Never `--privileged`,
+ * never `--user 0`. volley's Node process reaps its own bash children
+ * in-container, so the old reap-between-`exec` rider falls away.
  */
 import { resolve } from 'node:path';
 import { config_error } from './types.js';
@@ -39,7 +39,8 @@ const SANDBOX_HOME = '/home/node';
 /** Named volume for the pnpm store: survives the read-only rootfs and
  * persists the content-addressed store across runs. (Making a `--user`-mapped,
  * non-1000 uid writable to a fresh volume is a footgun handled where pnpm
- * actually runs — the blessed examples — not here.) */
+ * actually runs — the blessed examples — not here.) `sandbox_invocation` mounts
+ * it; a bare `sandbox_run_args` caller chooses whether to. */
 const SANDBOX_STORE_VOLUME = 'volley-pnpm-store';
 
 /** The host spelling of the Docker gateway (Linux-portable; Docker Desktop
@@ -107,8 +108,16 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
  * `exec`'d against), so `--rm` cleans it up when volley exits. `command`
  * appends the container command (the volley args); omit it to use the image's
  * `volley` entrypoint. `env` injects `-e KEY=VALUE` pairs (the `VOLLEY_MODEL_HOST`
- * crossing). `entrypoint` overrides the image entrypoint (the opt-in
- * real-docker isolation test runs a raw `sh` this way).
+ * crossing). `labels` adds `--label KEY=VALUE` pairs, so a caller that owns the
+ * container's lifecycle can find and reap it by label. `entrypoint` overrides
+ * the image entrypoint (the opt-in real-docker isolation test runs a raw `sh`
+ * this way).
+ *
+ * `store_volume` mounts the named volume as the pnpm store; omit it and no store
+ * is mounted. A store is shared by every run that mounts it, so a caller that
+ * installs dependencies in a separate container first can keep the builder's
+ * container off it, and no builder can leave files in a store a later install
+ * trusts.
  *
  * Never emits `--privileged` and refuses `--user 0`: volley must not hand
  * the sandbox root or full capabilities. Everything writable under the
@@ -120,11 +129,12 @@ export function sandbox_run_args(options: {
   build_root: string;
   uid: number | null;
   gid: number | null;
-  store_volume: string;
+  store_volume?: string | null;
   network: SandboxNetwork;
   network_name: string;
   name?: string | null;
   env?: ReadonlyArray<readonly [string, string]>;
+  labels?: ReadonlyArray<readonly [string, string]>;
   entrypoint?: string | null;
   command?: ReadonlyArray<string>;
 }): string[] {
@@ -142,12 +152,18 @@ export function sandbox_run_args(options: {
       ? ['--entrypoint', options.entrypoint]
       : [];
   const env = (options.env ?? []).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+  const labels = (options.labels ?? []).flatMap(([key, value]) => ['--label', `${key}=${value}`]);
+  const store =
+    options.store_volume !== undefined && options.store_volume !== null
+      ? ['-v', `${options.store_volume}:${SANDBOX_HOME}/.local/share/pnpm/store`]
+      : [];
   return [
     'run',
     // One-shot, foreground container: the whole run *is* this container, so
     // remove it when volley exits.
     '--rm',
     ...name,
+    ...labels,
     ...user,
     // Network policy: default-deny egress. `'none'` gives the container
     // no interface; `'allowlist'` puts it on the user-defined bridge and collapses
@@ -172,7 +188,7 @@ export function sandbox_run_args(options: {
     'no-new-privileges',
     '--init',
     // Read-only rootfs with tmpfs for the few writable paths the toolchain
-    // needs; the pnpm store persists on a named volume.
+    // needs; a pnpm store, when mounted, persists on a named volume.
     '--read-only',
     '--tmpfs',
     '/tmp',
@@ -184,11 +200,10 @@ export function sandbox_run_args(options: {
     `HOME=${SANDBOX_HOME}`,
     ...env,
     // The bind-mounted worktree (writable — a bind mount is exempt from
-    // `--read-only`) and the persistent pnpm store.
+    // `--read-only`) and, when one is named, the persistent pnpm store.
     '-v',
     `${resolve(options.build_root)}:${SANDBOX_WORKDIR}`,
-    '-v',
-    `${options.store_volume}:${SANDBOX_HOME}/.local/share/pnpm/store`,
+    ...store,
     '-w',
     SANDBOX_WORKDIR,
     ...entrypoint,

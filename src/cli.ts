@@ -13,7 +13,6 @@ import {
   load_config_file,
   resolve_config,
 } from './config.js';
-import { resolve_check_runner } from './check/detect.js';
 import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
 import { load_resume_state } from './iteration.js';
 import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
@@ -53,6 +52,8 @@ type CliFlags = {
   gatePaths?: string;
   failOnGateEdit?: boolean;
   sandboxImage?: string;
+  /** A number when cac coerced a numeric-looking value (`0042` arrives as 42). */
+  runId?: string | number;
   dryRun?: boolean;
   config?: string;
   json?: boolean;
@@ -235,6 +236,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--gate-paths <globs>', 'Comma-separated globs naming the gate (tests, fixtures, check config); replaces the defaults')
     .option('--fail-on-gate-edit', 'Halt the run if the builder edits a gate path (exit 8) instead of reporting it')
     .option('--sandbox-image <tag>', `Container image for the local-builder sandbox (default: ${DEFAULT_SANDBOX_IMAGE})`)
+    .option('--run-id <id>', "The run's id, naming its volley/<id> branch (default: a fresh UUID)")
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')
     .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')
@@ -244,8 +246,15 @@ async function main(argv: string[]): Promise<number> {
     .action(async (flags: CliFlags) => {
       const base = flags.config !== undefined ? await load_config_file(flags.config) : ({} as VolleyConfig);
       const merged = merge_flags(base, flags);
-      const config = resolve_config(merged);
-      config.check_resolved = resolve_check_runner(config.check, config.workspace);
+      if (typeof flags.runId === 'number') {
+        // A coerced id would silently rename the run's branch, so refuse it
+        // rather than guess what the caller typed.
+        throw config_error(`--run-id must not be a bare number (read as ${String(flags.runId)})`);
+      }
+      const config = resolve_config(
+        merged,
+        flags.runId !== undefined ? { run_id: flags.runId } : {},
+      );
       const renderer = make_renderer(config);
       warn_api_key_meter(renderer);
       warn_unsandboxed_builder(config, renderer);
@@ -279,7 +288,6 @@ async function main(argv: string[]): Promise<number> {
         run_id: resume.run_id,
         started_at: resume.started_at,
       });
-      config.check_resolved = resolve_check_runner(config.check, config.workspace);
       if (resume.iterations_completed >= config.max_iterations) {
         throw config_error(
           `run already completed ${String(resume.iterations_completed)} of ${String(config.max_iterations)} iterations`,

@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GATE_PATTERNS } from './changes.js';
+import { resolve_check_runner } from './check/detect.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
@@ -208,9 +209,24 @@ export function detect_containment(env: Record<string, string | undefined>): boo
   return value === '1' || value === 'true';
 }
 
+/** A caller's run id names the run's `volley/<run id>` branch, so it is held to
+ * what a branch name accepts without quoting: letters, digits, `-`, and `_`,
+ * starting with a letter or digit so it never reads as an option. */
+const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+function resolve_run_id(run_id: string | undefined): string {
+  if (run_id === undefined) return randomUUID();
+  if (!RUN_ID_PATTERN.test(run_id)) {
+    throw config_error(
+      `--run-id must be letters, digits, '-', and '_', starting with a letter or digit; got: ${run_id}`,
+    );
+  }
+  return run_id;
+}
+
 /** Merge, expand, and validate a raw `VolleyConfig` into a `ResolvedConfig`.
- * `check_resolved` is filled in later by check detection (workspace-relative);
- * it starts as `none` and `resolve_check_runner` overrides it. */
+ * `check_resolved` comes from check detection against the workspace, so the
+ * SDK and the CLI resolve `auto` and a command check the same way. */
 export function resolve_config(
   raw: VolleyConfig,
   options: ResolveOptions = {},
@@ -341,15 +357,17 @@ export function resolve_config(
   }
 
   const sandbox_image = resolve_sandbox_image(raw, env);
+  const run_id = resolve_run_id(options.run_id);
+  const check = raw.check ?? DEFAULT_CHECK;
 
   return {
     version: 2,
-    run_id: options.run_id ?? randomUUID(),
+    run_id,
     started_at: options.started_at ?? new Date().toISOString(),
     prompt,
     criteria,
-    check: raw.check ?? DEFAULT_CHECK,
-    check_resolved: 'none',
+    check,
+    check_resolved: resolve_check_runner(check, workspace),
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
     builder_provider,
     builder_max_steps,

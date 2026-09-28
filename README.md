@@ -171,6 +171,7 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--gate-paths` | (built-in list) | Comma-separated globs naming the gate — tests, fixtures, check config. Replaces the defaults; see [What the builder changed](#what-the-builder-changed). |
 | `--fail-on-gate-edit` | off | Halt the run (exit 8) if the builder edits a gate path, instead of reporting it. |
 | `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
+| `--run-id` | a fresh UUID | The run's id, naming its `.volley/` state and its `volley/<id>` branch, so a harness that owns the id finds it in both. Letters, digits, `-`, and `_`, starting with a letter or digit. |
 | `--dry-run` | off | Validate config, run `checkride doctor` and (for a local critic) the critic-seat canary, then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
 | `--json` | off | Machine mode: one summary JSON document on stdout. |
@@ -374,7 +375,10 @@ operator launches volley there with `docker run <hardened flags>
 volley-sandbox:latest volley …`, which sets `VOLLEY_CONTAINED=1` (baked into the
 image; volley detects containment, it does not start the container itself). The
 container gives default-deny network egress with a host-gateway allowlist; the
-hardened `docker run` spec lives in `src/sandbox.ts`, and `--sandbox-image` /
+hardened `docker run` spec lives in `src/sandbox.ts` and is exported
+(`sandbox_run_args`, `network_run_args`, and the bridge's
+`SANDBOX_NETWORK_NAME` and `SANDBOX_NETWORK_SUBNET`) so a harness that launches
+the container renders the same flags rather than a copy, and `--sandbox-image` /
 `VOLLEY_SANDBOX_IMAGE` overrides the default `volley-sandbox:latest`. Inside the
 container, `claude_cli`'s subscription/OAuth token does not survive — it is
 mangled crossing the boundary — so a *contained* Claude role must drive by API

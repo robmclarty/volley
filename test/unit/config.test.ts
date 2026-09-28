@@ -541,6 +541,65 @@ describe('resolve_config', () => {
   });
 });
 
+describe('resolve_config: the check, resolved as the CLI resolves it', () => {
+  const cases: Array<{ check: string; checkride: boolean; resolved: string }> = [
+    { check: 'auto', checkride: true, resolved: 'checkride' },
+    { check: 'auto', checkride: false, resolved: 'none' },
+    { check: 'none', checkride: true, resolved: 'none' },
+    { check: 'pnpm exec checkride', checkride: false, resolved: 'checkride' },
+    { check: 'cat notes.md', checkride: true, resolved: 'command' },
+  ];
+
+  it.each(cases)(
+    "resolves '$check' to $resolved (checkride in the workspace: $checkride)",
+    ({ check, checkride, resolved }) => {
+      const { workspace, cleanup } = temp_workspace();
+      try {
+        if (checkride) writeFileSync(join(workspace, 'checkride.config.json'), '{}');
+        expect(resolve_config({ ...base(workspace), check }, { env: {} }).check_resolved).toBe(
+          resolved,
+        );
+      } finally {
+        cleanup();
+      }
+    },
+  );
+});
+
+describe('resolve_config: the run id', () => {
+  it("takes the caller's id as given, so it names the run's branch", () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const run_id = '5f0c2a1e-9b7d-4c3e-8a21-0d6f4b7e9c10';
+      expect(resolve_config(base(workspace), { run_id, env: {} }).run_id).toBe(run_id);
+      expect(resolve_config(base(workspace), { run_id: 'night_42-b', env: {} }).run_id).toBe(
+        'night_42-b',
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it.each(['', '-rf', '../escape', 'a b', 'feat/x', 'x..y', 'id.lock'])(
+    "refuses '%s', which a branch name cannot carry unquoted",
+    (run_id) => {
+      const { workspace, cleanup } = temp_workspace();
+      try {
+        let caught: unknown;
+        try {
+          resolve_config(base(workspace), { run_id, env: {} });
+        } catch (err) {
+          caught = err;
+        }
+        expect(error_kind(caught)).toBe('config_error');
+        expect(String(caught)).toContain('--run-id');
+      } finally {
+        cleanup();
+      }
+    },
+  );
+});
+
 describe('gate paths', () => {
   it('defaults to the shipped gate patterns, off by default as a refusal', () => {
     const { workspace, cleanup } = temp_workspace();

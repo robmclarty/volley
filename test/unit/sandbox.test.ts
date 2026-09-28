@@ -8,6 +8,7 @@ import {
   SANDBOX_NETWORK_SUBNET,
   sandbox_run_args,
 } from '../../src/sandbox.js';
+import * as root from '../../src/index.js';
 import { error_kind } from '../../src/types.js';
 
 function run_args(overrides: Partial<Parameters<typeof sandbox_run_args>[0]> = {}): string[] {
@@ -96,6 +97,32 @@ describe('sandbox_run_args (the invocation spec; hardening flag set)', () => {
     expect(run_args({ name: null })).not.toContain('--name');
   });
 
+  it('labels the container with each KEY=VALUE pair, before the image', () => {
+    const args = run_args({ labels: [['night-shift.run_id', 'run-1'], ['owner', 'nightly']] });
+    const joined = args.join(' ');
+    expect(joined).toContain('--label night-shift.run_id=run-1');
+    expect(joined).toContain('--label owner=nightly');
+    expect(args.indexOf('--label')).toBeLessThan(args.lastIndexOf('volley-sandbox:latest'));
+    // No labels, no --label.
+    expect(run_args()).not.toContain('--label');
+  });
+
+  it('mounts no pnpm store when none is named, and only the worktree is bind-mounted', () => {
+    const omitted = sandbox_run_args({
+      image: 'volley-sandbox:latest',
+      build_root: '/tmp/ws.worktree',
+      uid: 501,
+      gid: 20,
+      network: 'none',
+      network_name: 'volley-sandbox-net',
+    });
+    for (const args of [omitted, run_args({ store_volume: null })]) {
+      expect(args.join(' ')).not.toContain('pnpm/store');
+      const mounts = args.filter((_, index) => args[index - 1] === '-v');
+      expect(mounts).toEqual(['/tmp/ws.worktree:/workspace']);
+    }
+  });
+
   it('carries the network posture into the run argv', () => {
     // Default-deny: no interface at all.
     expect(run_args({ network: 'none' }).join(' ')).toContain('--network none');
@@ -162,6 +189,15 @@ describe('allowlist bridge identity (the invocation spec the examples share)', (
     expect(SANDBOX_NETWORK_SUBNET).toBe('172.31.99.0/24');
     // The subnet the host `DOCKER-USER` default-DROP rules scope to is a /24.
     expect(SANDBOX_NETWORK_SUBNET.endsWith('/24')).toBe(true);
+  });
+});
+
+describe('the package root (the spec a parent harness renders)', () => {
+  it('exports the flag-builders and the bridge identity, not copies of them', () => {
+    expect(root.sandbox_run_args).toBe(sandbox_run_args);
+    expect(root.network_run_args).toBe(network_run_args);
+    expect(root.SANDBOX_NETWORK_NAME).toBe(SANDBOX_NETWORK_NAME);
+    expect(root.SANDBOX_NETWORK_SUBNET).toBe(SANDBOX_NETWORK_SUBNET);
   });
 });
 
