@@ -77,6 +77,9 @@ function load_pricing_overrides(path: string): PricingTable {
 }
 
 export type EngineOptions = {
+  /** The Claude session's working directory. A run passes its build root, which
+   * is the worktree under `--worktree`, so the builder writes where the check
+   * and the critic look. */
   workspace: string;
   /** When the builder runs on a local model, its provider is configured
    * alongside claude_cli so one engine drives both roles. */
@@ -128,10 +131,11 @@ function local_provider_config(
   return { lmstudio: { base_url: cross_to_host_gateway(lmstudio_url, env) } };
 }
 
-/** Per-run engine. `claude_cli` is always configured with the workspace as its
- * session cwd; any local provider selected by the builder or critic role is
- * wired in alongside it so one engine drives both roles. Binary, auth mode,
- * provider URLs, and pricing come from the environment. */
+/** Per-run engine. `claude_cli` is always configured with `options.workspace`
+ * (the run's build root) as its session cwd; any local provider selected by the
+ * builder or critic role is wired in alongside it so one engine drives both
+ * roles. Binary, auth mode, provider URLs, and pricing come from the
+ * environment. */
 export function create_volley_engine(options: EngineOptions): Engine {
   const env = options.env ?? process.env;
 

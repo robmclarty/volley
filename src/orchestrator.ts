@@ -140,10 +140,13 @@ async function run_loop(
 ): Promise<RunResult> {
   const { renderer } = deps;
 
+  // The Claude session runs in the build root (the worktree under `--worktree`),
+  // because that is where the check, the change report, the checkpoints, and the
+  // critic all look. `.volley/` state stays under the workspace either way.
   const engine =
     deps.engine ??
     create_volley_engine({
-      workspace: config.workspace,
+      workspace: build_root(config.workspace, config.worktree),
       builder_provider: config.builder_provider,
       critic_provider: config.critic_provider,
     });
