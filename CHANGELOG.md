@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.1 — 2026-10-14
+
+### Fixed
+- **`--worktree` now isolates a Claude builder.** The `claude` session started in the workspace instead of the worktree, so under `--worktree` a `claude_cli` builder edited your checkout while the check, the checkpoints, and the change report the critic reads all looked at the untouched worktree. Claude sessions now start in the worktree; `.volley/` run state stays in the workspace as before, and local-model builders, whose tools were already rooted in the worktree, are unaffected.
+
+### Internal
+- An integration test runs the real engine against a stand-in `claude` binary and checks that the builder's write lands on the run branch, not in the workspace.
+
 ## v0.6.0 — 2026-09-27
 
 ### Added
