@@ -1,6 +1,5 @@
 import { lookup as dns_lookup } from 'node:dns';
-import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
-import type { AddressInfo, LookupFunction } from 'node:net';
+import type { LookupFunction } from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,6 +13,7 @@ import {
   is_forbidden_address,
 } from '../../src/builder/tools.js';
 import { temp_workspace } from '../helpers/harness.js';
+import { close_servers, start_server } from '../helpers/http_server.js';
 
 const ctx = {
   abort: new AbortController().signal,
@@ -286,41 +286,7 @@ describe('finish', () => {
 // fetch — native readability pipeline + connector-level SSRF
 // ---------------------------------------------------------------------------
 
-type TestServer = { origin: string; requests: string[]; close: () => Promise<void> };
-
-const open_servers: TestServer[] = [];
-
-async function start_server(
-  handler: (req: IncomingMessage, res: ServerResponse) => void,
-): Promise<TestServer> {
-  const requests: string[] = [];
-  const server = createServer((req, res) => {
-    requests.push(req.url ?? '');
-    handler(req, res);
-  });
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
-      resolve();
-    });
-  });
-  const { port } = server.address() as AddressInfo;
-  const test_server: TestServer = {
-    origin: `http://127.0.0.1:${String(port)}`,
-    requests,
-    close: () =>
-      new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
-      }),
-  };
-  open_servers.push(test_server);
-  return test_server;
-}
-
-afterEach(async () => {
-  await Promise.all(open_servers.splice(0).map((server) => server.close()));
-});
+afterEach(close_servers);
 
 // Reach a loopback fixture server while still running the real classifier for
 // every other address — so the redirect-into-private path is genuinely tested,

@@ -1,10 +1,21 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run_volley } from '../../src/orchestrator.js';
 import { silent_renderer, temp_workspace, test_config } from '../helpers/harness.js';
 import { mock_engine } from '../helpers/mock_engine.js';
+
+// The injected engine answers every model call, but the Ollama prewarm and
+// context probe still make real requests. Point them at a closed port so these
+// tests never reach a developer's own Ollama, where a cold load can stall them.
+beforeEach(() => {
+  vi.stubEnv('VOLLEY_OLLAMA_URL', 'http://127.0.0.1:1');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('local critic (ollama provider)', () => {
   it('routes the critic to the local provider with workspace tools, not CLI allowlist', async () => {

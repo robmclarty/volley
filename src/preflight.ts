@@ -7,15 +7,18 @@
  * discard — so no fate arrives as a surprise at teardown.
  *
  * For a containment-requiring local builder — run from *inside* its container
- * — it additionally checks the three things that contained build needs:
- * the toolchain is present, the worktree is creatable, and the host LLM endpoint
- * is reachable across the boundary at `host.docker.internal` (the resolved base
- * URL, which the v0.3.1 normalizer already crosses to the gateway when
- * `VOLLEY_MODEL_HOST` is set — engine.ts). Any containment check failing
- * exits 5 (`EXIT_CONFIG_ERROR`).
+ * — it additionally checks the two things that contained build needs: the
+ * toolchain is present and the worktree is creatable. Any containment check
+ * failing exits 5 (`EXIT_CONFIG_ERROR`).
  *
- * The all-Claude path runs *none* of the containment checks — it never requires
- * Docker — so those checks never contribute an exit 5 on that path.
+ * Every seat on a local provider then gets its model endpoint probed: each
+ * seat's own resolved base URL (`seat_base_url`, which crosses a loopback
+ * authority to the gateway when `VOLLEY_MODEL_HOST` is set — engine.ts), one
+ * probe when both seats share a server. An unreachable endpoint exits 5 too.
+ *
+ * The all-Claude path runs *none* of the containment checks or probes — it
+ * never requires Docker or a model server — so they never contribute an exit 5
+ * on that path.
  *
  * A *local critic* additionally gets the critic-seat canary: one tiny $0
  * generate through the real critic tool wiring, run
@@ -31,12 +34,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { capture_baseline } from './changes.js';
 import { critic_canary } from './critic/run.js';
-import {
-  DEFAULT_LMSTUDIO_URL,
-  create_volley_engine,
-  cross_to_host_gateway,
-  resolve_ollama_base_url,
-} from './engine.js';
+import { create_volley_engine, seat_base_url, takes_seat_url } from './engine.js';
 import type { Engine } from './engine.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
 import type { Renderer } from './render/renderer.js';
@@ -69,17 +67,48 @@ export function is_local_critic(
   return provider === 'ollama' || provider === 'lmstudio';
 }
 
-/** The base URL the in-container model client will use — mirrors engine.ts's
- * `local_provider_config` so the preflight probes exactly what the run will hit.
- * With `VOLLEY_MODEL_HOST` set both cross a loopback authority to the host
- * gateway, so this is the `host.docker.internal` endpoint the run will hit. */
-export function model_endpoint(
-  provider: 'ollama' | 'lmstudio',
+/** One model server a seat (or both seats) will reach, and who reaches it. */
+type SeatEndpoint = { seats: string; url: string };
+
+/** The model endpoint each seat on a URL-taking provider will hit, resolved by
+ * the same `seat_base_url` the run uses, so the preflight probes exactly what
+ * the run will hit. Two seats on one server are merged into one endpoint, so
+ * a shared server is probed once. */
+function seat_endpoints(
+  config: ResolvedConfig,
   env: Record<string, string | undefined>,
-): string {
-  if (provider === 'ollama') return resolve_ollama_base_url(env);
-  const lmstudio_url = env['VOLLEY_LMSTUDIO_URL'] ?? DEFAULT_LMSTUDIO_URL;
-  return cross_to_host_gateway(lmstudio_url, env);
+): SeatEndpoint[] {
+  const builder = takes_seat_url(config.builder_provider)
+    ? seat_base_url(config.builder_provider, config.builder_url, env)
+    : null;
+  const critic = takes_seat_url(config.critic_provider)
+    ? seat_base_url(config.critic_provider, config.critic_url, env)
+    : null;
+  if (builder !== null && builder === critic) {
+    return [{ seats: 'builder and critic', url: builder }];
+  }
+  return [
+    ...(builder === null ? [] : [{ seats: 'builder', url: builder }]),
+    ...(critic === null ? [] : [{ seats: 'critic', url: critic }]),
+  ];
+}
+
+/** Probe each seat's model endpoint before any spend. False, after naming the
+ * seat and the URL, when one is unreachable. */
+async function probe_seat_endpoints(
+  config: ResolvedConfig,
+  renderer: Renderer,
+  env: Record<string, string | undefined>,
+  reachable: (url: string) => Promise<boolean>,
+): Promise<boolean> {
+  for (const { seats, url } of seat_endpoints(config, env)) {
+    if (!(await reachable(url))) {
+      renderer.error(`preflight: ${seats} model endpoint unreachable: ${url}`);
+      return false;
+    }
+    renderer.info(`${seats} model endpoint: reachable (${url})`);
+  }
+  return true;
 }
 
 /** Which required executables are not runnable on the current PATH. */
@@ -142,8 +171,9 @@ export type PreflightProbes = {
 };
 
 /** The canary drives the same engine construction the run itself uses, with the
- * critic role's provider wired in; consulted only after `is_local_critic` says
- * the canary applies, so the claude_cli critic path never builds an engine. */
+ * critic role's provider wired in at the critic seat's URL; consulted only after
+ * `is_local_critic` says the canary applies, so the claude_cli critic path never
+ * builds an engine. */
 function default_canary_engine(
   config: ResolvedConfig,
   env: Record<string, string | undefined>,
@@ -151,8 +181,24 @@ function default_canary_engine(
   return create_volley_engine({
     workspace: config.workspace,
     critic_provider: config.critic_provider,
+    critic_url: config.critic_url,
     env,
   });
+}
+
+/** A seat's info line: its model and provider, and the endpoint a local seat
+ * will reach. */
+function seat_line(
+  seat: 'builder' | 'critic',
+  model: string,
+  provider: BuilderProvider | CriticProvider,
+  url: string | null,
+  env: Record<string, string | undefined>,
+): string {
+  const endpoint = takes_seat_url(provider)
+    ? `, endpoint: ${seat_base_url(provider, url, env)}`
+    : '';
+  return `${seat} model: ${model} (provider: ${provider}${endpoint})`;
 }
 
 /**
@@ -214,7 +260,9 @@ export async function preflight(
   renderer.info(`dry run: config valid (run ${config.run_id})`);
   renderer.info(`workspace: ${config.workspace}`);
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
-  renderer.info(`builder model: ${config.builder_model} (provider: ${config.builder_provider})`);
+  renderer.info(
+    seat_line('builder', config.builder_model, config.builder_provider, config.builder_url, env),
+  );
   renderer.info(`builder max steps: ${config.builder_max_steps}`);
   if (local_builder) {
     const contained = env['VOLLEY_CONTAINED'] === '1' || env['VOLLEY_CONTAINED'] === 'true';
@@ -228,7 +276,9 @@ export async function preflight(
   renderer.info(
     `critic: ${config.critic_preset}${config.critic_prompt_path !== null ? ` (${config.critic_prompt_path})` : ''}`,
   );
-  renderer.info(`critic model: ${config.critic_model} (provider: ${config.critic_provider})`);
+  renderer.info(
+    seat_line('critic', config.critic_model, config.critic_provider, config.critic_url, env),
+  );
   // What a successful run does with its effects, predicted here for any
   // builder provider — the worktree's fate is not a containment concern, and
   // `--worktree` without `--git` must not quietly end in a discarded build.
@@ -245,8 +295,8 @@ export async function preflight(
   }
 
   // Containment preflight — local builder only, so the all-Claude path never
-  // reaches an exit 5 from here. Re-calling the guard narrows `provider`.
-  if (is_local_builder(provider)) {
+  // reaches an exit 5 from here.
+  if (local_builder) {
     const missing = (probes.toolchain_missing ?? toolchain_missing)(REQUIRED_TOOLCHAIN);
     if (missing.length > 0) {
       renderer.error(`preflight: missing toolchain in the sandbox: ${missing.join(', ')}`);
@@ -262,14 +312,14 @@ export async function preflight(
       }
       renderer.info(`worktree: creatable (${worktree.detail})`);
     }
+  }
 
-    const endpoint = model_endpoint(provider, env);
-    const reachable = await (probes.endpoint_reachable ?? endpoint_reachable)(endpoint);
-    if (!reachable) {
-      renderer.error(`preflight: host LLM endpoint unreachable: ${endpoint}`);
-      return EXIT_CONFIG_ERROR;
-    }
-    renderer.info(`host LLM endpoint: reachable (${endpoint})`);
+  // Each local seat's own model endpoint, whatever the other seat runs on, so
+  // a critic on a second machine is checked as surely as the builder's server.
+  // The all-Claude path has no endpoint to probe.
+  const reachable = probes.endpoint_reachable ?? endpoint_reachable;
+  if (!(await probe_seat_endpoints(config, renderer, env, reachable))) {
+    return EXIT_CONFIG_ERROR;
   }
 
   // Critic-seat canary — local critic only, whatever the

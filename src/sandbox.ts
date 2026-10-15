@@ -47,7 +47,7 @@ const SANDBOX_STORE_VOLUME = 'volley-pnpm-store';
  * already provides it). It is both the `--add-host` target for the allowlist
  * bridge and the value the example injects as `VOLLEY_MODEL_HOST` so the
  * in-container model client crosses to the host LLM endpoint (see
- * `resolve_ollama_base_url` in `src/engine.ts`). */
+ * `seat_base_url` in `src/engine.ts`). */
 export const HOST_GATEWAY_HOST = 'host.docker.internal';
 
 /** Canonical identity of the allowlist bridge the examples create (`docker

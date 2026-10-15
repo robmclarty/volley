@@ -38,10 +38,12 @@ type CliFlags = {
   check?: string;
   builderModel?: string;
   builderProvider?: string;
+  builderUrl?: string;
   builderMaxSteps?: number;
   allowUnsandboxedBuilder?: boolean;
   criticModel?: string;
   criticProvider?: string;
+  criticUrl?: string;
   builderPermissionMode?: string;
   critic?: string;
   maxIterations?: number;
@@ -161,6 +163,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.builderProvider !== undefined
       ? { builder_provider: flags.builderProvider as BuilderProvider }
       : {}),
+    ...(flags.builderUrl !== undefined ? { builder_url: flags.builderUrl } : {}),
     ...(flags.builderMaxSteps !== undefined
       ? { builder_max_steps: Number(flags.builderMaxSteps) }
       : {}),
@@ -169,6 +172,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.criticProvider !== undefined
       ? { critic_provider: flags.criticProvider as CriticProvider }
       : {}),
+    ...(flags.criticUrl !== undefined ? { critic_url: flags.criticUrl } : {}),
     ...(flags.builderPermissionMode !== undefined
       ? { builder_permission_mode: flags.builderPermissionMode as BuilderPermissionMode }
       : {}),
@@ -222,10 +226,12 @@ async function main(argv: string[]): Promise<number> {
     .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
     .option('--builder-model <model>', 'Builder model')
     .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
+    .option('--builder-url <url>', "Builder's model server base URL, ollama or lmstudio only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL)")
     .option('--builder-max-steps <n>', 'Local builder tool-loop step cap per iteration (default: 50)')
     .option('--allow-unsandboxed-builder', 'Permit a local builder to run without a sandbox (real host bash + write)')
     .option('--critic-model <model>', 'Critic model')
     .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
+    .option('--critic-url <url>', "Critic's model server base URL, ollama or lmstudio only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL)")
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')
     .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
     .option('--max-iterations <n>', 'Iteration cap')

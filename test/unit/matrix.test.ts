@@ -146,6 +146,15 @@ describe('combo_config', () => {
       }),
     ).toBe('discard');
   });
+
+  it("carries the base config's seat URLs to every pairing", () => {
+    const config = combo_config(
+      { ...base_config, builder_url: 'http://localhost:11522', critic_url: 'http://localhost:11523' },
+      { builder: 'b1', critic: 'c1' },
+    );
+    expect(config.builder_url).toBe('http://localhost:11522');
+    expect(config.critic_url).toBe('http://localhost:11523');
+  });
 });
 
 describe('failure_reason', () => {

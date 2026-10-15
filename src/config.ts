@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_check_runner } from './check/detect.js';
+import { SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
@@ -196,6 +197,51 @@ function resolve_allow_unsandboxed_builder(
   return env_value === '1' || env_value === 'true';
 }
 
+/** A seat's own model server URL (`--builder-url` / `--critic-url`), trimmed,
+ * or null when unset; an empty value counts as unset, as it does for the env
+ * vars it overrides. Only a provider volley reaches at a base URL takes one: on
+ * a `claude_cli` seat the setting would silently do nothing, so it is refused.
+ * The URL must be plain http(s), with no credentials, query, or fragment:
+ * volley appends API paths to it for prewarm and the context probe, which a
+ * query or fragment would break, and it is persisted and printed, which
+ * credentials must never be. */
+function resolve_seat_url(
+  seat: 'builder' | 'critic',
+  value: unknown,
+  provider: BuilderProvider | CriticProvider,
+): string | null {
+  const setting = `--${seat}-url (${seat}_url)`;
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    throw config_error(`${setting} must be a URL string; got a ${typeof value}`);
+  }
+  const url = value.trim();
+  if (url === '') return null;
+  if (!takes_seat_url(provider)) {
+    throw config_error(
+      `${setting} applies only to a ${seat} on ${SEAT_URL_PROVIDERS.join(' or ')}; ` +
+        `${seat}-provider is ${provider}`,
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw config_error(`${setting} must be an http(s) URL; got: ${url}`);
+  }
+  // Checked first, so no later message echoes the credentials back.
+  if (parsed.username !== '' || parsed.password !== '') {
+    throw config_error(`${setting} must not carry credentials`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw config_error(`${setting} must be an http(s) URL; got: ${url}`);
+  }
+  if (parsed.search !== '' || parsed.hash !== '') {
+    throw config_error(`${setting} must not carry a query or fragment; got: ${url}`);
+  }
+  return url;
+}
+
 /** volley *detects* it is running inside its sandbox container rather than
  * starting the container itself. The signal is the `VOLLEY_CONTAINED=1` marker
  * volley's own image bakes in (`Dockerfile` `ENV`), so a `docker run <hardened
@@ -305,6 +351,9 @@ export function resolve_config(
     );
   }
 
+  const builder_url = resolve_seat_url('builder', raw.builder_url, builder_provider);
+  const critic_url = resolve_seat_url('critic', raw.critic_url, critic_provider);
+
   // Containment auth gate: `claude_cli`'s subscription/OAuth credentials
   // do not survive containerization — the token is mangled inside the container —
   // so a contained run may drive Claude only by API key (a plain env var that
@@ -370,10 +419,12 @@ export function resolve_config(
     check_resolved: resolve_check_runner(check, workspace),
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
     builder_provider,
+    builder_url,
     builder_max_steps,
     allow_unsandboxed_builder,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,
+    critic_url,
     builder_permission_mode,
     critic_preset,
     critic_prompt_path,

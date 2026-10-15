@@ -23,6 +23,15 @@ function base(workspace: string) {
   return { prompt: 'do it', workspace, criteria: 'it is done' };
 }
 
+/** Both seats on Ollama, for the per-seat URL tests. */
+function local_seats(workspace: string) {
+  return {
+    ...base(workspace),
+    builder_provider: 'ollama' as const,
+    critic_provider: 'ollama' as const,
+  };
+}
+
 describe('resolve_config', () => {
   it('applies defaults', () => {
     const { workspace, cleanup } = temp_workspace();
@@ -535,6 +544,156 @@ describe('resolve_config', () => {
         env: {},
       });
       expect(restored.sandbox_image).toBe('pinned/img:3');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('resolve_config: per-seat model URLs', () => {
+  /** Both seats local, contained, so neither the local-builder gate nor the
+   * contained claude_cli gate stands in the way of the URL under test. */
+  const CONTAINED = { env: { VOLLEY_CONTAINED: '1' } };
+
+  it('defaults both seat URLs to null, so the provider env var and default apply', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(local_seats(workspace), CONTAINED);
+      expect(config.builder_url).toBeNull();
+      expect(config.critic_url).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("takes each seat's own URL, trimmed, on an ollama or lmstudio seat", () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        {
+          ...local_seats(workspace),
+          critic_provider: 'lmstudio',
+          builder_url: ' http://localhost:11522 ',
+          critic_url: 'https://critic-box:1235/v1',
+        },
+        CONTAINED,
+      );
+      expect(config.builder_url).toBe('http://localhost:11522');
+      expect(config.critic_url).toBe('https://critic-box:1235/v1');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('treats an empty seat URL as unset, on any provider', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config({ ...base(workspace), builder_url: '', critic_url: '  ' });
+      expect(config.builder_url).toBeNull();
+      expect(config.critic_url).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a URL on a claude_cli seat rather than ignoring it, naming the setting', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const seat of ['builder', 'critic'] as const) {
+        let caught: unknown;
+        try {
+          resolve_config({ ...base(workspace), [`${seat}_url`]: 'http://localhost:11434' });
+        } catch (err) {
+          caught = err;
+        }
+        expect(error_kind(caught)).toBe('config_error');
+        expect(String(caught)).toContain(`--${seat}-url (${seat}_url)`);
+        expect(String(caught)).toContain(`${seat}-provider is claude_cli`);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a URL that is not plain http(s)', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const bad of [
+        'localhost:11434',
+        'not a url',
+        'ftp://box:21',
+        'http://box:11434/?keep_alive=1',
+        'http://box:11434/#frag',
+      ]) {
+        expect(() =>
+          resolve_config({ ...local_seats(workspace), critic_url: bad }, CONTAINED),
+        ).toThrow(/--critic-url \(critic_url\)/);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses credentials in a seat URL without echoing them', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      let caught: unknown;
+      try {
+        resolve_config(
+          { ...local_seats(workspace), builder_url: 'http://admin:hunter2@box:11434' },
+          CONTAINED,
+        );
+      } catch (err) {
+        caught = err;
+      }
+      expect(error_kind(caught)).toBe('config_error');
+      expect(String(caught)).toContain('must not carry credentials');
+      expect(String(caught)).not.toContain('hunter2');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('carries both seat URLs across a persist→restore round-trip', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      initialize_workspace(workspace);
+      const original = resolve_config(
+        {
+          ...local_seats(workspace),
+          builder_url: 'http://localhost:11522',
+          critic_url: 'http://localhost:11523',
+        },
+        { ...CONTAINED, run_id: 'url-run' },
+      );
+      write_resolved_config(original);
+      const resume = load_resume_state(workspace, 'url-run');
+      expect(resume.raw_config.builder_url).toBe('http://localhost:11522');
+      expect(resume.raw_config.critic_url).toBe('http://localhost:11523');
+      const restored = resolve_config(resume.raw_config, { ...CONTAINED, run_id: resume.run_id });
+      expect(restored.builder_url).toBe('http://localhost:11522');
+      expect(restored.critic_url).toBe('http://localhost:11523');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('restores null seat URLs from a config that predates them', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      initialize_workspace(workspace);
+      const original = resolve_config(local_seats(workspace), { ...CONTAINED, run_id: 'old-url' });
+      write_resolved_config(original);
+      const config_path = join(workspace, '.volley', 'config.json');
+      const record = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
+      delete record['builder_url'];
+      delete record['critic_url'];
+      writeFileSync(config_path, `${JSON.stringify(record, null, 2)}\n`);
+
+      const resume = load_resume_state(workspace, 'old-url');
+      const restored = resolve_config(resume.raw_config, { ...CONTAINED, run_id: resume.run_id });
+      expect(restored.builder_url).toBeNull();
+      expect(restored.critic_url).toBeNull();
     } finally {
       cleanup();
     }

@@ -26,8 +26,15 @@ export function flow(): Step<RunInput, LoopOutcome> {
     max_cost_usd: null,
     write: () => {},
   });
+  const engine = make_stub_engine([]);
   return build_flow(
-    { engine: make_stub_engine([]), config, renderer, bash_executor: null, baseline: null },
+    {
+      engines: { builder: engine, critic: engine },
+      config,
+      renderer,
+      bash_executor: null,
+      baseline: null,
+    },
     null,
   );
 }

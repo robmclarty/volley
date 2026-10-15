@@ -27,7 +27,7 @@
  *   └─ guard  gate                        stop on approval over a green check, the cost cap, or a gate edit
  */
 import { branch, fallback, loop, pipe, retry, sequence, step } from 'fascicle';
-import type { Engine, Step } from 'fascicle';
+import type { Step } from 'fascicle';
 import { make_builder_step } from './builder.js';
 import type { BashExecutor } from './builder/tools.js';
 import { cost_cap_hit } from './cost.js';
@@ -42,6 +42,7 @@ import {
   with_retries,
 } from './critic/run.js';
 import type { CriticDeps, CriticStep } from './critic/run.js';
+import type { SeatEngines } from './engine.js';
 import { gate, initial_state, remaining_iterations } from './loop_state.js';
 import {
   build_phase,
@@ -54,9 +55,10 @@ import type { PhaseDeps } from './phases.js';
 import type { LoopState, RunInput } from './types.js';
 
 /** What the flow is built from: the step bodies' dependencies, plus the engine
- * and `bash` executor its model boundaries are wired to. */
+ * each seat's model boundary is wired to and the builder's `bash` executor. The
+ * two seats share one engine unless they reach one provider at different URLs. */
 export type FlowDeps = PhaseDeps & {
-  engine: Engine;
+  engines: SeatEngines;
   /** The local builder's `bash` executor, or null for the host `spawnSync`
    * default (and for `claude_cli`, which supplies no volley tools). */
   bash_executor: BashExecutor | null;
@@ -100,12 +102,16 @@ export function build_flow(
   const { config, renderer } = deps;
 
   const builder = make_builder_step({
-    engine: deps.engine,
+    engine: deps.engines.builder,
     config,
     on_chunk: renderer.builder_chunk,
     bash_executor: deps.bash_executor,
   });
-  const critic = build_critic({ engine: deps.engine, config, on_chunk: renderer.critic_chunk });
+  const critic = build_critic({
+    engine: deps.engines.critic,
+    config,
+    on_chunk: renderer.critic_chunk,
+  });
 
   // `build` and `critique` hand their model boundary to `ctx.call` from inside
   // the body, because the prompt comes from the carried state and the result

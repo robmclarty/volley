@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { provider_error, schema_validation_error } from 'fascicle';
 import { resolve_config } from '../../src/config.js';
 import { verdict_schema } from '../../src/critic/run.js';
-import {
-  is_local_builder,
-  is_local_critic,
-  model_endpoint,
-  preflight,
-} from '../../src/preflight.js';
+import { is_local_builder, is_local_critic, preflight } from '../../src/preflight.js';
 import type { PreflightProbes } from '../../src/preflight.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
 import { create_renderer } from '../../src/render/renderer.js';
@@ -75,15 +70,6 @@ describe('is_local_critic', () => {
     expect(is_local_critic('ollama')).toBe(true);
     expect(is_local_critic('lmstudio')).toBe(true);
     expect(is_local_critic('claude_cli')).toBe(false);
-  });
-});
-
-describe('model_endpoint', () => {
-  it('crosses a loopback ollama URL to the host gateway when VOLLEY_MODEL_HOST is set', () => {
-    expect(model_endpoint('ollama', { VOLLEY_MODEL_HOST: 'host.docker.internal' })).toBe(
-      'http://host.docker.internal:11434',
-    );
-    expect(model_endpoint('ollama', {})).toBe('http://localhost:11434');
   });
 });
 
@@ -231,7 +217,7 @@ describe('preflight — containment checks for a local builder', () => {
     }
   });
 
-  it('exits 5 when the host LLM endpoint is unreachable', async () => {
+  it("exits 5 when the builder's model endpoint is unreachable", async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       const { renderer, output } = capturing_renderer();
@@ -240,7 +226,110 @@ describe('preflight — containment checks for a local builder', () => {
         endpoint_reachable: async () => false,
       });
       expect(code).toBe(EXIT_CONFIG_ERROR);
-      expect(output()).toMatch(/endpoint unreachable.*host\.docker\.internal/);
+      expect(output()).toMatch(/builder model endpoint unreachable.*host\.docker\.internal/);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+/** Both seats on LM Studio (no ollama-only prewarm fetch from the canary),
+ * each with a URL of its own unless the test says otherwise. */
+function seat_config(
+  workspace: string,
+  urls: { builder_url?: string; critic_url?: string },
+): ResolvedConfig {
+  return resolve_config(
+    {
+      ...base(workspace),
+      builder_provider: 'lmstudio',
+      critic_provider: 'lmstudio',
+      ...urls,
+    },
+    { env: { VOLLEY_CONTAINED: '1' } },
+  );
+}
+
+/** An endpoint probe that records every URL it is asked about. */
+function recording_probe(answer: (url: string) => boolean = () => true) {
+  const probed: string[] = [];
+  const endpoint_reachable = async (url: string): Promise<boolean> => {
+    probed.push(url);
+    return answer(url);
+  };
+  return { probed, endpoint_reachable };
+}
+
+describe("preflight — each seat's own model endpoint", () => {
+  it("probes each seat's own URL, crossed to the host gateway when contained", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const probe = recording_probe();
+      const config = seat_config(workspace, {
+        builder_url: 'http://localhost:11522/v1',
+        critic_url: 'http://127.0.0.1:11523/v1',
+      });
+      const code = await preflight(config, renderer, { VOLLEY_MODEL_HOST: 'host.docker.internal' }, {
+        ...ALL_GREEN,
+        endpoint_reachable: probe.endpoint_reachable,
+      });
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(probe.probed).toEqual([
+        'http://host.docker.internal:11522/v1',
+        'http://host.docker.internal:11523/v1',
+      ]);
+      expect(output()).toContain('endpoint: http://host.docker.internal:11522/v1');
+      expect(output()).toContain('builder model endpoint: reachable (http://host.docker.internal:11522/v1)');
+      expect(output()).toContain('critic model endpoint: reachable (http://host.docker.internal:11523/v1)');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('probes a server both seats share once', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const probe = recording_probe();
+      // The env-var fallback and the critic's own spelling of it are one server.
+      const config = seat_config(workspace, { critic_url: 'http://box:1234/v1/' });
+      const code = await preflight(config, renderer, { VOLLEY_LMSTUDIO_URL: 'http://box:1234/v1' }, {
+        ...ALL_GREEN,
+        endpoint_reachable: probe.endpoint_reachable,
+      });
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(probe.probed).toEqual(['http://box:1234/v1']);
+      expect(output()).toContain('builder and critic model endpoint: reachable');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("exits 5 naming the critic when its endpoint is down, before the canary spends anything", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const probe = recording_probe((url) => !url.includes('gpu-box'));
+      let canary_consulted = false;
+      // A claude_cli builder has no endpoint; the local critic's is still probed.
+      const config = resolve_config({
+        ...base(workspace),
+        critic_provider: 'lmstudio',
+        critic_url: 'http://gpu-box:1234/v1',
+      });
+      const code = await preflight(config, renderer, {}, {
+        ...ALL_GREEN,
+        endpoint_reachable: probe.endpoint_reachable,
+        canary_engine: () => {
+          canary_consulted = true;
+          return mock_engine(() => approve_reply());
+        },
+      });
+      expect(code).toBe(EXIT_CONFIG_ERROR);
+      expect(probe.probed).toEqual(['http://gpu-box:1234/v1']);
+      expect(output()).toContain('critic model endpoint unreachable: http://gpu-box:1234/v1');
+      expect(canary_consulted).toBe(false);
     } finally {
       cleanup();
     }

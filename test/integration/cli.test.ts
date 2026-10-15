@@ -38,6 +38,31 @@ function dry_run(extra: string[]): { status: number | null; stderr: string } {
   }
 }
 
+describe('volley --builder-url / --critic-url', () => {
+  it('refuses a URL on the default claude_cli critic as a config error, before any spend', () => {
+    const { status, stderr } = dry_run(['--critic-url', 'http://localhost:1']);
+    expect(status).toBe(EXIT_CONFIG_ERROR);
+    expect(stderr).toContain(
+      '--critic-url (critic_url) applies only to a critic on ollama or lmstudio; ' +
+        'critic-provider is claude_cli',
+    );
+  });
+
+  it("sends the builder's preflight probe to its own URL", () => {
+    // Port 1 refuses at once, so the probe fails fast and names the seat's URL.
+    const { status, stderr } = dry_run([
+      '--builder-provider',
+      'lmstudio',
+      '--builder-url',
+      'http://127.0.0.1:1/v1',
+      '--allow-unsandboxed-builder',
+    ]);
+    expect(status).toBe(EXIT_CONFIG_ERROR);
+    expect(stderr).toContain('builder model: opus (provider: lmstudio, endpoint: http://127.0.0.1:1/v1)');
+    expect(stderr).toContain('builder model endpoint unreachable: http://127.0.0.1:1/v1');
+  });
+});
+
 describe('volley --run-id', () => {
   it("names the run by the caller's id", () => {
     const { status, stderr } = dry_run(['--run-id', 'night-42']);

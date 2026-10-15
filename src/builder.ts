@@ -19,7 +19,7 @@ import type {
 import { warn_small_local_context } from './builder/context_check.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { accumulate } from './cost.js';
-import { resolve_ollama_base_url } from './engine.js';
+import { seat_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
 import { config_error, phase_error } from './types.js';
 import type { LoopState, ResolvedConfig } from './types.js';
@@ -238,9 +238,9 @@ export async function run_builder(
     // it silently truncates tool schemas (the #1 local tool-calling failure) —
     // then pre-load the model so a cold multi-GB load doesn't blow the real
     // call's first-byte timeout. Both best-effort and Ollama-only; neither
-    // blocks the build.
+    // blocks the build. Both go to the builder seat's own server.
     if (config.builder_provider === 'ollama') {
-      const base_url = resolve_ollama_base_url(process.env);
+      const base_url = seat_base_url('ollama', config.builder_url, process.env);
       await warn_small_local_context(
         config.builder_provider,
         config.builder_model,

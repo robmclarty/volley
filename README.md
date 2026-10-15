@@ -157,10 +157,12 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--check` | `auto` | `auto` (checkride if detected, else none), `none`, or a shell command. |
 | `--builder-model` | `opus` | `opus`/`sonnet`/`haiku` or a full model id. |
 | `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local builder](#local-builder)). |
+| `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama` or `lmstudio` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
 | `--builder-max-steps` | `50` | Local builder tool-loop step cap per iteration. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a local builder to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local critic](#local-critic)). |
+| `--critic-url` | the provider's env var | The critic's model server base URL, for `ollama` or `lmstudio` only. |
 | `--builder-permission-mode` | `acceptEdits` | Or `bypassPermissions` for fully trusted workspaces. |
 | `--critic` | `reviewer` | `reviewer`, `optimizer`, `researcher`, or a prompt file path. |
 | `--max-iterations` | `10` | Hard iteration cap. |
@@ -172,7 +174,7 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--fail-on-gate-edit` | off | Halt the run (exit 8) if the builder edits a gate path, instead of reporting it. |
 | `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
 | `--run-id` | a fresh UUID | The run's id, naming its `.volley/` state and its `volley/<id>` branch, so a harness that owns the id finds it in both. Letters, digits, `-`, and `_`, starting with a letter or digit. |
-| `--dry-run` | off | Validate config, run `checkride doctor` and (for a local critic) the critic-seat canary, then exit. |
+| `--dry-run` | off | Validate config, run `checkride doctor`, probe each local seat's model endpoint, run the critic-seat canary (for a local critic), then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
 | `--json` | off | Machine mode: one summary JSON document on stdout. |
 | `--verbose` | off | Full tool inputs/outputs (truncated at 4000 chars). |
@@ -244,7 +246,7 @@ volley matrix \
 
 | Matrix flag | Description |
 |---|---|
-| `--config` | Base `VolleyConfig` (TS/JS): the task, workspace, providers, and caps held fixed. Required. |
+| `--config` | Base `VolleyConfig` (TS/JS): the task, workspace, providers, seat URLs, and caps held fixed. Required. |
 | `--builders` | Comma-separated builder models to sweep. |
 | `--critics` | Comma-separated critic models to sweep. |
 | `--repeat` | Attempts per seat (default 1). A pass *rate* needs more than one. |
@@ -296,8 +298,8 @@ produced none at all (`status: broke`).
 
 ## Local critic
 
-The builder always runs on the Claude Code CLI, but the critic is read-only
-and schema-constrained — a good fit for a cheaper local model. Point it at a
+The critic is read-only and schema-constrained, which makes it a good fit for
+a cheaper local model even when the builder stays on Claude. Point it at a
 local provider with `--critic-provider`:
 
 ```sh
@@ -334,6 +336,11 @@ The Ollama base URL is the **server root** — `ai-sdk-ollama` adds the `/api`
 prefix itself (volley strips a trailing `/api` from `VOLLEY_OLLAMA_URL` for
 compatibility). Local providers are free, so the critic's cost is reported as
 `$0.000` and the run total reflects builder spend only.
+
+The env var sets a provider's URL for both seats. To give the critic a server
+of its own, pass `--critic-url` (`critic_url` in a config file). A seat uses its
+own URL, then the provider's env var, then the default, and never the other
+seat's URL; see [Seats on different machines](#seats-on-different-machines).
 
 Keeping the builder on Claude while the critic goes local is the low-risk split:
 the recurring per-iteration critic cost drops to zero and the critic is
@@ -413,7 +420,8 @@ is discarded wholesale in all three modes: an abandoned phase leaves nothing
 behind.
 
 Provider setup is the same as the [local critic](#local-critic) table
-(`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, same peer dependencies). At
+(`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`, or `--builder-url` for the builder
+alone; same peer dependencies). At
 builder start (and before a local critic's first verdict) volley pre-loads an
 Ollama model with a load-only `/api/generate` call, so a cold multi-GB model
 load doesn't eat the first real request's time-to-first-byte budget — without
@@ -447,6 +455,44 @@ weak local model to drive a tool loop reliably has three sharp edges:
 
 Local providers are free, so a local builder's cost is reported as `$0.000` and
 never trips `--max-cost-usd`.
+
+### Seats on different machines
+
+Each seat can reach its own model server, so the builder and the critic can run
+on different machines even when they use the same provider. Give each seat a
+URL with `--builder-url` and `--critic-url`, or in a config file:
+
+```ts
+const config: VolleyConfig = {
+  // ...the task...
+  builder_provider: 'ollama',
+  builder_model: 'qwen3-coder:30b',
+  builder_url: 'http://localhost:11434', // this machine
+  critic_provider: 'ollama',
+  critic_model: 'qwen3:8b',
+  critic_url: 'http://localhost:11522', // a second machine, forwarded here
+};
+```
+
+- **Fallback.** A seat without a URL of its own uses the provider's env var,
+  then the default, never the other seat's URL.
+- **Same rules as the env var.** Ollama's trailing `/api` is dropped. The URL
+  must be plain `http(s)`, with no credentials, query, or fragment. Include the
+  port: a URL without one goes to 80 or 443, not the provider's default.
+- **`claude_cli` takes no URL.** Setting one on a `claude_cli` seat is a
+  configuration error (exit 5).
+- **Everything a seat sends goes to its own URL.** That covers the model calls,
+  the Ollama prewarm and context check, and the `--dry-run` endpoint probe and
+  critic canary. `volley matrix` holds both URLs fixed across every pairing.
+
+Inside the sandbox container, a loopback seat URL crosses to the host at
+`VOLLEY_MODEL_HOST` the way the env var does, keeping its port. So the two seats
+can be two forwarded ports on the host (`localhost:11522`, `localhost:11523`).
+With the allowlist's host rules in place the container reaches only the host
+gateway, so it can reach a seat on another machine only through a port forward
+on the host, for example `ssh -N -L 11522:localhost:11434 gpu-box`. On a Linux
+host, `host-gateway` is the Docker bridge's address, so the forward, like Ollama
+itself, has to listen there rather than on `127.0.0.1` alone.
 
 ## What the builder changed
 

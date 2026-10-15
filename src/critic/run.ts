@@ -16,7 +16,7 @@ import type {
   StreamChunk,
 } from 'fascicle';
 import { accumulate } from '../cost.js';
-import { resolve_ollama_base_url } from '../engine.js';
+import { seat_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
 import { error_kind, phase_error } from '../types.js';
 import type { CauseKind, LoopState, ResolvedConfig } from '../types.js';
@@ -314,7 +314,10 @@ export async function critic_canary(
   // Same cold-load guard as the real critic phase: without it a disk-cold model
   // would die on the first-byte timeout and the canary would cry wolf.
   if (config.critic_provider === 'ollama') {
-    await prewarm_ollama_model(resolve_ollama_base_url(env), config.critic_model);
+    await prewarm_ollama_model(
+      seat_base_url('ollama', config.critic_url, env),
+      config.critic_model,
+    );
   }
   const base: Omit<GenerateOptions<VerdictOutput>, 'prompt' | 'tools' | 'provider_options'> = {
     provider: config.critic_provider,
@@ -359,12 +362,13 @@ export async function run_critic(
   }
   const check = state.check;
   try {
-    // Same cold-load guard as the builder: pre-load an Ollama critic model so
-    // a cold multi-GB load doesn't blow the real call's first-byte timeout.
-    // Best-effort; a model the builder already warmed returns immediately.
+    // Same cold-load guard as the builder: pre-load an Ollama critic model on
+    // the critic seat's own server so a cold multi-GB load doesn't blow the real
+    // call's first-byte timeout. Best-effort; when both seats share a server and
+    // a model, the builder's warm-up already loaded it and this returns at once.
     if (config.critic_provider === 'ollama') {
       await prewarm_ollama_model(
-        resolve_ollama_base_url(process.env),
+        seat_base_url('ollama', config.critic_url, process.env),
         config.critic_model,
         ctx.abort,
       );

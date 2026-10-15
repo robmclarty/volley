@@ -19,7 +19,8 @@ import { filesystem_logger } from 'fascicle/adapters';
 import type { Engine } from 'fascicle';
 import type { BashExecutor } from './builder/tools.js';
 import { capture_baseline } from './changes.js';
-import { create_volley_engine } from './engine.js';
+import { create_seat_engines, dispose_seat_engines } from './engine.js';
+import type { SeatEngines } from './engine.js';
 import { build_flow } from './flow.js';
 import { run_result_from_state } from './iteration.js';
 import { initial_state, status_of } from './loop_state.js';
@@ -43,6 +44,9 @@ import {
 
 export type OrchestratorDeps = {
   renderer: Renderer;
+  /** An engine to run both seats on in place of the ones built from the
+   * config. It serves both seats as-is, so the seat URLs then steer only
+   * volley's own requests (prewarm and the context probe), not model calls. */
   engine?: Engine;
   abort?: AbortSignal;
   install_signal_handlers?: boolean;
@@ -142,16 +146,20 @@ async function run_loop(
 
   // The Claude session runs in the build root (the worktree under `--worktree`),
   // because that is where the check, the change report, the checkpoints, and the
-  // critic all look. `.volley/` state stays under the workspace either way.
-  const engine =
-    deps.engine ??
-    create_volley_engine({
-      workspace: build_root(config.workspace, config.worktree),
-      builder_provider: config.builder_provider,
-      critic_provider: config.critic_provider,
-    });
+  // critic all look. `.volley/` state stays under the workspace either way. The
+  // seats share one engine unless they reach one provider at different URLs.
+  const engines: SeatEngines =
+    deps.engine === undefined
+      ? await create_seat_engines({
+          workspace: build_root(config.workspace, config.worktree),
+          builder_provider: config.builder_provider,
+          builder_url: config.builder_url,
+          critic_provider: config.critic_provider,
+          critic_url: config.critic_url,
+        })
+      : { builder: deps.engine, critic: deps.engine };
 
-  const flow = build_flow({ engine, config, renderer, bash_executor, baseline }, resume_from);
+  const flow = build_flow({ engines, config, renderer, bash_executor, baseline }, resume_from);
 
   try {
     const { value, converged } = await run(
@@ -175,7 +183,7 @@ async function run_loop(
     finalize_failed_run(config, err);
     throw err;
   } finally {
-    await engine.dispose();
+    await dispose_seat_engines(engines);
   }
 }
 

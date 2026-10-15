@@ -35,7 +35,7 @@ describe('probe_ollama_num_ctx', () => {
       .mockResolvedValue(new Response(JSON.stringify({ parameters: 'num_ctx 8192' })));
     vi.stubGlobal('fetch', fetch_stub);
 
-    // base_url is the server root (resolve_ollama_base_url output), so the
+    // base_url is the server root (seat_base_url output), so the
     // probe supplies the /api prefix itself.
     await expect(probe_ollama_num_ctx('http://localhost:11434', 'm')).resolves.toBe(8192);
     const [url] = fetch_stub.mock.calls[0] as [string];

@@ -25,7 +25,7 @@ const PREWARM_TIMEOUT_MS = 300_000;
  * Load-bearing only on the ai_sdk transport: the cold-load death this
  * absorbs is the ai-sdk/undici in-request header timeout, not an Ollama
  * limit. On fascicle's native transport — the deferred future bridge, see
- * `local_provider_config` in engine.ts — the per-turn call is a bare
+ * `seat_provider_config` in engine.ts — the per-turn call is a bare
  * `fetch(..., { signal })` with no default body timeout, so a cold model can
  * take as long as it needs and this pre-warm's necessity drops away (keep it
  * regardless: a resident model makes it a no-op). Native would also move the

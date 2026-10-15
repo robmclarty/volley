@@ -57,10 +57,12 @@ export type VolleyConfig = {
   check?: CheckMode;
   builder_model?: string;
   builder_provider?: BuilderProvider;
+  builder_url?: string;
   builder_max_steps?: number;
   allow_unsandboxed_builder?: boolean;
   critic_model?: string;
   critic_provider?: CriticProvider;
+  critic_url?: string;
   builder_permission_mode?: BuilderPermissionMode;
   critic?: CriticPreset | (string & {});
   max_iterations?: number;
@@ -89,12 +91,22 @@ export type ResolvedConfig = {
   check_resolved: CheckRunnerKind;
   builder_model: string;
   builder_provider: BuilderProvider;
+  /** The builder seat's own model server base URL (`--builder-url`), as given.
+   * It is normalized, and crossed to the host LLM endpoint when contained, only
+   * where it is used, because the crossing depends on where the run executes.
+   * Null falls back to the provider's env var (`VOLLEY_OLLAMA_URL` /
+   * `VOLLEY_LMSTUDIO_URL`), then its default, never to the critic's URL. Only
+   * a provider volley reaches at a base URL (ollama, lmstudio) takes one. */
+  builder_url: string | null;
   builder_max_steps: number;
   /** Operator opt-out permitting a local (non-`claude_cli`) builder to run
    * without a sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;
   critic_model: string;
   critic_provider: CriticProvider;
+  /** The critic seat's own model server base URL (`--critic-url`), as given;
+   * resolved like `builder_url`, and null never falls back to the builder's. */
+  critic_url: string | null;
   builder_permission_mode: BuilderPermissionMode;
   critic_preset: CriticPreset | 'custom';
   critic_prompt_path: string | null;
