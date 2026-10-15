@@ -7,7 +7,7 @@ nothing there is scheduled.
 [`79aa166`](https://github.com/BuilderIO/agent-native/tree/79aa16665c2850b60e57163b123750f966b5d5cc)
 (2026-10-14, MIT). Agent-native paths are relative to that tree, and every link is a permalink to it.
 **Baseline:** volley v0.6.0 (`f362bbd`), on fascicle 0.12.13.
-**Siblings:** the same review wrote `~/Projects/runciter/docs/runciter-agent-native-upgrades.md`,
+**Siblings:** the same review wrote `~/Projects/runciter/code/runciter/docs/specs/runciter-agent-native-upgrades.md`,
 `~/Projects/night-shift/code/night-shift/docs/agent-native-upgrades.md` (night-shift build 2 now depends
 on V2), and `~/Projects/fascicle/docs/research/fascicle-agent-native-upgrades.md` (where V4, V7, and V8's
 substrate pieces belong).
