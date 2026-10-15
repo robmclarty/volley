@@ -78,6 +78,14 @@
     "undici": "8.11.0",
     "zod": "4.4.3"
   },
+  "peerDependencies": {
+    "ai-sdk-ollama": "^4.3.0"
+  },
+  "peerDependenciesMeta": {
+    "ai-sdk-ollama": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@ast-grep/cli": "0.45.3",
     "@tsconfig/node24": "24.0.5",

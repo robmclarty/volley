@@ -237,7 +237,15 @@ export type PhaseRecord = {
    * `decode` when every turn streamed, `blended` when any round trip counted
    * prefill and network too — always the case for `claude_cli`, whose rate
    * fascicle derives from the CLI's reported API time. Absent when no turn
-   * carried timing. Additive. */
+   * carried timing. Additive.
+   *
+   * On Ollama, `decode` holds only while a turn's first chunk arrives as its
+   * first token is generated. Ollama sends a tool call whole, so a turn whose
+   * only output is a tool call dispatches nothing until generation ends, and
+   * its tokens are divided by the last few milliseconds: a non-thinking seat's
+   * rate reads far too high until robmclarty/fascicle#12 times those turns
+   * another way. A thinking seat needs ai-sdk-ollama 4.3.0 or later, which
+   * streams the reasoning even though volley never sets `think`. */
   throughput?: Throughput;
 };
 

@@ -317,14 +317,19 @@ Providers and their setup:
 
 | `--critic-provider` | Server | Base-URL env (default) | Required peer dependency |
 |---|---|---|---|
-| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434`) | `ai-sdk-ollama@^4` |
+| `ollama` | [Ollama](https://ollama.com) | `VOLLEY_OLLAMA_URL` (`http://localhost:11434`) | `ai-sdk-ollama@^4.3.0` |
 | `lmstudio` | [LM Studio](https://lmstudio.ai) | `VOLLEY_LMSTUDIO_URL` (`http://localhost:1234/v1`) | `@ai-sdk/openai-compatible` |
 
 Install the peer for your provider in the project running volley (e.g.
-`pnpm add ai-sdk-ollama@^4`); fascicle loads it lazily only when the local
-critic actually runs. The major matters: it must satisfy fascicle's declared
-peer range (`^4` for fascicle 0.12.13, which tracks the AI SDK v7 line; a bare
-`pnpm add ai-sdk-ollama` installs v4, which is exactly what this major wants).
+`pnpm add ai-sdk-ollama@^4.3.0`); fascicle loads it lazily only when the local
+critic actually runs. The version matters. The major must satisfy fascicle's
+declared peer range (`^4` for fascicle 0.12.13, which tracks the AI SDK v7
+line), and volley declares 4.3.0 as its floor (an optional peer, so your
+package manager flags an older copy at install time). Before 4.3.0,
+ai-sdk-ollama streams a thinking model's reasoning only when the request sets
+`think`, which volley never does: the reasoning disappears from the terminal
+and the trajectory, and the phase's throughput reads high. A bare
+`pnpm add ai-sdk-ollama` installs the latest 4.x, which clears the floor.
 The Ollama base URL is the **server root** — `ai-sdk-ollama` adds the `/api`
 prefix itself (volley strips a trailing `/api` from `VOLLEY_OLLAMA_URL` for
 compatibility). Local providers are free, so the critic's cost is reported as

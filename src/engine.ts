@@ -114,7 +114,10 @@ function is_local_provider(
  * native `/api/chat` transport wants (its adapter appends `/api/chat` itself),
  * which is exactly what the v0.3.1 base-URL fix produces. Kept as a
  * proven-once-then-reverted option so the transport stays a clean second variable
- * in the model-vs-transport comparison.
+ * in the model-vs-transport comparison. Flipping it today would also lose the
+ * reasoning: fascicle's native Ollama adapter drops `message.thinking`, with
+ * `think` unset or true (robmclarty/fascicle#12), so a thinking seat's reasoning
+ * would vanish from the terminal and the trajectory.
  *
  * Both providers' base URLs cross a loopback authority to `VOLLEY_MODEL_HOST` when
  * volley runs contained, so an in-container model client reaches the

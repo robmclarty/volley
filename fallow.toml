@@ -15,7 +15,9 @@ ignorePatterns = ["examples/**"]
 
 # CLI/build tooling: invoked via package scripts or by checkride's adapters,
 # never imported from source, so fallow can't see the usage. `ai` and
-# `ai-sdk-ollama` are fascicle peers: fascicle loads them, volley never does.
+# `ai-sdk-ollama` are fascicle peers: fascicle loads them, volley never imports
+# them. volley also declares ai-sdk-ollama's 4.3.0 floor as its own optional
+# peer, the release that streams a thinking model's reasoning unasked.
 ignoreDependencies = ["@ast-grep/cli", "ai", "ai-sdk-ollama"]
 
 [rules]
