@@ -19,7 +19,7 @@ import { accumulate } from '../cost.js';
 import { seat_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
 import { error_kind, phase_error } from '../types.js';
-import type { CauseKind, LoopState, ResolvedConfig } from '../types.js';
+import type { CauseKind, DegradeCause, LoopState, ResolvedConfig } from '../types.js';
 import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
 import { read_only_tools, workspace_inventory } from './tools.js';
@@ -70,7 +70,7 @@ export type CriticDeps = {
  * would move to `provider_options.ollama.format` (parked). */
 function critic_tool_options(
   config: ResolvedConfig,
-): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options'> {
+): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options' | 'max_steps'> {
   if (config.critic_provider === 'claude_cli') {
     return {
       provider_options: {
@@ -84,8 +84,16 @@ function critic_tool_options(
   // Read the builder's actual output: under `--worktree` that lives in
   // the worktree, so the local critic's read tools resolve through the same
   // re-pointed containment root as the builder's writes.
-  return { tools: read_only_tools(build_root(config.workspace, config.worktree)) };
+  return {
+    tools: read_only_tools(build_root(config.workspace, config.worktree)),
+    max_steps: CRITIC_MAX_STEPS,
+  };
 }
+
+/** The local critic's step budget for its tool-bearing call: reads plus the
+ * verdict. Set explicitly rather than inherited from fascicle's engine default
+ * (also 10), so a change to that default can't move it silently. */
+export const CRITIC_MAX_STEPS = 10;
 
 /** Degradation ladder rung 1: how many times a local critic's call
  * is retried on a provider stream death before the ladder moves on. Capped at
@@ -105,6 +113,25 @@ function is_retryable_critic_error(config: ResolvedConfig, err: unknown): boolea
   return error_kind(err) === 'provider_error';
 }
 
+/** Did a schema call end without a verdict because the tool loop ran out —
+ * its step budget spent, or its last turn a tool call — rather than because
+ * the response was cut off or blocked? fascicle throws
+ * `incomplete_generation_error` for every such finish; only these two are
+ * fixed by taking the tools away. Matched on `kind` and `finish_reason`. */
+function is_step_exhaustion(err: unknown): boolean {
+  if (error_kind(err) !== 'incomplete_generation_error') return false;
+  const finish = (err as { finish_reason?: unknown }).finish_reason;
+  return finish === 'max_steps' || finish === 'tool_calls';
+}
+
+/** Does this failure send a local critic to the tool-less rung? A stream death
+ * the retry rung gave up on, or step exhaustion, which no retry would fix. A
+ * `length` or `content_filter` finish is neither, and stays fatal. */
+function is_degradable_critic_error(config: ResolvedConfig, err: unknown): boolean {
+  if (config.critic_provider === 'claude_cli') return false;
+  return error_kind(err) === 'provider_error' || is_step_exhaustion(err);
+}
+
 /** fascicle's `provider_error.cause_kind` is `... | undefined`; fold the
  * missing case into `'unknown'` so a recorded retry always names a cause. */
 function retry_cause_kind_of(err: unknown): CauseKind {
@@ -119,6 +146,7 @@ type LadderMark = {
   retries: number;
   retry_cause_kind: CauseKind | undefined;
   critic_degraded?: boolean;
+  degrade_cause?: DegradeCause;
 };
 
 /** Fold a successful critic `generate` result into loop state, stamping the
@@ -145,6 +173,7 @@ function finalize_critic(
               ? { retry_cause_kind: mark.retry_cause_kind }
               : {}),
             ...(mark.critic_degraded === true ? { critic_degraded: true } : {}),
+            ...(mark.degrade_cause !== undefined ? { degrade_cause: mark.degrade_cause } : {}),
           },
     verdict: result.content.verdict,
     feedback: result.content.feedback,
@@ -218,9 +247,37 @@ export function make_critic_toolless_step(deps: CriticDeps): CriticCall {
   });
 }
 
-/** The ladder's retry predicate for this run's critic provider. */
-export function critic_retryable(config: ResolvedConfig): (err: unknown) => boolean {
-  return (err) => is_retryable_critic_error(config, err);
+/** What the retry rung knew about the error that ended it: the attempt it
+ * died on, and the cause of the stream death it last retried. fascicle's
+ * `retry` rethrows that error untouched, so the fallback's projection looks it
+ * up here to count the retries behind a degraded verdict. */
+type LadderTrace = { attempt: number; retried_cause: CauseKind | undefined };
+
+const ladder_traces = new WeakMap<object, LadderTrace>();
+
+/** The ladder's retry predicate for this run's critic provider: stream deaths
+ * only. It also traces every failure it sees, so a degraded verdict can say how
+ * many retries preceded it and why. A first attempt starts a fresh critique, so
+ * it forgets the last one's retries. */
+export function critic_retryable(
+  config: ResolvedConfig,
+): (err: unknown, attempt: number) => boolean {
+  let retried_cause: CauseKind | undefined;
+  return (err, attempt) => {
+    if (attempt === 1) retried_cause = undefined;
+    if (typeof err === 'object' && err !== null) {
+      ladder_traces.set(err, { attempt, retried_cause });
+    }
+    const retryable = is_retryable_critic_error(config, err);
+    if (retryable) retried_cause = retry_cause_kind_of(err);
+    return retryable;
+  };
+}
+
+/** The ladder's fallback predicate: a stream death the retry rung gave up on,
+ * or step exhaustion, which it never retries. */
+export function critic_degradable(config: ResolvedConfig): (err: unknown) => boolean {
+  return (err) => is_degradable_critic_error(config, err);
 }
 
 /** Rung 1's projection: a verdict the tool-bearing critic produced, marked with
@@ -236,29 +293,49 @@ export function with_retries(outcome: RetryOutcome<GenerateResult<VerdictOutput>
   };
 }
 
-/** Rung 2's answer: every retry was spent, and the verdict is marked degraded
- * so it never passes silently as a full critique. */
+/** Rung 2's answer, marked degraded so it never passes silently as a full
+ * critique. Why it degraded, and the retries before it, are the ladder's to
+ * stamp (`with_fallback_cause`), since the tool-less call can't see them. */
 export function as_degraded(result: GenerateResult<VerdictOutput>): CriticAnswer {
   return {
     result,
-    mark: { retries: MAX_CRITIC_RETRIES, retry_cause_kind: undefined, critic_degraded: true },
+    mark: { retries: 0, retry_cause_kind: undefined, critic_degraded: true },
   };
 }
 
 /** The ladder's projection: the tool-less backup cannot see why it ran, so the
- * cause comes from the last stream death the retry rung gave up on. */
+ * mark comes from the error that sent it there.
+ *
+ * - A stream death the retry rung gave up on: every retry was spent, and the
+ *   cause is that error's own.
+ * - Step exhaustion, never retried: the retries are the stream deaths before
+ *   it, usually none, and the cause is the last of those.
+ *
+ * An error the retry rung never traced reads as one that spent every retry. */
 export function with_fallback_cause(outcome: FallbackOutcome<CriticAnswer>): CriticAnswer {
   if (outcome.source === 'primary') return outcome.value;
+  const err = outcome.primary_error;
+  const trace =
+    typeof err === 'object' && err !== null ? ladder_traces.get(err) : undefined;
+  const retries = trace === undefined ? MAX_CRITIC_RETRIES : trace.attempt - 1;
+  const exhausted = is_step_exhaustion(err);
+  const retry_cause_kind = exhausted ? trace?.retried_cause : retry_cause_kind_of(err);
   return {
     ...outcome.value,
-    mark: { ...outcome.value.mark, retry_cause_kind: retry_cause_kind_of(outcome.primary_error) },
+    mark: {
+      ...outcome.value.mark,
+      retries,
+      retry_cause_kind,
+      degrade_cause: exhausted ? 'step_exhaustion' : 'stream_error',
+    },
   };
 }
 
 /** What the `--dry-run` canary learned about the critic seat:
  * `ok` — the tool-bearing call came back; `degraded` — the tool-bearing
- * call died on a provider stream error but a tool-less pass survived, so a real
- * run will likely finish via the fallback ladder (`critic_degraded`);
+ * call died on a provider stream error or ran out of steps, but a tool-less
+ * pass survived, so a real run will likely finish via the fallback ladder
+ * (`critic_degraded`);
  * `failed` — even the tool-less pass died, so the combo would fail a real run
  * degraded or not. */
 export type CanaryOutcome =
@@ -300,8 +377,9 @@ function canary_detail(err: unknown): string {
  * `claude_cli` is proven and its calls cost real money.
  *
  * A tool-bearing death is classified by the same discriminant as the run-time
- * ladder (typed `provider_error` only), then probed tool-less exactly as
- * rung 2 would run, so the canary *predicts the ladder* instead of guessing:
+ * ladder's fallback (a typed `provider_error`, or step exhaustion), then probed
+ * tool-less exactly as rung 2 would run, so the canary *predicts the ladder*
+ * instead of guessing:
  * tool-less survives → `degraded` (warn — the combo completes a real run,
  * marked); tool-less dies too → `failed` (the endpoint-down / model-missing
  * class that earns exit 5 because not even degradation would save it).
@@ -333,7 +411,7 @@ export async function critic_canary(
     });
     return { outcome: 'ok' };
   } catch (err) {
-    if (error_kind(err) !== 'provider_error') {
+    if (!is_degradable_critic_error(config, err)) {
       return { outcome: 'failed', detail: canary_detail(err) };
     }
     const tool_death = canary_detail(err);

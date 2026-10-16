@@ -18,7 +18,7 @@
  *   │  │  └─ else  sequence
  *   │  │     ├─ check                     the deterministic gate: checkride, a command, or none
  *   │  │     └─ critique                  the read-only critic's verdict and feedback
- *   │  │        └─ critic                 fallback: judge without tools if a local critic's stream keeps dying
+ *   │  │        └─ critic                 fallback: judge without tools if a local critic keeps dying or runs out of steps
  *   │  │           ├─ retry               one more try after a stream death, local providers only
  *   │  │           │  └─ critic_tools     model call with read-only workspace tools
  *   │  │           └─ pipe                mark the verdict degraded
@@ -33,6 +33,7 @@ import type { BashExecutor } from './builder/tools.js';
 import { cost_cap_hit } from './cost.js';
 import {
   as_degraded,
+  critic_degradable,
   critic_retryable,
   make_critic_toolless_step,
   make_critic_tools_step,
@@ -70,8 +71,10 @@ export type LoopOutcome = { value: LoopState; converged: boolean };
 
 /** The critic arm: the degradation ladder. A local critic whose tool-bearing
  * stream dies is retried at once (the death is stochastic parser failure, not
- * load, so waiting buys nothing), then judged once without tools; anything the
- * ladder does not retry propagates from either rung untouched. */
+ * load, so waiting buys nothing), then judged once without tools. One that runs
+ * out of steps skips the retry, since another identical tool loop would only
+ * run out again, and goes straight to the tool-less pass. Anything else
+ * propagates from either rung untouched. */
 export function build_critic(deps: CriticDeps): CriticStep {
   const retryable = critic_retryable(deps.config);
   return fallback(
@@ -87,8 +90,8 @@ export function build_critic(deps: CriticDeps): CriticStep {
     }),
     {
       name: 'critic',
-      description: "judge without tools if a local critic's stream keeps dying",
-      when: retryable,
+      description: 'judge without tools if a local critic keeps dying or runs out of steps',
+      when: critic_degradable(deps.config),
       handoff: (prompt) => toolless_critic_prompt(deps.config, prompt),
       project: with_fallback_cause,
     },

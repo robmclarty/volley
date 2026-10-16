@@ -15,7 +15,7 @@ import { worktree_fate } from '../../src/worktree.js';
 import type { ComboRunner, MatrixCombo, MatrixRow } from '../../src/matrix.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import type { CheckTrajectoryPoint, RunSummary } from '../../src/summary.js';
-import type { RunStatus, VolleyConfig } from '../../src/types.js';
+import type { DegradeCause, RunStatus, VolleyConfig } from '../../src/types.js';
 
 /** A stubbed enriched summary; only the fields the table reads matter. Mirrors
  * `build_run_summary`: a non-success run reports `iterations_to_converge: null`. */
@@ -26,6 +26,7 @@ function stub_summary(fields: {
   cost_usd?: number;
   salvage_rate?: number;
   critic_degraded?: boolean;
+  critic_degrade_causes?: DegradeCause[];
   gate_edits?: string[];
   unmet_criteria?: string[];
   check_trajectory?: CheckTrajectoryPoint[];
@@ -65,6 +66,8 @@ function stub_summary(fields: {
         rate: fields.salvage_rate ?? 0,
       },
       critic_degraded: fields.critic_degraded ?? false,
+      critic_degrade_causes:
+        fields.critic_degrade_causes ?? (fields.critic_degraded === true ? ['stream_error'] : []),
     },
   };
 }
@@ -94,6 +97,7 @@ function stub_row(overrides: Partial<MatrixRow> = {}): MatrixRow {
     mean_cost_usd: 0,
     salvage_rate: 0.3,
     critic_degraded: true,
+    critic_degrade_causes: ['stream_error'],
     gate_edits: [],
     reason: null,
     attempts: [],
@@ -360,7 +364,11 @@ describe('run_matrix', () => {
       const run_combo: ComboRunner = async (_base, _combo, _renderer, attempt) =>
         attempt === 1
           ? stub_summary({ gate_edits: ['test/a.test.mjs'], critic_degraded: true })
-          : stub_summary({ gate_edits: ['package.json'] });
+          : stub_summary({
+              gate_edits: ['package.json'],
+              critic_degraded: true,
+              critic_degrade_causes: ['step_exhaustion', 'stream_error'],
+            });
       const { rows } = await run_matrix({
         base: base_config,
         builders: ['b'],
@@ -372,6 +380,11 @@ describe('run_matrix', () => {
       });
       expect(rows[0]?.gate_edits).toEqual(['package.json', 'test/a.test.mjs']);
       expect(rows[0]?.critic_degraded).toBe(true);
+      expect(rows[0]?.critic_degrade_causes).toEqual(['stream_error', 'step_exhaustion']);
+      expect(rows[0]?.attempts[1]?.critic_degrade_causes).toEqual([
+        'step_exhaustion',
+        'stream_error',
+      ]);
     });
   });
 
@@ -487,7 +500,14 @@ describe('render_matrix_table', () => {
     expect(lines[2]).toContain('145.6s');
     expect(lines[2]).toContain('$0.77');
     expect(lines[2]).toContain('30%');
-    expect(lines[2]).toContain('deg');
+    expect(lines[2]).toContain('deg:stream');
+  });
+
+  it('names why a seat degraded in its flag', () => {
+    const flag = (causes: MatrixRow['critic_degrade_causes']): string =>
+      render_matrix_table([stub_row({ critic_degrade_causes: causes })]).split('\n')[2] ?? '';
+    expect(flag(['step_exhaustion'])).toContain('deg:steps');
+    expect(flag(['stream_error', 'step_exhaustion'])).toContain('deg:stream+steps');
   });
 
   it('shows a pass rate over repeats and the reason it was not 3/3', () => {

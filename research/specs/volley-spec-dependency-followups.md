@@ -29,6 +29,18 @@ Everything true in [`volley-spec-v2.md`](./volley-spec-v2.md) and
 
 ## F1 — Local critic: route step exhaustion to the tool-less rung
 
+**Done on 2026-10-16.** A local critic whose tool-bearing call finishes on
+`max_steps` or `tool_calls` now goes straight to the tool-less rung without a
+retry. The `--dry-run` canary predicts the same. `length` and `content_filter`
+stay fatal, and fascicle's message already names the finish reason. The step
+budget is explicit (`CRITIC_MAX_STEPS = 10` in `src/critic/run.ts`).
+
+The cause is recorded as `degrade_cause: 'stream_error' | 'step_exhaustion'`
+on the critic record and in the iteration archive. It also appears as
+`critic_degrade_causes` in the comparison block, and in the matrix's
+`deg:stream` / `deg:steps` flag. A degraded verdict's `retries` now counts the
+stream deaths actually retried before it: 0 for a first-call exhaustion.
+
 **Priority: highest.** A real run can hit this today, and it turns what used to
 be a degraded-but-completed run into a hard exit 6.
 

@@ -60,15 +60,17 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
     // unit). 0 when the phase made no tool calls (the CLI builder's own loop).
     salvage_rate: record.tool_calls === 0 ? 0 : record.salvaged_tool_calls / record.tool_calls,
     // Degradation-ladder bookkeeping, critic-only: the provider-error
-    // retries that preceded this verdict, their cause, and whether it was rendered
-    // by the tool-less fallback. Emitted only when set, so the builder record and
-    // old summary consumers are untouched. `critic_degraded` is the on-disk
-    // half of the contract — the comparison block reads it back from here.
+    // retries that preceded this verdict, their cause, whether it was rendered
+    // by the tool-less fallback, and why. Emitted only when set, so the builder
+    // record and old summary consumers are untouched. `critic_degraded` and
+    // `degrade_cause` are the on-disk half of the contract — the comparison
+    // block reads them back from here.
     ...(record.retries !== undefined ? { retries: record.retries } : {}),
     ...(record.retry_cause_kind !== undefined
       ? { retry_cause_kind: record.retry_cause_kind }
       : {}),
     ...(record.critic_degraded === true ? { critic_degraded: true } : {}),
+    ...(record.degrade_cause !== undefined ? { degrade_cause: record.degrade_cause } : {}),
     // Model speed, where fascicle could time the turns (never `claude_cli`).
     // Emitted only when measured. Additive.
     ...(record.throughput !== undefined ? { throughput: record.throughput } : {}),

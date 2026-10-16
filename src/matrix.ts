@@ -38,7 +38,7 @@ import type { Renderer } from './render/renderer.js';
 import { build_run_summary } from './summary.js';
 import type { RunSummary } from './summary.js';
 import { config_error } from './types.js';
-import type { RunStatus, Verdict, VolleyConfig } from './types.js';
+import type { DegradeCause, RunStatus, Verdict, VolleyConfig } from './types.js';
 import { volley_path } from './workspace.js';
 
 /** The sweep's nonzero exit: at least one attempt produced no summary at all.
@@ -72,6 +72,8 @@ export type MatrixAttempt = {
   unmet_criteria: string[];
   gate_edits: string[];
   critic_degraded: boolean;
+  /** Why this attempt's degraded verdicts degraded; empty when none did. */
+  critic_degrade_causes: DegradeCause[];
   tool_calls: number;
   salvaged_tool_calls: number;
   error: string | null;
@@ -99,6 +101,8 @@ export type MatrixRow = {
   salvage_rate: number | null;
   /** True when *any* attempt's critic degraded to the tool-less rung. */
   critic_degraded: boolean;
+  /** Every reason any attempt's critic degraded, each once. */
+  critic_degrade_causes: DegradeCause[];
   /** Every gate path any attempt's builder edited (`src/changes.ts`). */
   gate_edits: string[];
   /** The most recent non-converged attempt's reason; null when all converged. */
@@ -250,6 +254,7 @@ function attempt_from_summary(attempt: number, summary: RunSummary): MatrixAttem
     unmet_criteria: c.unmet_criteria,
     gate_edits: c.gate_edits,
     critic_degraded: c.critic_degraded,
+    critic_degrade_causes: c.critic_degrade_causes,
     tool_calls: c.local_salvage.tool_calls,
     salvaged_tool_calls: c.local_salvage.salvaged_tool_calls,
     error: null,
@@ -270,6 +275,7 @@ function broke_attempt(attempt: number, message: string): MatrixAttempt {
     unmet_criteria: [],
     gate_edits: [],
     critic_degraded: false,
+    critic_degrade_causes: [],
     tool_calls: 0,
     salvaged_tool_calls: 0,
     error: message,
@@ -304,6 +310,9 @@ function aggregate_row(combo: MatrixCombo, attempts: MatrixAttempt[]): MatrixRow
     mean_cost_usd: mean(defined_numbers(attempts.map((a) => a.total_cost_usd))),
     salvage_rate: tool_calls === 0 ? null : salvaged / tool_calls,
     critic_degraded: attempts.some((attempt) => attempt.critic_degraded),
+    critic_degrade_causes: [
+      ...new Set(attempts.flatMap((attempt) => attempt.critic_degrade_causes)),
+    ],
     gate_edits: [...gate_edits].toSorted(),
     reason: attempts.findLast((attempt) => !attempt.converged)?.reason ?? null,
     attempts,
@@ -441,11 +450,25 @@ function format_iterations(iterations: number | null): string {
   return iterations === null ? '—' : iterations.toFixed(1);
 }
 
+/** How the degraded flag names a cause in its cell. */
+const DEGRADE_CAUSE_LABELS: Readonly<Record<DegradeCause, string>> = {
+  stream_error: 'stream',
+  step_exhaustion: 'steps',
+};
+
+/** The degraded flag with what caused it, `deg:stream`, `deg:steps`, or
+ * `deg:stream+steps`, since a bare `deg` can't say whether the critic kept
+ * dying or kept reading. */
+function degraded_flag(row: MatrixRow): string {
+  const causes = row.critic_degrade_causes.map((cause) => DEGRADE_CAUSE_LABELS[cause]);
+  return causes.length === 0 ? 'deg' : `deg:${causes.join('+')}`;
+}
+
 /** The two facts that qualify a pass rather than explain a failure, so they do
  * not have to compete with `why` for the same cell. */
 function format_flags(row: MatrixRow): string {
   const flags = [
-    row.critic_degraded ? 'deg' : null,
+    row.critic_degraded ? degraded_flag(row) : null,
     row.gate_edits.length > 0 ? 'gate' : null,
   ].filter((flag): flag is string => flag !== null);
   return flags.length === 0 ? '—' : flags.join(',');

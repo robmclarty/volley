@@ -108,7 +108,7 @@ volley                                loop: one round per iteration, up to max_i
 │  │  └─ else  sequence
 │  │     ├─ check                     the deterministic gate: checkride, a command, or none
 │  │     └─ critique                  the read-only critic's verdict and feedback
-│  │        └─ critic                 fallback: judge without tools if a local critic's stream keeps dying
+│  │        └─ critic                 fallback: judge without tools if a local critic keeps dying or runs out of steps
 │  │           ├─ retry               one more try after a stream death, local providers only
 │  │           │  └─ critic_tools     model call with read-only workspace tools
 │  │           └─ pipe                mark the verdict degraded
@@ -266,11 +266,11 @@ repository**. Every attempt's run state is written to
 `.volley-matrix/matrix.json`, and one aggregate table goes to stderr:
 
 ```
-builder         critic         pass  iters  wall     cost   salvage  flags  why
-──────────────  ─────────────  ────  ─────  ───────  ─────  ───────  ─────  ──────────────────
-qwen3.6:latest  qwen3:8b       3/3   1.0    403.4s   $0.00  0%       —      —
-qwen3.6:latest  gemma4:12b     2/3   1.5    512.0s   $0.00  0%       —      unmet: 2 criteria
-qwen3.6:latest  glm-4.7-flash  0/3   —      184.0s   $0.00  12%      deg    check: types, test
+builder         critic         pass  iters  wall    cost   salvage  flags       why
+──────────────  ─────────────  ────  ─────  ──────  ─────  ───────  ──────────  ──────────────────
+qwen3.6:latest  qwen3:8b       3/3   1.0    403.4s  $0.00  0%       —           —
+qwen3.6:latest  gemma4:12b     2/3   1.5    512.0s  $0.00  0%       —           unmet: 2 criteria
+qwen3.6:latest  glm-4.7-flash  0/3   —      184.0s  $0.00  12%      deg:stream  check: types, test
 ```
 
 **Why `--repeat`.** One run answers "did this pairing converge that time", and
@@ -288,7 +288,9 @@ totals rather than a mean of ratios.
 failing check slots, the criteria the critic still judged unmet, a cost cap, a
 gate edit, or the error that broke the run. `flags` carries what qualifies a
 pass rather than explaining a failure: `deg` for a degraded critic verdict,
-`gate` for a builder that edited the gate. Every attempt's full detail —
+named for what degraded it (`deg:stream` when the critic's stream kept dying,
+`deg:steps` when it ran out of steps), and `gate` for a builder that edited the
+gate. Every attempt's full detail —
 statuses, verdicts, failing slots, unmet criteria, gate edits — is in the
 `--json` aggregate and in `matrix.json`.
 
@@ -356,7 +358,14 @@ the *same* model drives the builder tool loop fine, so the defect is specific to
 the constrained-verdict path. volley no longer lets that kill a run: the critic
 phase degrades (a bounded retry, then a tool-less fallback that keeps the
 schema), marks the verdict `critic_degraded: true`, and `--dry-run` predicts the
-doomed combo up front with a critic-seat canary. Even so, prefer a critic whose
+doomed combo up front with a critic-seat canary. A critic that runs out of steps
+before its verdict (its 10-step budget spent, or its last turn a tool call) skips
+the retry, since another identical tool loop would only run out again, and goes
+straight to the tool-less pass. The record's `degrade_cause` says which happened:
+`stream_error` or `step_exhaustion`. A verdict cut off by the token limit or
+blocked by a content filter isn't degraded: it fails the critic phase (exit 6)
+with the finish reason in the message, because taking the tools away fixes
+neither. Even so, prefer a critic whose
 tool-call encoding Ollama parses cleanly — `qwen3:8b`, `gemma4:12b`, and
 `glm-4.7-flash` all pass. The full model-vs-transport write-up is in
 [`research/v3-comparison-finding.md`](./research/v3-comparison-finding.md).

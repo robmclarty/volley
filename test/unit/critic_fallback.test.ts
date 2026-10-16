@@ -12,9 +12,10 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { provider_error, run, step } from 'fascicle';
+import { incomplete_generation_error, provider_error, run, step } from 'fascicle';
+import type { FinishReason } from 'fascicle';
 import { EMPTY_USAGE } from '../../src/cost.js';
-import { MAX_CRITIC_RETRIES, run_critic } from '../../src/critic/run.js';
+import { CRITIC_MAX_STEPS, MAX_CRITIC_RETRIES, run_critic } from '../../src/critic/run.js';
 import { build_critic } from '../../src/flow.js';
 import { archive_iteration } from '../../src/iteration.js';
 import { initial_state } from '../../src/loop_state.js';
@@ -128,6 +129,7 @@ describe('run_critic tool-less fallback', () => {
       expect(state.feedback).toBe('degraded but valid');
       // ...marked degraded, with the exhausted retries and cause recorded.
       expect(state.critic?.critic_degraded).toBe(true);
+      expect(state.critic?.degrade_cause).toBe('stream_error');
       expect(state.critic?.retries).toBe(MAX_CRITIC_RETRIES);
       expect(state.critic?.retry_cause_kind).toBe('provider_5xx');
       // The fallback prompt is grounded by the paths+sizes inventory.
@@ -167,6 +169,99 @@ describe('run_critic tool-less fallback', () => {
       expect(engine.calls).toHaveLength(1);
     } finally {
       cleanup();
+    }
+  });
+});
+
+/** A schema call that ended on `finish` before producing a verdict, the way
+ * fascicle throws it. */
+function incomplete(finish: FinishReason): Error {
+  return new incomplete_generation_error(finish, 'still reading files');
+}
+
+describe('run_critic step exhaustion', () => {
+  it.each(['max_steps', 'tool_calls'] as const)(
+    'goes straight to the tool-less pass on a %s finish, with no retry',
+    async (finish) => {
+      const { engine, invoke, cleanup } = make((call) =>
+        is_tool_call(call) ? err_reply(incomplete(finish)) : approve_reply('judged without tools'),
+      );
+      try {
+        const state = await invoke();
+        // One tool-bearing call, then the tool-less pass: another identical tool
+        // loop would only run out again.
+        expect(engine.calls).toHaveLength(2);
+        expect(is_tool_call(engine.calls[0] as MockCall)).toBe(true);
+        expect(is_tool_call(engine.calls[1] as MockCall)).toBe(false);
+        expect(state.verdict).toBe('approved');
+        expect(state.critic?.critic_degraded).toBe(true);
+        expect(state.critic?.degrade_cause).toBe('step_exhaustion');
+        expect(state.critic?.retries).toBe(0);
+        expect(state.critic?.retry_cause_kind).toBeUndefined();
+      } finally {
+        cleanup();
+      }
+    },
+  );
+
+  it('counts a stream death retried before the steps ran out', async () => {
+    const { engine, invoke, cleanup } = make((call, index) => {
+      if (index === 0) return err_reply(stream_death('network'));
+      return is_tool_call(call) ? err_reply(incomplete('max_steps')) : approve_reply();
+    });
+    try {
+      const state = await invoke();
+      expect(engine.calls).toHaveLength(3);
+      expect(state.critic?.degrade_cause).toBe('step_exhaustion');
+      expect(state.critic?.retries).toBe(1);
+      expect(state.critic?.retry_cause_kind).toBe('network');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it.each(['length', 'content_filter'] as const)(
+    'stays fatal on a %s finish, naming it, with no fallback',
+    async (finish) => {
+      const { engine, invoke, cleanup } = make(() => err_reply(incomplete(finish)));
+      try {
+        const err = await invoke().then(
+          () => null,
+          (e: unknown) => e,
+        );
+        // A cut-off or blocked response isn't fixed by taking the tools away.
+        expect(engine.calls).toHaveLength(1);
+        expect(error_kind(err)).toBe('phase_error');
+        expect((err as PhaseError).phase).toBe('critic');
+        expect(error_kind((err as PhaseError).cause)).toBe('incomplete_generation_error');
+        expect(String(err)).toContain(`'${finish}'`);
+      } finally {
+        cleanup();
+      }
+    },
+  );
+
+  it('never degrades a claude_cli critic that runs out of steps', async () => {
+    const { engine, invoke, cleanup } = make(() => err_reply(incomplete('max_steps')), 'claude_cli');
+    try {
+      await expect(invoke()).rejects.toMatchObject({ kind: 'phase_error', phase: 'critic' });
+      expect(engine.calls).toHaveLength(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("sets the local critic's step budget explicitly, and leaves the CLI's alone", async () => {
+    const local = make(() => approve_reply());
+    const cli = make(() => approve_reply(), 'claude_cli');
+    try {
+      await local.invoke();
+      await cli.invoke();
+      expect(local.engine.calls[0]?.opts.max_steps).toBe(CRITIC_MAX_STEPS);
+      expect(cli.engine.calls[0]?.opts.max_steps).toBeUndefined();
+    } finally {
+      local.cleanup();
+      cli.cleanup();
     }
   });
 });
@@ -250,6 +345,47 @@ describe('critic_degraded persistence', () => {
     }
   });
 
+  it('records why a verdict degraded, in the archive and the comparison block', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      mkdirSync(join(workspace, '.volley'), { recursive: true });
+      const config = test_config({ workspace, critic_provider: 'lmstudio' });
+      archive_iteration(
+        config,
+        archived_iteration(
+          workspace,
+          critic_record({ retries: 0, critic_degraded: true, degrade_cause: 'step_exhaustion' }),
+        ),
+      );
+      const archived = JSON.parse(
+        readFileSync(join(iteration_dir(workspace, 1), 'summary.json'), 'utf8'),
+      );
+      expect(archived.critic.degrade_cause).toBe('step_exhaustion');
+      expect(build_run_summary(config, run_result()).comparison.critic_degrade_causes).toEqual([
+        'step_exhaustion',
+      ]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads a degraded archive from before the cause was recorded as a stream error', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      mkdirSync(join(workspace, '.volley'), { recursive: true });
+      const config = test_config({ workspace, critic_provider: 'lmstudio' });
+      archive_iteration(
+        config,
+        archived_iteration(workspace, critic_record({ retries: 1, critic_degraded: true })),
+      );
+      expect(build_run_summary(config, run_result()).comparison.critic_degrade_causes).toEqual([
+        'stream_error',
+      ]);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('reports critic_degraded false, and omits it from the archive, for a full critique', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -261,7 +397,10 @@ describe('critic_degraded persistence', () => {
         readFileSync(join(iteration_dir(workspace, 1), 'summary.json'), 'utf8'),
       );
       expect(archived.critic.critic_degraded).toBeUndefined();
-      expect(build_run_summary(config, run_result()).comparison.critic_degraded).toBe(false);
+      expect(archived.critic.degrade_cause).toBeUndefined();
+      const { comparison } = build_run_summary(config, run_result());
+      expect(comparison.critic_degraded).toBe(false);
+      expect(comparison.critic_degrade_causes).toEqual([]);
     } finally {
       cleanup();
     }

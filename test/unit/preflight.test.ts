@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { provider_error, schema_validation_error } from 'fascicle';
+import { incomplete_generation_error, provider_error, schema_validation_error } from 'fascicle';
 import { resolve_config } from '../../src/config.js';
 import { verdict_schema } from '../../src/critic/run.js';
 import { is_local_builder, is_local_critic, preflight } from '../../src/preflight.js';
@@ -434,6 +434,67 @@ describe('preflight — critic-seat canary', () => {
       const { renderer } = capturing_renderer();
       const engine = mock_engine(() =>
         err_reply(new schema_validation_error('verdict did not validate', [], '{}')),
+      );
+      const code = await preflight(canary_config(workspace), renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => engine,
+      });
+      expect(code).toBe(EXIT_CONFIG_ERROR);
+      expect(engine.calls).toHaveLength(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('predicts the degraded ladder for a critic that runs out of steps (exit 0)', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const engine = mock_engine((call) =>
+        is_tool_call(call)
+          ? err_reply(new incomplete_generation_error('max_steps', 'still reading'))
+          : approve_reply(),
+      );
+      const code = await preflight(canary_config(workspace), renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => engine,
+      });
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(engine.calls).toHaveLength(2);
+      expect(is_tool_call(engine.calls[1] as MockCall)).toBe(false);
+      expect(output()).toContain("'max_steps'");
+      expect(output()).toContain('critic_degraded');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('exits 5 when a critic that runs out of steps dies tool-less too', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer } = capturing_renderer();
+      const engine = mock_engine((call) =>
+        is_tool_call(call)
+          ? err_reply(new incomplete_generation_error('tool_calls', ''))
+          : err_reply(stream_death()),
+      );
+      const code = await preflight(canary_config(workspace), renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => engine,
+      });
+      expect(code).toBe(EXIT_CONFIG_ERROR);
+      expect(engine.calls).toHaveLength(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('exits 5 on a cut-off verdict without trying the tool-less rung', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer } = capturing_renderer();
+      const engine = mock_engine(() =>
+        err_reply(new incomplete_generation_error('length', '{"verdict": "appr')),
       );
       const code = await preflight(canary_config(workspace), renderer, {}, {
         ...ALL_GREEN,

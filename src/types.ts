@@ -37,6 +37,12 @@ export type CostSource = 'provider_reported' | 'engine_derived' | 'unknown';
  * *what* failed, not just that it retried. */
 export type CauseKind = 'provider_5xx' | 'network' | 'unknown';
 
+/** Why a local critic's verdict came from the tool-less fallback:
+ * `stream_error`, the tool-bearing call kept dying on the provider's stream
+ * after the bounded retry; `step_exhaustion`, it spent its step budget (or
+ * stopped on a tool call) without producing a verdict. */
+export type DegradeCause = 'stream_error' | 'step_exhaustion';
+
 export type RunStatus =
   | 'running'
   | 'success'
@@ -238,12 +244,15 @@ export type PhaseRecord = {
   retry_cause_kind?: CauseKind;
   /** This local-critic verdict was rendered by the tool-less fallback rung:
    * the tool-bearing critique kept dying on the provider's stream
-   * even after the bounded retry, so the critic judged with no read access —
-   * grounded only by the criteria, the raw check artifacts, and a workspace file
-   * inventory. Set (true) on a degraded critic record; absent on a full
-   * critique and on the builder. Additive, and a degraded verdict is *always*
-   * marked so it never passes silently as a full one. */
+   * even after the bounded retry, or ran out of steps before its verdict, so the
+   * critic judged with no read access — grounded only by the criteria, the raw
+   * check artifacts, and a workspace file inventory. Set (true) on a degraded
+   * critic record; absent on a full critique and on the builder. Additive, and a
+   * degraded verdict is *always* marked so it never passes silently as a full
+   * one. */
   critic_degraded?: boolean;
+  /** Why the verdict degraded, set with `critic_degraded`. Additive. */
+  degrade_cause?: DegradeCause;
   /** Output tokens per second over the model's own turns (tool execution and
    * retry backoff excluded), from fascicle's per-step timing. `basis` is
    * `decode` when every turn streamed, `blended` when any round trip counted

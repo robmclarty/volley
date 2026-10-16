@@ -20,6 +20,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import type {
   BuilderProvider,
   CriticProvider,
+  DegradeCause,
   ResolvedConfig,
   RunResult,
   Verdict,
@@ -92,6 +93,9 @@ export type ComparisonSummary = {
    * headline honesty flag, and the "degraded" column the matrix runner
    * reads straight from this block. */
   critic_degraded: boolean;
+  /** Why the degraded verdicts degraded, each cause once, in the order the
+   * iterations first hit it. Empty when no verdict degraded. Additive. */
+  critic_degrade_causes: DegradeCause[];
 };
 
 /** `RunResult` plus the comparison block; `.volley/summary.json` mirrors this. */
@@ -105,7 +109,7 @@ type IterationArchive = {
   builder?: { tool_calls?: number; salvaged_tool_calls?: number } | null;
   check?: { ran?: boolean; ok?: boolean; failing_slots?: string[] } | null;
   changes?: { gate_edits?: string[] } | null;
-  critic?: { critic_degraded?: boolean } | null;
+  critic?: { critic_degraded?: boolean; degrade_cause?: DegradeCause } | null;
   unmet_criteria?: string[];
 };
 
@@ -146,6 +150,16 @@ function check_trajectory(archives: IterationArchive[]): CheckTrajectoryPoint[] 
  * comparison metrics, so it grows with the run. */
 function any_critic_degraded(archives: IterationArchive[]): boolean {
   return archives.some((archive) => archive.critic?.critic_degraded === true);
+}
+
+/** Each distinct reason an archived critic verdict degraded. An archive from
+ * before the cause was recorded reads as a stream error, the only way a verdict
+ * could degrade then. */
+function critic_degrade_causes(archives: IterationArchive[]): DegradeCause[] {
+  const causes = archives
+    .filter((archive) => archive.critic?.critic_degraded === true)
+    .map((archive) => archive.critic?.degrade_cause ?? 'stream_error');
+  return [...new Set(causes)];
 }
 
 /** Every gate path the run's builder touched, across all iterations: an edit in
@@ -199,6 +213,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       unmet_criteria: archives.at(-1)?.unmet_criteria ?? [],
       local_salvage: salvage_stats(archives),
       critic_degraded: any_critic_degraded(archives),
+      critic_degrade_causes: critic_degrade_causes(archives),
     },
   };
 }

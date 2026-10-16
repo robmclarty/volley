@@ -51,7 +51,7 @@ These are the facts of the build that shape everything below.
 - **The run's events.** `run_volley` calls fascicle's `run` itself, and its only trajectory sink is `.volley/trajectory.jsonl` (`src/orchestrator.ts:169`). So none of its events reach an outer run, which is the only thing `serve_acp` maps. Its `Renderer` does receive every builder and critic chunk (`src/render/renderer.ts:36-46`).
 - **The check.** It runs through an async `spawn` with its output captured (`src/check/checkride.ts:47`), so nothing reaches stdout. An abort kills only `sh`, not the check's process group, so a stopped `pnpm test` can leave its workers running.
 - **State.** Each run rotates `.volley/` inside the workspace (`src/workspace.ts:28-37`), and nothing adds it to `.gitignore`.
-- **F1.** A non-CLI critic that hits its step limit while producing its verdict throws `incomplete_generation_error` past the retry and fallback chain, and the run exits 6 (F1 in `research/specs/volley-spec-dependency-followups.md:30`).
+- **F1, fixed.** A non-CLI critic that runs out of steps before its verdict now goes to the tool-less pass, marked `degrade_cause: 'step_exhaustion'`, instead of exiting 6. The predicate excludes only `claude_cli`, so an OpenRouter critic is covered as soon as the provider exists.
 - **fascicle.** Volley pins fascicle 0.14.0, which ships `fascicle/acp`, and builds on TypeScript 7 with tsdown.
 
 ## Proposal
@@ -148,7 +148,6 @@ Seat URLs meet the same wall. A loopback seat URL crosses to `VOLLEY_MODEL_HOST`
 
 ### 6. Before the demo
 
-- Fix F1, since with an OpenRouter critic it ends a Zed turn in an error.
 - Add `@agentclientprotocol/sdk` to volley's dependencies with an exact pin, in the change that first imports `fascicle/acp`; until then the dead-code check would flag it. 1.8.0 clears pnpm's two-day release-age window, and 1.9.0 was published on 2026-10-16. (fascicle itself is already on 0.14.0.)
 - Kill the check's whole process group on abort, the way `run_command` does: spawn it detached, and on abort kill the negative pid. Then a stop mid-check leaves no test workers behind.
 
@@ -198,5 +197,4 @@ Seat URLs meet the same wall. A loopback seat URL crosses to `VOLLEY_MODEL_HOST`
   - the check card;
   - the verdict thought;
   - the summary.
-- A non-CLI critic at its step limit no longer exits 6 (F1).
 - The README documents `volley acp`, the OpenRouter settings, and the Zed snippet.
