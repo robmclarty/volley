@@ -571,7 +571,7 @@ pnpm install
 pnpm test          # vitest
 pnpm typecheck     # tsc --noEmit
 pnpm check         # checkride — volley dogfoods its own definition of done
-pnpm build         # tsup → dist/
+pnpm build         # tsdown → dist/
 pnpm diagram       # draw the flow from src/flow.ts with describe.diagram
 ```
 

@@ -9,6 +9,6 @@
     "rewriteRelativeImportExtensions": false,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "tsup.config.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "tsdown.config.ts", "vitest.config.ts"],
   "exclude": ["test/fixtures/**"]
 }

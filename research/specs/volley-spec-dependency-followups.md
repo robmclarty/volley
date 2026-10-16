@@ -18,7 +18,7 @@ Everything true in [`volley-spec-v2.md`](./volley-spec-v2.md) and
 | Area | State after the bump | Held back because |
 |---|---|---|
 | TypeScript | `6.0.3` | TS 7 typechecks volley cleanly, but its npm package exports no JS compiler API; tsup's dts build (`rollup-plugin-dts`) crashes on it (`useCaseSensitiveFileNames` of undefined). |
-| Build | tsup `8.5.1` with `dts.compilerOptions.ignoreDeprecations: '6.0'` ([`tsup.config.ts`](../../tsup.config.ts)) | tsup injects `baseUrl`, which TS 6 deprecates (TS5101). tsup is in maintenance mode. |
+| Build | tsup `8.5.1` with `dts.compilerOptions.ignoreDeprecations: '6.0'` (`tsup.config.ts`, removed by F3) | tsup injects `baseUrl`, which TS 6 deprecates (TS5101). tsup is in maintenance mode. |
 | `pnpm audit` | 1 low: esbuild GHSA-g7r4-m6w7-qqqr (dev-server file read, Windows only) | Pinned by tsup's `esbuild@^0.27`; fixed in `>=0.28.1`. Not reachable in volley, which never runs esbuild's dev server. |
 | zod | `4.4.3` | fascicle ≥0.10.3 peers `zod: "4.4.3"` **exactly**. Latest is 4.6.5. |
 | Local critic | Throws on a step-cap / tool-call finish | fascicle 0.10.1 made schema calls throw `incomplete_generation_error` on any non-`stop` finish; volley's degradation ladder only knows `provider_error`. |
@@ -178,6 +178,21 @@ completion as `stop`.
 ---
 
 ## F3 — Replace tsup with tsdown; move to TypeScript 7
+
+**Done on 2026-10-16.** volley builds with tsdown 0.23.1 on TypeScript 7.0.2
+([`tsdown.config.ts`](../../tsdown.config.ts)). The published artifact held to
+the contract below:
+
+- the same five files in `dist/` and the same `pnpm pack` file list;
+- one bundled `index.d.ts` with the same 44 exports and only formatting
+  changes;
+- the same external imports;
+- `cli.js` keeps its shebang and its execute bit.
+
+`pnpm audit` reports 0 once tsup is gone and the lockfile takes source-map-js
+1.2.2. Two differences remain. tsdown keeps source comments in the bundles, so
+`dist/` is about 30% larger. And every build warns that TypeScript 7's API is
+experimental.
 
 ### Problem
 

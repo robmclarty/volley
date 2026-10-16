@@ -152,7 +152,6 @@ Seat URLs meet the same wall. A loopback seat URL crosses to `VOLLEY_MODEL_HOST`
 - Bump fascicle 0.12.13 → 0.14.0, and add `@agentclientprotocol/sdk` to volley's dependencies with an exact pin.
   - 1.8.0 clears pnpm's two-day release-age window. 1.9.0 was published on 2026-10-16.
   - 0.13.0 changed `pipe_ui_message_stream_to_response` and `filesystem_store`, and 0.14.0 changed `flow_schema`'s declared type. Volley uses none of them.
-  - fascicle 0.14.0 builds with TypeScript 7, so confirm its declarations typecheck under volley's TypeScript 6.
 - Kill the check's whole process group on abort, the way `run_command` does: spawn it detached, and on abort kill the negative pid. Then a stop mid-check leaves no test workers behind.
 
 ## Zed setup
