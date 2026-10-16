@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { aborted_error } from 'fascicle';
 import { check_error } from '../types.js';
 import type { CheckArtifact, CheckResult } from '../types.js';
@@ -38,18 +39,53 @@ export type SpawnCaptureResult = {
   stderr: string;
 };
 
+/** How long a check's output may stay open after its shell exits, while
+ * something that escaped its process group still holds it, before the reads
+ * stop so the check can finish. */
+const OUTPUT_GRACE_MS = 2000;
+
+/** Kill a check's whole process group with SIGKILL. A test runner's workers,
+ * and anything the check started in the background, sit in the shell's group,
+ * so killing the shell alone would leave them running. Windows has no process
+ * groups to signal, so there only the shell goes. */
+function kill_group(proc: ChildProcess): void {
+  if (proc.pid === undefined) return;
+  try {
+    if (process.platform === 'win32') proc.kill('SIGKILL');
+    else process.kill(-proc.pid, 'SIGKILL');
+  } catch {
+    // The group is gone: every process in it has exited.
+  }
+}
+
+/** Run a check to its end in a process group of its own, capturing its
+ * output. The abort kills the whole group and rejects with `aborted_error`,
+ * and the shell's exit kills whatever it left behind, so a stopped run leaves
+ * no test workers or servers running. */
 export function spawn_capture(
   cmd: string,
   args: string[],
   options: { cwd: string; abort?: AbortSignal },
 ): Promise<SpawnCaptureResult> {
+  const { abort } = options;
+  if (abort?.aborted === true) return Promise.reject(new aborted_error('check aborted'));
   return new Promise((resolve_promise, reject) => {
     const proc = spawn(cmd, args, {
       cwd: options.cwd,
-      ...(options.abort !== undefined ? { signal: options.abort } : {}),
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
+    let grace: NodeJS.Timeout | undefined;
+    const on_abort = (): void => {
+      kill_group(proc);
+      reject(new aborted_error('check aborted'));
+    };
+    const finish = (): void => {
+      clearTimeout(grace);
+      abort?.removeEventListener('abort', on_abort);
+    };
     proc.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
     });
@@ -57,15 +93,21 @@ export function spawn_capture(
       stderr += chunk.toString();
     });
     proc.on('error', (err) => {
-      if (err.name === 'AbortError') {
-        reject(new aborted_error('check aborted'));
-        return;
-      }
+      finish();
       reject(check_error(`check command failed to start: ${err.message}`));
     });
+    proc.on('exit', () => {
+      kill_group(proc);
+      grace = setTimeout(() => {
+        proc.stdout.destroy();
+        proc.stderr.destroy();
+      }, OUTPUT_GRACE_MS);
+    });
     proc.on('close', (code) => {
+      finish();
       resolve_promise({ exit_code: code, stdout, stderr });
     });
+    abort?.addEventListener('abort', on_abort, { once: true });
   });
 }
 

@@ -49,7 +49,7 @@ These are the facts of the build that shape everything below.
   - The local builder's prompt and the local critic's harness name volley's tools (`bash`, `search_files`) in `src/builder/presets/harness_append_local.md` and `src/critic/presets/harness_append_local.md`, not fascicle's (`run_command`, `search`).
 - **Injection.** Only the engine can be injected into `run_volley` (`src/orchestrator.ts:45-59`), and an injected engine serves both seats. Inside the flow, each seat takes its engine from `FlowDeps.engines` (`src/flow.ts`).
 - **The run's events.** `run_volley` calls fascicle's `run` itself, and its only trajectory sink is `.volley/trajectory.jsonl` (`src/orchestrator.ts:169`). So none of its events reach an outer run, which is the only thing `serve_acp` maps. Its `Renderer` does receive every builder and critic chunk (`src/render/renderer.ts:36-46`).
-- **The check.** It runs through an async `spawn` with its output captured (`src/check/checkride.ts:47`), so nothing reaches stdout. An abort kills only `sh`, not the check's process group, so a stopped `pnpm test` can leave its workers running.
+- **The check.** It runs through an async `spawn` with its output captured (`spawn_capture` in `src/check/checkride.ts`), so nothing reaches stdout. It runs in a process group of its own, and an abort kills the whole group, the way `run_command` does, so a stopped `pnpm test` leaves no workers behind.
 - **State.** Each run rotates `.volley/` inside the workspace (`src/workspace.ts:28-37`), and nothing adds it to `.gitignore`.
 - **F1, fixed.** A non-CLI critic that runs out of steps before its verdict now goes to the tool-less pass, marked `degrade_cause: 'step_exhaustion'`, instead of exiting 6. The predicate excludes only `claude_cli`, so an OpenRouter critic is covered as soon as the provider exists.
 - **fascicle.** Volley pins fascicle 0.14.0, which ships `fascicle/acp`, and builds on TypeScript 7 with tsdown.
@@ -146,10 +146,15 @@ The image's network allowlist only reaches the host gateway (`src/sandbox.ts:60-
 
 Seat URLs meet the same wall. A loopback seat URL crosses to `VOLLEY_MODEL_HOST` on its own port, but a seat on another machine is reachable from inside only through a host port forward. The allowlist could be derived from the seats' resolved endpoints (`seat_base_url`) rather than listed by hand.
 
-### 6. Before the demo
+### 6. Prerequisites
 
-- Add `@agentclientprotocol/sdk` to volley's dependencies with an exact pin, in the change that first imports `fascicle/acp`; until then the dead-code check would flag it. 1.8.0 clears pnpm's two-day release-age window, and 1.9.0 was published on 2026-10-16. (fascicle itself is already on 0.14.0.)
-- Kill the check's whole process group on abort, the way `run_command` does: spawn it detached, and on abort kill the negative pid. Then a stop mid-check leaves no test workers behind.
+All met as of 2026-10-16:
+
+- F1 is fixed.
+- The check's process group dies with the run.
+- volley is on fascicle 0.14.0 and TypeScript 7.
+
+The one dependency left comes with the build itself. Add `@agentclientprotocol/sdk` to volley's dependencies, pinned exactly, in the change that first imports `fascicle/acp`, since until then the dead-code check would flag it. 1.8.0 clears pnpm's two-day release-age window; 1.9.0 was published on 2026-10-16.
 
 ## Zed setup
 
