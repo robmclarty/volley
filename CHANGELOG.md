@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.7.0 — 2026-10-16
+
+### Added
+- **Each seat can use its own model server.** `--builder-url` and `--critic-url` (`builder_url` and `critic_url` in a config file) point the builder and the critic at different machines even when both run on the same provider, such as two Ollama servers. A seat without a URL of its own uses the provider's env var (`VOLLEY_OLLAMA_URL` or `VOLLEY_LMSTUDIO_URL`), then the default, never the other seat's. Everything a seat sends goes to its URL: its model calls, the Ollama prewarm and context check, and the `--dry-run` probe and critic canary. Inside the sandbox, a loopback seat URL crosses to `VOLLEY_MODEL_HOST` on its own port. Both URLs carry over to `volley resume` and to every `volley matrix` pairing. A URL on a `claude_cli` seat, or one that isn't plain http(s), is a configuration error (exit 5).
+
+### Changed
+- **Ollama seats need ai-sdk-ollama 4.3.0 or later.** Before 4.3.0 it streams a thinking model's reasoning only when a request sets `think`, which volley never does, so the reasoning vanished from the terminal and the trajectory and the phase's throughput read high. volley now declares the floor as an optional peer: pnpm warns about an older copy, npm refuses it with ERESOLVE, and an install without ai-sdk-ollama is unaffected.
+- **`--dry-run` probes the critic's model endpoint too.** Each local seat's endpoint is probed, once for a server both seats share, so a `claude_cli` builder with a local critic now gets a reachability check before the canary, and an unreachable endpoint is named with its seat.
+- **`ResolvedConfig` has `builder_url` and `critic_url`.** Both are required (`string | null`), so SDK code that builds a `ResolvedConfig` by hand instead of through `resolve_config` needs them. A run saved by an earlier version resumes with both null.
+- **An empty `VOLLEY_OLLAMA_URL` or `VOLLEY_LMSTUDIO_URL` means the default.** It used to fail the run with a configuration error.
+
+### Fixed
+- **An IPv6 loopback model URL reaches the host from inside the sandbox.** `http://[::1]:…` was never crossed to `VOLLEY_MODEL_HOST`, because `URL` keeps the brackets in the hostname.
+
+### Internal
+- **Built on fascicle 0.14.0, TypeScript 7, and tsdown.** tsdown replaces tsup, whose declaration build needed a compiler API TypeScript 7 no longer exports. The published files keep their names and exports, and the bundles now keep their source comments. The dev toolchain moves to checkride 0.14.0, fallow 3.33.1, oxlint 1.88.0, vitest 5.0.4, and @ast-grep/cli 0.50.0, alongside ai 7.0.140, undici 8.12.1, and cac 7.1.0, and `pnpm audit` is clean.
+- **The throughput docs mark the gap that remains on Ollama.** A turn whose only output is a tool call still reports a rate far too high until fascicle times those turns another way (robmclarty/fascicle#12).
+- **An integration test holds each seat to its own server.** It runs real engines against two stand-in Ollama servers, and the local-provider tests no longer reach a developer's own Ollama.
+
 ## v0.6.1 — 2026-10-14
 
 ### Fixed
