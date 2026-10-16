@@ -12,14 +12,14 @@ importers:
         specifier: 0.6.0
         version: 0.6.0
       ai:
-        specifier: 7.0.111
-        version: 7.0.111(zod@4.4.3)
+        specifier: 7.0.140
+        version: 7.0.140(zod@4.4.3)
       cac:
-        specifier: 7.0.0
-        version: 7.0.0
+        specifier: 7.1.0
+        version: 7.1.0
       fascicle:
         specifier: 0.14.0
-        version: 0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
+        version: 0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -33,8 +33,8 @@ importers:
         specifier: 7.2.4
         version: 7.2.4
       undici:
-        specifier: 8.11.0
-        version: 8.11.0
+        specifier: 8.12.1
+        version: 8.12.1
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -53,7 +53,7 @@ importers:
         version: 5.0.6
       ai-sdk-ollama:
         specifier: 4.3.0
-        version: 4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
+        version: 4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
       checkride:
         specifier: 0.14.0
         version: 0.14.0
@@ -81,8 +81,8 @@ importers:
 
 packages:
 
-  '@ai-sdk/gateway@4.0.89':
-    resolution: {integrity: sha512-n0Q88UUASYQBGK3Ogs9pCe8h3ZXeTHFSuGOLBJAyH73MVGNKUv9w8EJX2f340WUF3eDWWOV305gO7YBpSCPblA==}
+  '@ai-sdk/gateway@4.0.113':
+    resolution: {integrity: sha512-fYov5+sH1A20/eN1PaL5z8bZ9RUq0CcL9yAsAhCHz/qUCKliDOg9HXjNYzOUlH6o21lIrp/aKQc8QLGkEEZGlQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -93,8 +93,18 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/provider-utils@5.0.59':
+    resolution: {integrity: sha512-eaXBTkguxBFzS+KvxGRsbdkX9A7+R1g/C4jWx9mup0oSs3Cx5Mb427/byGpD2XL8SnMYT9O8LmXBmrgo+N3TJw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/provider@4.0.17':
     resolution: {integrity: sha512-VYMBxIQdcHqbIf1j+YZlI9Ati6LZ4wJe0GGd4z4a5H/KxTggjeOiyaVYTnfF7LHZK5jMQ+rofmzz4QPqf++NUw==}
+    engines: {node: '>=22'}
+
+  '@ai-sdk/provider@4.0.27':
+    resolution: {integrity: sha512-TtWwm6SxFiPomlMIbTQa+yhJte+w4/oCsW+wJrJzMC3MqHpAY9e5dJF1Y4HxyKt3W2Csac0KiI76Ckio11TFYw==}
     engines: {node: '>=22'}
 
   '@ast-grep/cli-darwin-arm64@0.50.0':
@@ -998,8 +1008,8 @@ packages:
     peerDependencies:
       ai: ^7.0.95
 
-  ai@7.0.111:
-    resolution: {integrity: sha512-jd35WisL5FT7lFB6wIsZ38G0EaL4p1o+bUuRfkZGTXqO21U3SWyEZ+muV7N191QQfNeExgoyaeFoa8Jx6Uo+0A==}
+  ai@7.0.140:
+    resolution: {integrity: sha512-GHWqpUcY7EsRHc7jC99SqzpgabExb9w7anxDYa5N79AIVsGavIZFxZKhVQ/SORkuXFkPO4FG8cCSweaGutvwSw==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -1010,10 +1020,6 @@ packages:
 
   boolbase@2.0.0:
     resolution: {integrity: sha512-DkVaaQHymRhpYEYo9x1oo7Q7B0Y6KJUsjm3c9eTyFDby4MHLBTwZ6ZDWBel5zrYxj1WsZgC5oLpiz+93MluXeA==}
-    engines: {node: '>=20.19.0'}
-
-  cac@7.0.0:
-    resolution: {integrity: sha512-tixWYgm5ZoOD+3g6UTea91eow5z6AAHaho3g0V9CNSNb45gM8SmflpAc+GRd1InC4AqN/07Unrgp56Y94N9hJQ==}
     engines: {node: '>=20.19.0'}
 
   cac@7.1.0:
@@ -1399,8 +1405,8 @@ packages:
     resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
 
-  undici@8.11.0:
-    resolution: {integrity: sha512-AdzuGcAkzhbha3GgCSoUBx2P0quwym6qdFNCQz/fDGZc8w9XJ741wHUbt2kTmfPz+ZIOMkySFkiY7RXmiDDC8w==}
+  undici@8.12.1:
+    resolution: {integrity: sha512-usz3OVQBeh1LxNn0DzU0voLXMgn5CU/WUdpBsY6Ti5afNao+vTkmn4H/NxoXolc10cOqe2+YIG0Hspq2rsl64w==}
     engines: {node: '>=22.19.0'}
 
   verkit@0.5.0:
@@ -1517,10 +1523,10 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/gateway@4.0.89(zod@4.4.3)':
+  '@ai-sdk/gateway@4.0.113(zod@4.4.3)':
     dependencies:
-      '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.27
+      '@ai-sdk/provider-utils': 5.0.59(zod@4.4.3)
       '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
@@ -1533,7 +1539,20 @@ snapshots:
       undici: 7.29.1
       zod: 4.4.3
 
+  '@ai-sdk/provider-utils@5.0.59(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.27
+      '@standard-schema/spec': 1.1.0
+      '@workflow/serde': 4.1.0
+      eventsource-parser: 3.1.1
+      undici: 7.29.1
+      zod: 4.4.3
+
   '@ai-sdk/provider@4.0.17':
+    dependencies:
+      json-schema: 0.4.0
+
+  '@ai-sdk/provider@4.0.27':
     dependencies:
       json-schema: 0.4.0
 
@@ -2023,28 +2042,26 @@ snapshots:
 
   '@yuku-toolchain/types@0.19.0': {}
 
-  ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3):
+  ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3):
     dependencies:
       '@ai-sdk/provider': 4.0.17
       '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
-      ai: 7.0.111(zod@4.4.3)
+      ai: 7.0.140(zod@4.4.3)
       jsonrepair: 3.15.0
       ollama: 0.6.3
     transitivePeerDependencies:
       - zod
 
-  ai@7.0.111(zod@4.4.3):
+  ai@7.0.140(zod@4.4.3):
     dependencies:
-      '@ai-sdk/gateway': 4.0.89(zod@4.4.3)
-      '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.4.3)
+      '@ai-sdk/gateway': 4.0.113(zod@4.4.3)
+      '@ai-sdk/provider': 4.0.27
+      '@ai-sdk/provider-utils': 5.0.59(zod@4.4.3)
       zod: 4.4.3
 
   assertion-error@2.0.1: {}
 
   boolbase@2.0.0: {}
-
-  cac@7.0.0: {}
 
   cac@7.1.0: {}
 
@@ -2172,10 +2189,10 @@ snapshots:
       '@fallow-cli/win32-x64-msvc': 3.33.1
       fallow-type-aware: 3.33.1
 
-  fascicle@0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3):
     optionalDependencies:
-      ai: 7.0.111(zod@4.4.3)
-      ai-sdk-ollama: 4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
+      ai: 7.0.140(zod@4.4.3)
+      ai-sdk-ollama: 4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
       zod: 4.4.3
 
   fdir@6.5.0(picomatch@4.0.7):
@@ -2430,7 +2447,7 @@ snapshots:
 
   undici@7.29.1: {}
 
-  undici@8.11.0: {}
+  undici@8.12.1: {}
 
   verkit@0.5.0: {}
 
