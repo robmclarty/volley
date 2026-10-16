@@ -160,7 +160,7 @@ export type EngineOptions = {
  * returns is all a seat's derived engine knows about the provider.
  *
  * Native transport is the deferred future bridge, not adopted here: volley stays
- * on the ai_sdk transport, which fascicle 0.12.13 already selects by default
+ * on the ai_sdk transport, which fascicle 0.14.0 already selects by default
  * (`transport?: 'ai_sdk' | 'native'` defaults to `'ai_sdk'`), so no field is
  * needed today. Flipping later is a one-line change — add `transport: 'native'`
  * to the ollama/lmstudio entry returned below, which both seats' engines then

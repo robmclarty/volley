@@ -18,8 +18,8 @@ importers:
         specifier: 7.0.0
         version: 7.0.0
       fascicle:
-        specifier: 0.12.13
-        version: 0.12.13(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
+        specifier: 0.14.0
+        version: 0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3)
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -1130,11 +1130,12 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  fascicle@0.12.13:
-    resolution: {integrity: sha512-Hfdws0KgMYJ210YSYnZmUkcw/WGjPWpeyCkJAdMl/bul98eDEOXam6g0CNUN45HGm8zhYA3dEVw+BSNvScrlhA==}
+  fascicle@0.14.0:
+    resolution: {integrity: sha512-MfH52mtS+PBAv9tgPLK8NGsu3ETgxQwOOx/8IIFkPwEqcMAH1e0JYJVNCqP0lOlegYit8YOIhr4zwyERNgxAog==}
     engines: {node: '>=24.0.0', pnpm: '>=10.13.0'}
     hasBin: true
     peerDependencies:
+      '@agentclientprotocol/sdk': ^1.8.0
       '@ai-sdk/amazon-bedrock': ^5.0.0
       '@ai-sdk/anthropic': ^4.0.0
       '@ai-sdk/google': ^4.0.0
@@ -1149,6 +1150,8 @@ packages:
       ai-sdk-ollama: ^4.0.0
       zod: 4.4.3
     peerDependenciesMeta:
+      '@agentclientprotocol/sdk':
+        optional: true
       '@ai-sdk/amazon-bedrock':
         optional: true
       '@ai-sdk/anthropic':
@@ -2169,7 +2172,7 @@ snapshots:
       '@fallow-cli/win32-x64-msvc': 3.33.1
       fallow-type-aware: 3.33.1
 
-  fascicle@0.12.13(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3))(ai@7.0.111(zod@4.4.3))(zod@4.4.3):
     optionalDependencies:
       ai: 7.0.111(zod@4.4.3)
       ai-sdk-ollama: 4.3.0(ai@7.0.111(zod@4.4.3))(zod@4.4.3)

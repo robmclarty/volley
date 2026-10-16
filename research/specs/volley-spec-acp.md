@@ -52,7 +52,7 @@ These are the facts of the build that shape everything below.
 - **The check.** It runs through an async `spawn` with its output captured (`src/check/checkride.ts:47`), so nothing reaches stdout. An abort kills only `sh`, not the check's process group, so a stopped `pnpm test` can leave its workers running.
 - **State.** Each run rotates `.volley/` inside the workspace (`src/workspace.ts:28-37`), and nothing adds it to `.gitignore`.
 - **F1.** A non-CLI critic that hits its step limit while producing its verdict throws `incomplete_generation_error` past the retry and fallback chain, and the run exits 6 (F1 in `research/specs/volley-spec-dependency-followups.md:30`).
-- **fascicle.** Volley pins fascicle 0.12.13. `fascicle/acp` needs 0.14.0.
+- **fascicle.** Volley pins fascicle 0.14.0, which ships `fascicle/acp`, and builds on TypeScript 7 with tsdown.
 
 ## Proposal
 
@@ -149,9 +149,7 @@ Seat URLs meet the same wall. A loopback seat URL crosses to `VOLLEY_MODEL_HOST`
 ### 6. Before the demo
 
 - Fix F1, since with an OpenRouter critic it ends a Zed turn in an error.
-- Bump fascicle 0.12.13 → 0.14.0, and add `@agentclientprotocol/sdk` to volley's dependencies with an exact pin.
-  - 1.8.0 clears pnpm's two-day release-age window. 1.9.0 was published on 2026-10-16.
-  - 0.13.0 changed `pipe_ui_message_stream_to_response` and `filesystem_store`, and 0.14.0 changed `flow_schema`'s declared type. Volley uses none of them.
+- Add `@agentclientprotocol/sdk` to volley's dependencies with an exact pin, in the change that first imports `fascicle/acp`; until then the dead-code check would flag it. 1.8.0 clears pnpm's two-day release-age window, and 1.9.0 was published on 2026-10-16. (fascicle itself is already on 0.14.0.)
 - Kill the check's whole process group on abort, the way `run_command` does: spawn it detached, and on abort kill the negative pid. Then a stop mid-check leaves no test workers behind.
 
 ## Zed setup

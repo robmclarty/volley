@@ -325,7 +325,7 @@ Providers and their setup:
 Install the peer for your provider in the project running volley (e.g.
 `pnpm add ai-sdk-ollama@^4.3.0`); fascicle loads it lazily only when the local
 critic actually runs. The version matters. The major must satisfy fascicle's
-declared peer range (`^4` for fascicle 0.12.13, which tracks the AI SDK v7
+declared peer range (`^4` for fascicle 0.14.0, which tracks the AI SDK v7
 line), and volley declares 4.3.0 as its floor (an optional peer, so your
 package manager flags an older copy at install time). Before 4.3.0,
 ai-sdk-ollama streams a thinking model's reasoning only when the request sets
