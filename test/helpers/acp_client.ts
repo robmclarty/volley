@@ -55,6 +55,25 @@ export async function open_session(
   return session;
 }
 
+/** A permission responder that answers each request with the next option id
+ * in `answers`, keeping every request it was sent. A request past the end is
+ * kept and fails, which the agent takes as a refusal. */
+export function answer_in_order(answers: ReadonlyArray<string>): {
+  requests: RequestPermissionRequest[];
+  on_permission: NonNullable<SessionOptions['on_permission']>;
+} {
+  const requests: RequestPermissionRequest[] = [];
+  return {
+    requests,
+    on_permission: (request) => {
+      const optionId = answers[requests.length];
+      requests.push(request);
+      if (optionId === undefined) throw new Error(`unexpected permission request #${String(requests.length)}`);
+      return { outcome: { outcome: 'selected', optionId } };
+    },
+  };
+}
+
 /** Read a session's updates, in the order they arrived, until its turn stops. */
 export async function read_turn(session: ActiveSession): Promise<TurnRecord> {
   const updates: SessionUpdate[] = [];

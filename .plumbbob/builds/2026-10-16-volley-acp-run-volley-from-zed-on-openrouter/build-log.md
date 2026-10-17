@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 7 — feat(acp): ask before uncontained commands and hide provider keys
+**Current step:** 8 — test(acp): drive a whole volley turn through an in-process ACP client
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -29,7 +29,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 4. feat(acp): give acp seats fascicle's workspace tools and prompts
 - ☑ 5. feat(acp): serve volley to Zed as an ACP agent
 - ☑ 6. feat(acp): show rounds, the check, and the verdict in Zed
-- ☐ 7. feat(acp): ask before uncontained commands and hide provider keys
+- ☑ 7. feat(acp): ask before uncontained commands and hide provider keys
 - ☐ 8. test(acp): drive a whole volley turn through an in-process ACP client
 - ☐ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
 - ☐ 10. test(acp): script and pass the live check in Zed
@@ -41,6 +41,8 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 > Capture is one line (`/plumbbob:park` composes it). Harvest happens only at the boundary.
 
 - [x] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
+- [ ] acp_tools' cwd_only session copy hides fascicle's per-session preview store (a WeakMap keyed on the session object): an edit's card closes without its diff, and in a client that draws terminals (Zed) every run_command terminal closes empty with no exit code
+- [ ] the check's permission request carries kind 'other' (fascicle's approver defaults a tool it has no presenter for), so a client that applies the request's fields may redraw the check's execute card as a plain one while it asks; watch for it in the live check's step 4
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -548,3 +550,58 @@ folder, so it rides the branch into the PR.)*
   - the `to_updates` wiring, the history rendering, the failure emit, and the round tracker;
   - opening and closing the check card, the streaming guard, and the round emit;
   - the stopped marker, the context seam, and the `execute` kind.
+- 2026-10-17 — step 7 checkpointed · 534f3e533 — feat(acp): ask before uncontained commands and hide provider keys (1 drift, 50m)
+
+  **Summary**: Under acp, when volley runs uncontained with no opt-out, every builder command and every check now asks first, whatever the mode. Neither the commands nor the check can read the seats' API keys, and a rejected check counts as a failed one. The CLI behaves exactly as before.
+
+  1. Uncontained with no opt-out, `run_command` asks in every mode, and acp no longer refuses the builder
+  2. The builder's commands and the check run without `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, and the CLI's check still inherits everything
+  3. The check asks through `session.approve` on its own card, offering only Allow and Reject, and a rejection is recorded as failed
+  4. The check asks under its command line as the tool name, not under `check`
+  5. Two test files sit outside the seam: `test/helpers/acp_client.ts` and `test/integration/acp_cli.test.ts`
+
+  **Readout**: Step 7 - feat(acp): ask before uncontained commands and hide provider keys
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    honored
+               - D15 (command-gate)
+               - D16 (key-strip)
+               - D25 (check-approval)
+  constraints  6 of 6 honored
+  seam         strayed: 2 paths outside the seam
+               - test/helpers/acp_client.ts
+               - test/integration/acp_cli.test.ts
+  diff         +773 -105 across 14 files
+  spent        50 min · 1 turn · 38s gate · green first run
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Approve and land step 7. Every done-when clause has a test, breaking each piece of the new wiring on purpose fails one, and the gate is green. The two strays are where fascicle's real approver can be reached.
+
+  **1.** Uncontained with no opt-out, `run_command` asks in every mode, and acp no longer refuses the builder
+
+  `config.ts` gains `unguarded_builder(raw, env)`: not contained, and opted out by neither the flag nor the variable. It is now the one rule behind both enforcements. `resolve_config` takes `uncontained_builder: 'refuse' | 'ask'`. The default `refuse` keeps the CLI's refusal word for word, and `acp.ts` passes `ask` at startup and on every turn. When the rule holds, `acp_seat_tools` sets `run_command`'s `needs_approval` to `true`, so even Auto asks. A user's "Always allow `pnpm test`" grant still counts as asked, because fascicle's approver checks its grants before prompting. Contained, or opted out, `run_command` keeps fascicle's own gate, which reads the mode on every call. Tests: `acp_tools.test.ts` covers all three modes both ways, `config.test.ts` covers acp against the CLI for ollama, lmstudio, and openrouter plus the predicate's truth table, and `acp_cli.test.ts` shows `acp_base_config` serving a builder with no opt-out.
+
+  **2.** The builder's commands and the check run without `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`, and the CLI's check still inherits everything
+
+  `engine.ts` now owns `SEAT_CREDENTIAL_VARS`, built from the same two constants the engine reads its keys through, so the list can't drift. `acp_command_env` is the agent's environment minus exactly those two, with `PATH` and everything else kept. `acp_seat_tools` builds that environment once and hands it to both `workspace_tools` and the check, so the two can't diverge. `spawn_capture`, `run_checkride`, and `run_command_check` share a `CheckSpawnOptions` with an optional `env`. When `env` is absent, they inherit as before. Tests cover each layer:
+
+  - a builder `run_command` running `env`;
+  - the command runner, with an env and without one;
+  - checkride through `run_volley`, with an env and without one;
+  - the in-process acp turn, whose check prints its own environment.
+
+  **3.** The check asks through `session.approve` on its own card, offering only Allow and Reject, and a rejection is recorded as failed
+
+  `check_phase` now takes an optional `CheckGate` (`env`, `on_approval`) through `run_volley`'s deps. Once the card is open, it asks with `tool_call_id: 'check'`. fascicle's approver uses that id to anchor the prompt on the card already on screen. Under acp, `on_approval` calls `session.approve` only when the builder's `run_command` would ask about the same command. Otherwise it allows without asking. A rejection never spawns anything: `rejected_check` records a failed check whose output is the refusal, the card closes failed with that text, and the critic's prompt reads `FAILED` along with the reason. A stop that lands while the check is asking ends the run as stopped, not as a rejection. The in-process tests drive fascicle's real approver: uncontained in Auto, it asks with exactly Allow and Reject on the check's card, and a rejection never runs the check. Contained, Auto doesn't ask and Manual does.
+
+  **4.** The check asks under its command line as the tool name, not under `check`
+
+  D25 says only "a tool name outside fascicle's gated three". fascicle's approver sets the permission card's title to the tool name. Zed applies that update to the card, so a name of `check` would retitle the card from `pnpm test` to `check` the moment it asks, breaking D13 (check-card). Using the command line keeps the title, and no gated tool shares it. The one exception is a `--check` command named literally `run_command`, `write_file`, or `edit_file`, which I left alone.
+
+  **5.** Two test files sit outside the seam: `test/helpers/acp_client.ts` and `test/integration/acp_cli.test.ts`
+
+  Only fascicle's real approver decides which options a prompt offers, and only an in-process `acp_agent` session reaches it. So `open_session` now takes `{ on_permission, mode }`: it answers `session/request_permission` and can switch the session's mode. The acp turn tests sit beside the turn tests already there. Step 8 lists both files in its seam and can reuse the helper as is. `src/flow.ts` is in the seam but needed no change, since `FlowDeps` already extends `PhaseDeps`.
