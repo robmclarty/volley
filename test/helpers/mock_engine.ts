@@ -8,6 +8,7 @@ import type {
   FinishReason,
   GenerateOptions,
   GenerateResult,
+  StreamChunk,
   ToolCallRecord,
   UsageTotals,
 } from 'fascicle';
@@ -25,6 +26,9 @@ export type MockReply = {
   /** Tool calls to report on the result — e.g. some marked `salvaged` — so a
    * test can drive the salvage-rate health metric. Default none. */
   tool_calls?: ToolCallRecord[];
+  /** Chunks to stream through the call's `on_chunk` before it returns, as a
+   * provider's stream would. Default none. */
+  chunks?: StreamChunk[];
   /** Side effect to run when this call happens (e.g. "builder writes file"). */
   effect?: (opts: GenerateOptions<unknown>) => void | Promise<void>;
   /** Throw instead of returning. */
@@ -63,6 +67,7 @@ export function mock_engine(
     const started_at = Date.now();
     const reply = responder(call, index);
     if (reply.error !== undefined) throw reply.error;
+    for (const chunk of reply.chunks ?? []) await opts.on_chunk?.(chunk);
     await reply.effect?.(call.opts);
     const timing = { started_at, duration_ms: Date.now() - started_at };
     const cost =

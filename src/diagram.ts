@@ -29,7 +29,7 @@ export function flow(): Step<RunInput, LoopOutcome> {
   const engine = make_stub_engine([]);
   return build_flow(
     {
-      engines: { builder: engine, critic: engine },
+      seats: { builder: { engine }, critic: { engine } },
       config,
       renderer,
       bash_executor: null,

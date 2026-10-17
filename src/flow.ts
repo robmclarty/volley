@@ -29,6 +29,7 @@
 import { branch, fallback, loop, pipe, retry, sequence, step } from 'fascicle';
 import type { Step } from 'fascicle';
 import { make_builder_step } from './builder.js';
+import type { BuilderDeps } from './builder.js';
 import type { BashExecutor } from './builder/tools.js';
 import { cost_cap_hit } from './cost.js';
 import {
@@ -43,7 +44,6 @@ import {
   with_retries,
 } from './critic/run.js';
 import type { CriticDeps, CriticStep } from './critic/run.js';
-import type { SeatEngines } from './engine.js';
 import { gate, initial_state, remaining_iterations } from './loop_state.js';
 import {
   build_phase,
@@ -55,11 +55,20 @@ import {
 import type { PhaseDeps } from './phases.js';
 import type { LoopState, RunInput } from './types.js';
 
-/** What the flow is built from: the step bodies' dependencies, plus the engine
- * each seat's model boundary is wired to and the builder's `bash` executor. The
- * two seats share one engine unless they reach one provider at different URLs. */
+/** The builder seat: the engine its calls go through, and, when the caller
+ * injects them, the tools that replace volley's own set and the handler that
+ * answers their approval requests. */
+export type BuilderSeat = Pick<BuilderDeps, 'engine' | 'tools' | 'on_tool_approval'>;
+
+/** The critic seat: its engine and, when injected, the tools that replace its
+ * reads. It takes no approval handler, since its reads never ask. */
+export type CriticSeat = Pick<CriticDeps, 'engine' | 'tools'>;
+
+/** What the flow is built from: the step bodies' dependencies, plus each
+ * seat's model wiring and the builder's `bash` executor. The two seats share
+ * one engine unless they reach one provider at different URLs. */
 export type FlowDeps = PhaseDeps & {
-  engines: SeatEngines;
+  seats: { builder: BuilderSeat; critic: CriticSeat };
   /** The local builder's `bash` executor, or null for the host `spawnSync`
    * default (and for `claude_cli`, which supplies no volley tools). */
   bash_executor: BashExecutor | null;
@@ -105,13 +114,13 @@ export function build_flow(
   const { config, renderer } = deps;
 
   const builder = make_builder_step({
-    engine: deps.engines.builder,
+    ...deps.seats.builder,
     config,
     on_chunk: renderer.builder_chunk,
     bash_executor: deps.bash_executor,
   });
   const critic = build_critic({
-    engine: deps.engines.critic,
+    ...deps.seats.critic,
     config,
     on_chunk: renderer.critic_chunk,
   });

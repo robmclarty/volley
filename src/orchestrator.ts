@@ -9,25 +9,26 @@
  *   ├─ initialize the workspace (or preserve it, on resume)
  *   ├─ with_worktree                    off unless --worktree
  *   │  ├─ capture the change baseline
- *   │  ├─ run_loop                      run(build_flow(...)), then the final summary
+ *   │  ├─ run_loop                      run the flow (streamed when a sink is given), then the final summary
  *   │  └─ integrate                     a successful --worktree --git run only
  *   └─ report a kept checkout, or a salvaged branch (re-stamping the summary)
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { run } from 'fascicle';
-import { filesystem_logger } from 'fascicle/adapters';
-import type { Engine } from 'fascicle';
+import { filesystem_logger, tee_logger } from 'fascicle/adapters';
+import type { Engine, RunOptions, Step, TrajectoryLogger } from 'fascicle';
 import type { BashExecutor } from './builder/tools.js';
 import { capture_baseline } from './changes.js';
 import { create_seat_engines, dispose_seat_engines } from './engine.js';
 import type { SeatEngines } from './engine.js';
 import { build_flow } from './flow.js';
+import type { BuilderSeat, CriticSeat, LoopOutcome } from './flow.js';
 import { run_result_from_state } from './iteration.js';
 import { initial_state, status_of } from './loop_state.js';
 import { write_run_summary } from './summary.js';
 import type { Renderer } from './render/renderer.js';
 import { error_kind } from './types.js';
-import type { LoopState, ResolvedConfig, RunResult, RunStatus } from './types.js';
+import type { LoopState, ResolvedConfig, RunInput, RunResult, RunStatus } from './types.js';
 import {
   initialize_workspace,
   integrate_worktree,
@@ -48,6 +49,19 @@ export type OrchestratorDeps = {
    * config. It serves both seats as-is, so the seat URLs then steer only
    * volley's own requests (prewarm and the context probe), not model calls. */
   engine?: Engine;
+  /** What to hand each seat in place of volley's own wiring: the builder's
+   * tools and the handler that answers their approval requests, and the
+   * critic's tools. A seat or a field left out keeps today's wiring, and a
+   * `claude_cli` seat, which brings its own tools, takes none of it. */
+  seats?: {
+    builder?: Omit<BuilderSeat, 'engine'>;
+    critic?: Omit<CriticSeat, 'engine'>;
+  };
+  /** A second sink for the run's trajectory, beside the run's
+   * `trajectory.jsonl`. With one, the flow runs through `run.stream`, so the
+   * sink also receives each model call's streamed chunks as `model_chunk`
+   * events, which the file never keeps. */
+  trajectory?: TrajectoryLogger;
   abort?: AbortSignal;
   install_signal_handlers?: boolean;
 };
@@ -159,22 +173,14 @@ async function run_loop(
         })
       : { builder: deps.engine, critic: deps.engine };
 
-  const flow = build_flow({ engines, config, renderer, bash_executor, baseline }, resume_from);
+  const seats = {
+    builder: { ...deps.seats?.builder, engine: engines.builder },
+    critic: { ...deps.seats?.critic, engine: engines.critic },
+  };
+  const flow = build_flow({ seats, config, renderer, bash_executor, baseline }, resume_from);
 
   try {
-    const { value, converged } = await run(
-      flow,
-      { resume_from },
-      {
-        trajectory: filesystem_logger({
-          output_path: volley_path(config.workspace, 'trajectory.jsonl'),
-        }),
-        ...(deps.abort !== undefined ? { abort: deps.abort } : {}),
-        ...(deps.install_signal_handlers !== undefined
-          ? { install_signal_handlers: deps.install_signal_handlers }
-          : {}),
-      },
-    );
+    const { value, converged } = await execute_flow(config, deps, flow, { resume_from });
     const status = status_of(value, converged);
     const result = run_result_from_state(config, value, status, new Date().toISOString());
     write_run_summary(config, result);
@@ -185,6 +191,53 @@ async function run_loop(
   } finally {
     await dispose_seat_engines(engines);
   }
+}
+
+/** Run the flow into its file trajectory and, when the caller passed one, its
+ * own sink. Without a sink this is the one `run` it has always been. With one,
+ * it goes through `run.stream`, because only a streamed run records each model
+ * call's chunks as `model_chunk` events, which are what an outer consumer maps
+ * to text, tool cards, and approval prompts. The sink is that consumer, so the
+ * handle's own event stream is closed at once rather than left to buffer, and
+ * the file skips the chunks, so it holds the same kinds of event either way.
+ *
+ * The file goes first in the tee because the first sink's span ids are the
+ * ones the run hands out as parents, so the file's parent links stay whole.
+ * The sink sees parent ids it never issued, which costs an ACP consumer
+ * nothing: it counts a step's runs by the `id` on each `span_start`. */
+function execute_flow(
+  config: ResolvedConfig,
+  deps: OrchestratorDeps,
+  flow: Step<RunInput, LoopOutcome>,
+  input: RunInput,
+): Promise<LoopOutcome> {
+  const file = filesystem_logger({
+    output_path: volley_path(config.workspace, 'trajectory.jsonl'),
+  });
+  const options: RunOptions = {
+    ...(deps.abort !== undefined ? { abort: deps.abort } : {}),
+    ...(deps.install_signal_handlers !== undefined
+      ? { install_signal_handlers: deps.install_signal_handlers }
+      : {}),
+  };
+  if (deps.trajectory === undefined) return run(flow, input, { ...options, trajectory: file });
+  const handle = run.stream(flow, input, {
+    ...options,
+    trajectory: tee_logger(without_model_chunks(file), deps.trajectory),
+  });
+  void handle.events[Symbol.asyncIterator]().return?.();
+  return handle.result;
+}
+
+/** A logger that passes `inner` every event but a model call's streamed
+ * chunks. */
+function without_model_chunks(inner: TrajectoryLogger): TrajectoryLogger {
+  return {
+    ...inner,
+    record: (event) => {
+      if (event.kind !== 'model_chunk') inner.record(event);
+    },
+  };
 }
 
 /** Best-effort status stamp on the run summary when the loop threw; the

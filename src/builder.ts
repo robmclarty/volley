@@ -15,6 +15,8 @@ import type {
   RunContext,
   Step,
   StreamChunk,
+  Tool,
+  ToolApprovalHandler,
 } from 'fascicle';
 import { warn_small_local_context } from './builder/context_check.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
@@ -47,7 +49,7 @@ export function compose_builder_system(): string {
 
 /** Walk up from this module to the package root (works from src/ under tsx
  * and from dist/ in the published package, which ships src/builder/presets). */
-export function presets_dir(): string {
+export function builder_presets_dir(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 6; depth += 1) {
     const candidate = join(dir, 'src', 'builder', 'presets');
@@ -66,7 +68,7 @@ export function compose_builder_system_local(): string {
     'iterating on a workspace until it satisfies a task and its acceptance',
     'criteria.',
   ].join('\n');
-  const append = readFileSync(join(presets_dir(), 'harness_append_local.md'), 'utf8');
+  const append = readFileSync(join(builder_presets_dir(), 'harness_append_local.md'), 'utf8');
   return `${identity}\n\n${append.trimEnd()}`;
 }
 
@@ -92,22 +94,26 @@ const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
 /** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
  * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
  * permission mode) and brings its own built-in tools — this arm is unchanged
- * from v2. Every other builder, local or `openrouter`, brings none, so volley
- * supplies its whole workspace tool surface plus the five per-call loop knobs
+ * from v2, and takes no injected tools or approval handler. Every other
+ * builder, local or `openrouter`, brings none, so volley supplies its whole
+ * workspace tool surface (or the set the caller injected in its place, with
+ * the handler that answers its approvals) plus the five per-call loop knobs
  * and **no** schema (it produces a workspace, not a verdict); per-call values
  * win over engine defaults. */
 function builder_tool_options(
-  config: ResolvedConfig,
-  bash_executor: BashExecutor | null,
+  deps: BuilderDeps,
 ): Pick<
   GenerateOptions,
   | 'tools'
+  | 'on_tool_approval'
   | 'provider_options'
   | 'max_steps'
   | 'tool_error_policy'
   | 'tool_call_repair_attempts'
   | 'max_tool_calls_per_step'
 > {
+  const { config } = deps;
+  const bash_executor = deps.bash_executor ?? null;
   if (config.builder_provider === 'claude_cli') {
     return {
       provider_options: {
@@ -124,10 +130,14 @@ function builder_tool_options(
     // workspace untouched. When the sandbox is active its `docker exec` executor
     // runs `bash` in the container against the bind-mounted worktree; the
     // host `spawnSync` default stands in otherwise.
-    tools: builder_tools(
-      build_root(config.workspace, config.worktree),
-      bash_executor !== null ? { bash_executor } : {},
-    ),
+    tools:
+      deps.tools === undefined
+        ? builder_tools(
+            build_root(config.workspace, config.worktree),
+            bash_executor !== null ? { bash_executor } : {},
+          )
+        : [...deps.tools],
+    ...(deps.on_tool_approval !== undefined ? { on_tool_approval: deps.on_tool_approval } : {}),
     max_steps: config.builder_max_steps,
     tool_error_policy: 'feed_back',
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
@@ -198,6 +208,14 @@ export type BuilderDeps = {
    * the run's container), or null to use the host `spawnSync` default (the
    * unsandboxed escape hatch, or `claude_cli` which supplies no volley tools). */
   bash_executor?: BashExecutor | null;
+  /** Tools to hand the builder in place of volley's own set; absent, it gets
+   * that set. A `claude_cli` builder brings its own tools and never takes
+   * these. */
+  tools?: ReadonlyArray<Tool>;
+  /** Answers each call to a tool that asks first (`needs_approval`). Like
+   * `tools`, it reaches every builder but `claude_cli`. Absent, such a call
+   * fails closed. */
+  on_tool_approval?: ToolApprovalHandler;
 };
 
 /** The builder's model boundary: one call is one complete agentic session in
@@ -218,7 +236,7 @@ export function make_builder_step(deps: BuilderDeps): BuilderStep {
     model: config.builder_model,
     system: resolve_builder_system(config),
     on_chunk: deps.on_chunk,
-    ...builder_tool_options(config, deps.bash_executor ?? null),
+    ...builder_tool_options(deps),
   });
 }
 

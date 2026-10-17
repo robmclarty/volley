@@ -15,6 +15,7 @@ import type {
   RunContext,
   Step,
   StreamChunk,
+  Tool,
 } from 'fascicle';
 import { accumulate } from '../cost.js';
 import { seat_base_url } from '../engine.js';
@@ -50,12 +51,17 @@ export type CriticDeps = {
   engine: Engine;
   config: ResolvedConfig;
   on_chunk: (chunk: StreamChunk) => void;
+  /** Tools to hand the critic's tool-bearing call in place of volley's reads;
+   * absent, it gets those. A `claude_cli` critic reads through the CLI's own
+   * tools and never takes these. The critic takes no approval handler, since
+   * nothing it reads with should ever ask. */
+  tools?: ReadonlyArray<Tool>;
 };
 
 /** Read-only tool wiring per provider. The claude_cli critic is confined at
  * the CLI permission layer (allowlist + explicit disallow); every other critic,
- * local or `openrouter`, gets volley's own workspace-scoped read-only tools and
- * no write path at all.
+ * local or `openrouter`, gets volley's own workspace-scoped read-only tools (or
+ * the set the caller injected in their place) and no write path at all.
  *
  * The providers also enforce `verdict_schema` by different paths, the first
  * two verified live. The claude_cli critic compiles the schema for
@@ -74,6 +80,7 @@ export type CriticDeps = {
  * and repaired. */
 function critic_tool_options(
   config: ResolvedConfig,
+  tools?: ReadonlyArray<Tool>,
 ): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options' | 'max_steps'> {
   if (config.critic_provider === 'claude_cli') {
     return {
@@ -89,7 +96,10 @@ function critic_tool_options(
   // the worktree, so the local critic's read tools resolve through the same
   // re-pointed containment root as the builder's writes.
   return {
-    tools: read_only_tools(build_root(config.workspace, config.worktree)),
+    tools:
+      tools === undefined
+        ? read_only_tools(build_root(config.workspace, config.worktree))
+        : [...tools],
     max_steps: CRITIC_MAX_STEPS,
   };
 }
@@ -236,7 +246,7 @@ export function make_critic_tools_step(deps: CriticDeps): CriticCall {
     ...critic_call_config(deps),
     id: 'critic_tools',
     description: 'model call with read-only workspace tools',
-    ...critic_tool_options(deps.config),
+    ...critic_tool_options(deps.config, deps.tools),
   });
 }
 

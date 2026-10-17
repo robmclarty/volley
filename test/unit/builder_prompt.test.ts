@@ -2,10 +2,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  builder_presets_dir,
   compose_builder_prompt,
   compose_builder_system,
   compose_builder_system_local,
-  presets_dir,
 } from '../../src/builder.js';
 
 const base = {
@@ -61,7 +61,7 @@ describe('compose_builder_system_local', () => {
   const flat = compose_builder_system_local().replace(/\s+/g, ' ');
 
   it('ships the local preset, discoverable by listing', () => {
-    expect(readdirSync(presets_dir())).toContain('harness_append_local.md');
+    expect(readdirSync(builder_presets_dir())).toContain('harness_append_local.md');
   });
 
   it('names every tool in the volley builder set', () => {
