@@ -1,5 +1,5 @@
-You are running inside the volley harness. Prior iteration state is visible
-under the .volley/iterations/ directory.
+You are running inside the volley harness.
+Prior iteration state is visible under the {{iterations_dir}} directory.
 
 You have read-only access to the workspace through three tools:
 - read_file(path): read a workspace file's contents.

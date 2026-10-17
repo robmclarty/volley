@@ -30,6 +30,9 @@ export type RendererOptions = {
   show_thinking: boolean;
   color: boolean;
   max_cost_usd: number | null;
+  /** Where the run's trajectory is written, named when verbose output is cut
+   * short (default: `.volley/trajectory.jsonl`). */
+  trajectory_path?: string;
   write?: (text: string) => void;
 };
 
@@ -48,6 +51,7 @@ export type Renderer = {
 export function create_renderer(options: RendererOptions): Renderer {
   const write = options.write ?? ((text: string) => process.stderr.write(text));
   const { mode, color } = options;
+  const see_trajectory = `see ${options.trajectory_path ?? '.volley/trajectory.jsonl'}`;
   const silent = mode === 'json';
   const streaming = mode === 'default' || mode === 'verbose';
 
@@ -81,7 +85,7 @@ export function create_renderer(options: RendererOptions): Renderer {
             ? truncate(
                 JSON.stringify(chunk.input, null, 2) ?? '',
                 VERBOSE_TRUNCATE_CHARS,
-                'see .volley/trajectory.jsonl',
+                see_trajectory,
               )
             : summarize_value(chunk.input);
         line(`${GLYPH_TOOL} ${paint(role, chunk.id, color)} ${summary}`);
@@ -91,7 +95,7 @@ export function create_renderer(options: RendererOptions): Renderer {
         const ok = chunk.error === undefined;
         if (mode === 'verbose') {
           const body = ok ? summarize_output(chunk.output) : chunk.error?.message ?? '';
-          line(`${ok ? GLYPH_OK : GLYPH_ERR} ${truncate(body, VERBOSE_TRUNCATE_CHARS, 'see .volley/trajectory.jsonl')}`);
+          line(`${ok ? GLYPH_OK : GLYPH_ERR} ${truncate(body, VERBOSE_TRUNCATE_CHARS, see_trajectory)}`);
         } else {
           line(`${ok ? GLYPH_OK : GLYPH_ERR} ${ok ? '' : summarize_value(chunk.error?.message)}`);
         }

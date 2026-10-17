@@ -26,19 +26,19 @@ import type {
   Verdict,
   VolleyConfig,
 } from './types.js';
-import { iteration_dir, volley_path } from './workspace.js';
+import { iteration_dir, run_state_dir, state_path } from './workspace.js';
 
 function write_json(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function persist_verdict_files(
-  workspace: string,
+  config: ResolvedConfig,
   feedback: string,
   verdict: Verdict,
 ): void {
-  writeFileSync(volley_path(workspace, 'feedback.md'), feedback.endsWith('\n') ? feedback : `${feedback}\n`);
-  writeFileSync(volley_path(workspace, 'verdict'), `${verdict}\n`);
+  writeFileSync(state_path(config, 'feedback.md'), feedback.endsWith('\n') ? feedback : `${feedback}\n`);
+  writeFileSync(state_path(config, 'verdict'), `${verdict}\n`);
 }
 
 function phase_summary(record: PhaseRecord | null): Record<string, unknown> | null {
@@ -80,12 +80,12 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
 /** Archive one completed iteration: verdict files, check artifacts, and the
  * per-iteration summary. */
 export function archive_iteration(config: ResolvedConfig, state: LoopState): void {
-  const dir = iteration_dir(config.workspace, state.iteration);
+  const dir = iteration_dir(config, state.iteration);
   mkdirSync(join(dir, 'check'), { recursive: true });
 
   if (state.verdict !== null && state.feedback !== null) {
-    persist_verdict_files(config.workspace, state.feedback, state.verdict);
-    writeFileSync(join(dir, 'feedback.md'), readFileSync(volley_path(config.workspace, 'feedback.md')));
+    persist_verdict_files(config, state.feedback, state.verdict);
+    writeFileSync(join(dir, 'feedback.md'), readFileSync(state_path(config, 'feedback.md')));
     writeFileSync(join(dir, 'verdict'), `${state.verdict}\n`);
   }
 
@@ -173,23 +173,28 @@ export type ResumeState = {
   iterations_completed: number;
 };
 
-/** Recover a resumable run from `.volley/`: settings from
- * config.json, totals from summary.json, feedback from feedback.md. An
- * iteration directory without a summary.json was interrupted mid-phase and
- * is discarded. */
-export function load_resume_state(workspace: string, run_id: string): ResumeState {
-  const config_path = volley_path(workspace, 'config.json');
+/** Recover a resumable run from its state directory (`.volley/`, or
+ * `<state_dir>/<run_id>/` under a state root): settings from config.json,
+ * totals from summary.json, feedback from feedback.md. An iteration directory
+ * without a summary.json was interrupted mid-phase and is discarded. */
+export function load_resume_state(
+  workspace: string,
+  run_id: string,
+  state_dir: string | null = null,
+): ResumeState {
+  const run = { workspace, state_dir, run_id };
+  const config_path = state_path(run, 'config.json');
   if (!existsSync(config_path)) {
     throw config_error(`no resumable run found: ${config_path} missing`);
   }
   const recorded = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
   if (recorded['run_id'] !== run_id) {
     throw config_error(
-      `run ${run_id} not found in ${workspace} (recorded run: ${String(recorded['run_id'])})`,
+      `run ${run_id} not found in ${run_state_dir(run)} (recorded run: ${String(recorded['run_id'])})`,
     );
   }
 
-  const iterations_root = volley_path(workspace, 'iterations');
+  const iterations_root = state_path(run, 'iterations');
   const dirs = existsSync(iterations_root)
     ? readdirSync(iterations_root).filter((d) => /^\d{3}$/.test(d)).toSorted()
     : [];
@@ -203,12 +208,12 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     }
   }
 
-  const summary_path = volley_path(workspace, 'summary.json');
+  const summary_path = state_path(run, 'summary.json');
   const summary = existsSync(summary_path)
     ? (JSON.parse(readFileSync(summary_path, 'utf8')) as RunResult)
     : null;
 
-  const feedback_path = volley_path(workspace, 'feedback.md');
+  const feedback_path = state_path(run, 'feedback.md');
   const feedback = existsSync(feedback_path) ? readFileSync(feedback_path, 'utf8') : null;
 
   const raw_config: VolleyConfig = {
@@ -244,6 +249,7 @@ export function load_resume_state(workspace: string, run_id: string): ResumeStat
     ...(recorded['sandbox_image'] === undefined
       ? {}
       : { sandbox_image: recorded['sandbox_image'] as string }),
+    ...(typeof recorded['state_dir'] === 'string' ? { state_dir: recorded['state_dir'] } : {}),
   };
 
   const state: LoopState = {

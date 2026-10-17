@@ -1,5 +1,5 @@
 /**
- * Enriched run summary (`.volley/summary.json`): the `RunResult` projection plus
+ * Enriched run summary (the run's `summary.json`): the `RunResult` projection plus
  * a `comparison` block that makes the two blessed examples' runs diff-able.
  * The block gathers the seven comparison metrics — transport,
  * iterations-to-converge, wall-clock, cost, verdict, the deterministic check
@@ -14,7 +14,7 @@
  * surviving branch on `salvaged_branch`, which teardown only names after the
  * final status is known.
  * Each write recomputes the comparison from what is currently archived under
- * `.volley/iterations/`, so the trajectory grows as the run does.
+ * the run's `iterations/`, so the trajectory grows as the run does.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import type {
@@ -25,7 +25,7 @@ import type {
   RunResult,
   Verdict,
 } from './types.js';
-import { volley_path } from './workspace.js';
+import { state_path } from './workspace.js';
 
 /** How a role reached the model. volley stays on the `ai_sdk` transport for the
  * local providers (fascicle 0.14.0 defaults `transport` to `'ai_sdk'`, so
@@ -126,15 +126,15 @@ type IterationArchive = {
  * (a run that failed before the first `record`) or an unreadable entry yields an
  * empty/short list — the run summary still writes, just without that trajectory
  * detail. */
-function read_iteration_archives(workspace: string): IterationArchive[] {
-  const root = volley_path(workspace, 'iterations');
+function read_iteration_archives(config: ResolvedConfig): IterationArchive[] {
+  const root = state_path(config, 'iterations');
   if (!existsSync(root)) return [];
   const dirs = readdirSync(root)
     .filter((dir) => /^\d{3}$/.test(dir))
     .toSorted();
   const archives: IterationArchive[] = [];
   for (const dir of dirs) {
-    const path = volley_path(workspace, 'iterations', dir, 'summary.json');
+    const path = state_path(config, 'iterations', dir, 'summary.json');
     if (!existsSync(path)) continue;
     try {
       archives.push(JSON.parse(readFileSync(path, 'utf8')) as IterationArchive);
@@ -200,7 +200,7 @@ function salvage_stats(archives: IterationArchive[]): SalvageStats {
  * archive for the check trajectory and salvage aggregate. Pure over its inputs
  * plus the on-disk archive; `write_run_summary` persists the result. */
 export function build_run_summary(config: ResolvedConfig, result: RunResult): RunSummary {
-  const archives = read_iteration_archives(config.workspace);
+  const archives = read_iteration_archives(config);
   const wall_clock_ms =
     result.completed_at === null
       ? null
@@ -227,11 +227,11 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
   };
 }
 
-/** Write the enriched summary to `.volley/summary.json` (the projection the
+/** Write the enriched summary to the run's `summary.json` (the projection the
  * examples' comparison is read from). */
 export function write_run_summary(config: ResolvedConfig, result: RunResult): void {
   writeFileSync(
-    volley_path(config.workspace, 'summary.json'),
+    state_path(config, 'summary.json'),
     `${JSON.stringify(build_run_summary(config, result), null, 2)}\n`,
   );
 }

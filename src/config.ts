@@ -1,7 +1,7 @@
 /**
  * Config resolution: merge CLI flags over an optional config file
  * over defaults, expand `@file` references, validate, and produce the
- * immutable `ResolvedConfig` that `.volley/config.json` records.
+ * immutable `ResolvedConfig` that the run's `config.json` records.
  */
 import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
@@ -249,6 +249,19 @@ function resolve_seat_url(
   return url;
 }
 
+/** `--state-dir` (`state_dir`): the root each run's state sits under at
+ * `<root>/<run_id>/`, resolved against `cwd` so a resumed run finds the same
+ * place, or null to keep `<workspace>/.volley/`. An empty value counts as unset,
+ * as it does for a seat URL. */
+function resolve_state_dir(value: unknown, cwd: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    throw config_error(`--state-dir (state_dir) must be a path string; got a ${typeof value}`);
+  }
+  const path = value.trim();
+  return path === '' ? null : resolve(cwd, path);
+}
+
 /** volley *detects* it is running inside its sandbox container rather than
  * starting the container itself. The signal is the `VOLLEY_CONTAINED=1` marker
  * volley's own image bakes in (`Dockerfile` `ENV`), so a `docker run <hardened
@@ -419,6 +432,7 @@ export function resolve_config(
   }
 
   const sandbox_image = resolve_sandbox_image(raw, env);
+  const state_dir = resolve_state_dir(raw.state_dir, cwd);
   const run_id = resolve_run_id(options.run_id);
   const check = raw.check ?? DEFAULT_CHECK;
 
@@ -449,6 +463,7 @@ export function resolve_config(
     gate_paths: [...gate_paths],
     fail_on_gate_edit: raw.fail_on_gate_edit ?? false,
     sandbox_image,
+    state_dir,
     workspace,
     verbose: raw.verbose ?? false,
     quiet: raw.quiet ?? false,

@@ -16,7 +16,7 @@ import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
 import { create_renderer } from '../../src/render/renderer.js';
-import { initialize_workspace, write_resolved_config } from '../../src/workspace.js';
+import { initialize_run_state, write_resolved_config } from '../../src/workspace.js';
 import { temp_workspace } from '../helpers/harness.js';
 
 function base(workspace: string) {
@@ -349,11 +349,11 @@ describe('resolve_config', () => {
   it('preserves builder_max_steps across a persist→restore round-trip', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      initialize_workspace(workspace);
       const original = resolve_config(
         { ...base(workspace), builder_max_steps: 7 },
         { run_id: 'rt-run', env: {} },
       );
+      initialize_run_state(original);
       write_resolved_config(original);
       const resume = load_resume_state(workspace, 'rt-run');
       expect(resume.raw_config.builder_max_steps).toBe(7);
@@ -371,8 +371,8 @@ describe('resolve_config', () => {
   it('defaults builder_max_steps when restoring a config that predates the field', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      initialize_workspace(workspace);
       const original = resolve_config(base(workspace), { run_id: 'old-run', env: {} });
+      initialize_run_state(original);
       write_resolved_config(original);
       const config_path = join(workspace, '.volley', 'config.json');
       const record = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
@@ -530,11 +530,11 @@ describe('resolve_config', () => {
   it('preserves the sandbox image across a persist→restore round-trip', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      initialize_workspace(workspace);
       const original = resolve_config(
         { ...base(workspace), sandbox_image: 'pinned/img:3' },
         { run_id: 'si-run', env: {} },
       );
+      initialize_run_state(original);
       write_resolved_config(original);
       const resume = load_resume_state(workspace, 'si-run');
       expect(resume.raw_config.sandbox_image).toBe('pinned/img:3');
@@ -657,7 +657,6 @@ describe('resolve_config: per-seat model URLs', () => {
   it('carries both seat URLs across a persist→restore round-trip', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      initialize_workspace(workspace);
       const original = resolve_config(
         {
           ...local_seats(workspace),
@@ -666,6 +665,7 @@ describe('resolve_config: per-seat model URLs', () => {
         },
         { ...CONTAINED, run_id: 'url-run' },
       );
+      initialize_run_state(original);
       write_resolved_config(original);
       const resume = load_resume_state(workspace, 'url-run');
       expect(resume.raw_config.builder_url).toBe('http://localhost:11522');
@@ -681,8 +681,8 @@ describe('resolve_config: per-seat model URLs', () => {
   it('restores null seat URLs from a config that predates them', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      initialize_workspace(workspace);
       const original = resolve_config(local_seats(workspace), { ...CONTAINED, run_id: 'old-url' });
+      initialize_run_state(original);
       write_resolved_config(original);
       const config_path = join(workspace, '.volley', 'config.json');
       const record = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
@@ -897,7 +897,7 @@ describe('gate paths', () => {
         gate_paths: ['schema/**'],
         fail_on_gate_edit: true,
       });
-      initialize_workspace(workspace);
+      initialize_run_state(config);
       write_resolved_config(config);
       const resumed = load_resume_state(workspace, config.run_id);
       expect(resumed.raw_config.gate_paths).toEqual(['schema/**']);

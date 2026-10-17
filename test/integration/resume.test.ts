@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aborted_error } from 'fascicle';
@@ -6,7 +7,7 @@ import { load_resume_state } from '../../src/iteration.js';
 import { run_volley } from '../../src/orchestrator.js';
 import { exit_code_for_error } from '../../src/exit_codes.js';
 import { error_kind } from '../../src/types.js';
-import { initialize_workspace, volley_path, write_resolved_config } from '../../src/workspace.js';
+import { initialize_run_state, state_path, write_resolved_config } from '../../src/workspace.js';
 import { silent_renderer, temp_workspace, test_config } from '../helpers/harness.js';
 import { approve_reply, mock_engine, prompt_text, reject_reply } from '../helpers/mock_engine.js';
 
@@ -85,10 +86,14 @@ describe('resume', () => {
   it('persists the worktree flags and restores them on resume, defaulting off for legacy configs', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      initialize_workspace(workspace);
-      write_resolved_config(
-        test_config({ workspace, run_id: 'wt-run', worktree: true, discard_worktree: true }),
-      );
+      const config = test_config({
+        workspace,
+        run_id: 'wt-run',
+        worktree: true,
+        discard_worktree: true,
+      });
+      initialize_run_state(config);
+      write_resolved_config(config);
       const restored = load_resume_state(workspace, 'wt-run').raw_config;
       expect(restored.worktree).toBe(true);
       // The throw-away mode rides along: a resumed matrix seat must not start
@@ -97,7 +102,7 @@ describe('resume', () => {
 
       // A config.json written before these keys existed restores both off,
       // exactly like builder_provider's `?? claude_cli` default.
-      const config_path = volley_path(workspace, 'config.json');
+      const config_path = state_path(config, 'config.json');
       const recorded = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
       delete recorded['worktree'];
       delete recorded['discard_worktree'];
@@ -106,6 +111,26 @@ describe('resume', () => {
       expect(legacy.worktree).toBe(false);
       expect(legacy.discard_worktree).toBe(false);
     } finally {
+      cleanup();
+    }
+  });
+
+  it('finds a run kept under a state root by its id, and restores the root', () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = mkdtempSync(join(tmpdir(), 'volley-state-'));
+    try {
+      const config = test_config({ workspace, run_id: 'rooted-run', state_dir: root });
+      initialize_run_state(config);
+      write_resolved_config(config);
+
+      const resume = load_resume_state(workspace, 'rooted-run', root);
+      expect(resume.raw_config.state_dir).toBe(root);
+      // Without the root, the run is looked for in the workspace, where it never was.
+      expect(() => load_resume_state(workspace, 'rooted-run')).toThrow(
+        `no resumable run found: ${join(workspace, '.volley', 'config.json')} missing`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
       cleanup();
     }
   });

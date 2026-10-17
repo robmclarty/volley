@@ -86,6 +86,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     gate_paths: DEFAULT_GATE_PATTERNS,
     fail_on_gate_edit: false,
     sandbox_image: 'volley-sandbox:latest',
+    state_dir: null,
     verbose: false,
     quiet: false,
     json: true,

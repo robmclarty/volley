@@ -332,7 +332,7 @@ describe('critic_degraded persistence', () => {
 
       // (iteration) — nested under `critic` in .volley/iterations/001/summary.json.
       const archived = JSON.parse(
-        readFileSync(join(iteration_dir(workspace, 1), 'summary.json'), 'utf8'),
+        readFileSync(join(iteration_dir(config, 1), 'summary.json'), 'utf8'),
       );
       expect(archived.critic.critic_degraded).toBe(true);
       expect(archived.critic.retries).toBe(1);
@@ -358,7 +358,7 @@ describe('critic_degraded persistence', () => {
         ),
       );
       const archived = JSON.parse(
-        readFileSync(join(iteration_dir(workspace, 1), 'summary.json'), 'utf8'),
+        readFileSync(join(iteration_dir(config, 1), 'summary.json'), 'utf8'),
       );
       expect(archived.critic.degrade_cause).toBe('step_exhaustion');
       expect(build_run_summary(config, run_result()).comparison.critic_degrade_causes).toEqual([
@@ -394,7 +394,7 @@ describe('critic_degraded persistence', () => {
       archive_iteration(config, archived_iteration(workspace, critic_record({ retries: 0 })));
 
       const archived = JSON.parse(
-        readFileSync(join(iteration_dir(workspace, 1), 'summary.json'), 'utf8'),
+        readFileSync(join(iteration_dir(config, 1), 'summary.json'), 'utf8'),
       );
       expect(archived.critic.critic_degraded).toBeUndefined();
       expect(archived.critic.degrade_cause).toBeUndefined();

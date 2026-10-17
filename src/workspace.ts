@@ -1,5 +1,5 @@
 /**
- * Workspace lifecycle: `.volley/` initialization, stale-run
+ * Workspace lifecycle: run-state initialization, stale-run
  * backup rotation, path helpers, and optional git checkpoints.
  */
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -8,32 +8,46 @@ import { spawnSync } from 'node:child_process';
 import { check_error, config_error } from './types.js';
 import type { ResolvedConfig } from './types.js';
 
-export function volley_path(workspace: string, ...parts: string[]): string {
-  return join(workspace, '.volley', ...parts);
+/** What locates a run's state, as a structural subset of `ResolvedConfig` so a
+ * resume can find a run before it has a whole config. */
+export type StateLocation = Pick<ResolvedConfig, 'workspace' | 'state_dir' | 'run_id'>;
+
+/** Where a run keeps its config, summary, trajectory, feedback, verdict, and
+ * iterations: `<state_dir>/<run_id>/` under a state root, else
+ * `<workspace>/.volley/`. */
+export function run_state_dir(run: StateLocation): string {
+  return run.state_dir === null ? join(run.workspace, '.volley') : join(run.state_dir, run.run_id);
 }
 
-export function iteration_dir(workspace: string, iteration: number): string {
-  return volley_path(workspace, 'iterations', String(iteration).padStart(3, '0'));
+export function state_path(run: StateLocation, ...parts: string[]): string {
+  return join(run_state_dir(run), ...parts);
+}
+
+export function iteration_dir(run: StateLocation, iteration: number): string {
+  return state_path(run, 'iterations', String(iteration).padStart(3, '0'));
 }
 
 /** Filesystem-safe timestamp for `.bak.<stamp>` rotation names. Shared by the
- * `.volley/` rotation here and the worktree rotation so both preserve
+ * run-state rotation here and the worktree rotation so both preserve
  * prior state under the same never-destroy naming. */
 export function backup_stamp(date: Date = new Date()): string {
   return date.toISOString().replace(/[:.]/g, '-');
 }
 
-/** Fresh-run initialization: rotate a stale `.volley/` aside, then create the
- * directory tree. Resume runs skip rotation (`preserve: true`). */
-export function initialize_workspace(
-  workspace: string,
+/** Fresh-run initialization: rotate a stale state directory aside (a prior
+ * `.volley/` becomes `.volley.bak.<stamp>`), then create the directory tree.
+ * Under a state root each run has a directory of its own, so only a reused
+ * `--run-id` ever finds one to rotate. Resume runs skip rotation
+ * (`preserve: true`). */
+export function initialize_run_state(
+  run: StateLocation,
   options: { preserve?: boolean } = {},
 ): void {
-  const dir = volley_path(workspace);
+  const dir = run_state_dir(run);
   if (existsSync(dir) && options.preserve !== true) {
-    renameSync(dir, join(workspace, `.volley.bak.${backup_stamp()}`));
+    renameSync(dir, `${dir}.bak.${backup_stamp()}`);
   }
-  mkdirSync(volley_path(workspace, 'iterations'), { recursive: true });
+  mkdirSync(join(dir, 'iterations'), { recursive: true });
 }
 
 export function write_resolved_config(config: ResolvedConfig): void {
@@ -63,10 +77,11 @@ export function write_resolved_config(config: ResolvedConfig): void {
     gate_paths: config.gate_paths,
     fail_on_gate_edit: config.fail_on_gate_edit,
     sandbox_image: config.sandbox_image,
+    state_dir: config.state_dir,
     workspace: config.workspace,
   };
   writeFileSync(
-    volley_path(config.workspace, 'config.json'),
+    state_path(config, 'config.json'),
     `${JSON.stringify(record, null, 2)}\n`,
   );
 }

@@ -4,7 +4,7 @@
  * Human progress goes to stderr; stdout carries machine output only.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cac } from 'cac';
 import type { Command } from 'cac';
@@ -31,6 +31,7 @@ import type {
   RunResult,
   VolleyConfig,
 } from './types.js';
+import { state_path } from './workspace.js';
 
 type CliFlags = {
   prompt?: string;
@@ -55,6 +56,7 @@ type CliFlags = {
   gatePaths?: string;
   failOnGateEdit?: boolean;
   sandboxImage?: string;
+  stateDir?: string;
   /** A number when cac coerced a numeric-looking value (`0042` arrives as 42). */
   runId?: string | number;
   dryRun?: boolean;
@@ -121,12 +123,18 @@ function render_mode(config: ResolvedConfig): RenderMode {
   return 'default';
 }
 
-function make_renderer(config: ResolvedConfig): Renderer {
+/** `run_id` names the run whose trajectory the verbose hint points at under a
+ * state root; a sweep passes a placeholder, since each seat has an id of its
+ * own. */
+function make_renderer(config: ResolvedConfig, run_id: string = config.run_id): Renderer {
   return create_renderer({
     mode: render_mode(config),
     show_thinking: config.show_thinking,
     color: colors_enabled(),
     max_cost_usd: config.max_cost_usd,
+    ...(config.state_dir === null
+      ? {}
+      : { trajectory_path: state_path({ ...config, run_id }, 'trajectory.jsonl') }),
   });
 }
 
@@ -201,6 +209,7 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.gatePaths !== undefined ? { gate_paths: parse_glob_list(flags.gatePaths) } : {}),
     ...(flags.failOnGateEdit === true ? { fail_on_gate_edit: true } : {}),
     ...(flags.sandboxImage !== undefined ? { sandbox_image: flags.sandboxImage } : {}),
+    ...(flags.stateDir !== undefined ? { state_dir: flags.stateDir } : {}),
     ...(flags.dryRun === true ? { dry_run: true } : {}),
     ...(flags.json === true ? { json: true } : {}),
     ...(flags.verbose === true ? { verbose: true } : {}),
@@ -251,6 +260,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--gate-paths <globs>', 'Comma-separated globs naming the gate (tests, fixtures, check config); replaces the defaults')
     .option('--fail-on-gate-edit', 'Halt the run if the builder edits a gate path (exit 8) instead of reporting it')
     .option('--sandbox-image <tag>', `Container image for the local-builder sandbox (default: ${DEFAULT_SANDBOX_IMAGE})`)
+    .option('--state-dir <path>', "Keep each run's state under <path>/<run id>/ instead of the workspace's .volley/")
     .option('--run-id <id>', "The run's id, naming its volley/<id> branch (default: a fresh UUID)")
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')
@@ -286,18 +296,22 @@ async function main(argv: string[]): Promise<number> {
     .option('--workspace <path>', 'Workspace containing the .volley run state', {
       default: '.',
     })
+    .option('--state-dir <path>', 'State root the run was started under; finds it at <path>/<run_id>/ instead of in the workspace')
     .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')
     .option('--verbose', 'Show full tool inputs/outputs')
     .option('--quiet', 'Only phase transitions, cost updates, and the final summary')
     .option('--no-thinking', 'Hide reasoning chunks')
     .action(async (run_id: string, flags: CliFlags) => {
-      const workspace = flags.workspace ?? '.';
-      const resume = load_resume_state(workspace, run_id);
+      // cac refuses any option this command doesn't declare, so what's left
+      // once the lookup flags are taken out is the output flags alone.
+      const { workspace = '.', stateDir, ...output } = flags;
+      // The root named here wins over the recorded one, so a moved root resumes
+      // where it now is.
+      const state_dir = stateDir === undefined ? null : resolve(stateDir);
+      const resume = load_resume_state(workspace, run_id, state_dir);
       const merged = merge_flags(resume.raw_config, {
-        ...(flags.json === true ? { json: true } : {}),
-        ...(flags.verbose === true ? { verbose: true } : {}),
-        ...(flags.quiet === true ? { quiet: true } : {}),
-        ...(flags.thinking === false ? { thinking: false } : {}),
+        ...output,
+        ...(state_dir !== null ? { stateDir: state_dir } : {}),
       });
       const config = resolve_config(merged, {
         run_id: resume.run_id,
@@ -347,7 +361,7 @@ async function main(argv: string[]): Promise<number> {
       // build the renderer and locate the workspace-level `.volley-matrix/`
       // output. Matches what `default_run_combo` resolves per seat.
       const base_config = resolve_config({ ...merged, worktree: true, discard_worktree: true });
-      const renderer = make_renderer(base_config);
+      const renderer = make_renderer(base_config, '<run id>');
       warn_api_key_meter(renderer);
       warn_unsandboxed_builder(base_config, renderer);
       const outcome = await run_matrix({

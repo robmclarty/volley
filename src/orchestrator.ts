@@ -6,7 +6,7 @@
  * substrate.
  *
  *   run_volley
- *   ├─ initialize the workspace (or preserve it, on resume)
+ *   ├─ initialize the run's state (or preserve it, on resume)
  *   ├─ with_worktree                    off unless --worktree
  *   │  ├─ capture the change baseline
  *   │  ├─ run_loop                      run the flow (streamed when a sink is given), then the final summary
@@ -30,9 +30,9 @@ import type { Renderer } from './render/renderer.js';
 import { error_kind } from './types.js';
 import type { LoopState, ResolvedConfig, RunInput, RunResult, RunStatus } from './types.js';
 import {
-  initialize_workspace,
+  initialize_run_state,
   integrate_worktree,
-  volley_path,
+  state_path,
   write_resolved_config,
 } from './workspace.js';
 import {
@@ -74,10 +74,10 @@ export async function run_volley(
   const { renderer } = deps;
 
   if (resume_from === null) {
-    initialize_workspace(config.workspace);
+    initialize_run_state(config);
     write_resolved_config(config);
   } else {
-    initialize_workspace(config.workspace, { preserve: true });
+    initialize_run_state(config, { preserve: true });
   }
 
   // Say what this run will do with its effects before it spends anything — the
@@ -143,7 +143,7 @@ export async function run_volley(
       `${outcome.salvaged_branch} (git switch ${outcome.salvaged_branch}, or cherry-pick it).`,
   );
   // Teardown salvaged the branch *after* `run_loop` wrote the final summary, so
-  // re-stamp it: `.volley/summary.json` and `--json` both name the survivor.
+  // re-stamp it: the run's `summary.json` and `--json` both name the survivor.
   const salvaged: RunResult = { ...outcome.value, salvaged_branch: outcome.salvaged_branch };
   write_run_summary(config, salvaged);
   return salvaged;
@@ -160,8 +160,9 @@ async function run_loop(
 
   // The Claude session runs in the build root (the worktree under `--worktree`),
   // because that is where the check, the change report, the checkpoints, and the
-  // critic all look. `.volley/` state stays under the workspace either way. The
-  // seats share one engine unless they reach one provider at different URLs.
+  // critic all look. The run's state stays where `state_dir` puts it either
+  // way. The seats share one engine unless they reach one provider at
+  // different URLs.
   const engines: SeatEngines =
     deps.engine === undefined
       ? await create_seat_engines({
@@ -212,7 +213,7 @@ function execute_flow(
   input: RunInput,
 ): Promise<LoopOutcome> {
   const file = filesystem_logger({
-    output_path: volley_path(config.workspace, 'trajectory.jsonl'),
+    output_path: state_path(config, 'trajectory.jsonl'),
   });
   const options: RunOptions = {
     ...(deps.abort !== undefined ? { abort: deps.abort } : {}),
@@ -249,7 +250,7 @@ function finalize_failed_run(config: ResolvedConfig, err: unknown): void {
     kind === 'aborted_error' || cause === 'aborted_error' ? 'interrupted' : 'error';
   try {
     // Preserve accumulated totals when `record` already wrote a summary.
-    const summary_path = volley_path(config.workspace, 'summary.json');
+    const summary_path = state_path(config, 'summary.json');
     const prior = existsSync(summary_path)
       ? (JSON.parse(readFileSync(summary_path, 'utf8')) as RunResult)
       : run_result_from_state(config, initial_state(), status, null);

@@ -188,6 +188,7 @@ describe('volley --help', () => {
       '--gate-paths',
       '--fail-on-gate-edit',
       '--sandbox-image',
+      '--state-dir',
       '--run-id',
       '--dry-run',
       '--config',

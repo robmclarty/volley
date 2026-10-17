@@ -1,5 +1,6 @@
 You are running inside the volley harness. The workspace is at the current
-working directory. Prior iteration state is visible in .volley/iterations/.
+working directory.
+Prior iteration state is visible in {{iterations_dir}}.
 
 You have read-only access to the workspace (Read, Grep, Glob). Do not attempt
 to modify files or run commands; those tools are not available to you.

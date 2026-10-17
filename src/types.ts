@@ -80,6 +80,7 @@ export type VolleyConfig = {
   gate_paths?: string[];
   fail_on_gate_edit?: boolean;
   sandbox_image?: string;
+  state_dir?: string;
   verbose?: boolean;
   quiet?: boolean;
   json?: boolean;
@@ -87,7 +88,7 @@ export type VolleyConfig = {
   dry_run?: boolean;
 };
 
-/** Fully resolved run configuration; `.volley/config.json` mirrors this. */
+/** Fully resolved run configuration; the run's `config.json` mirrors this. */
 export type ResolvedConfig = {
   version: 2;
   run_id: string;
@@ -123,7 +124,7 @@ export type ResolvedConfig = {
   git_checkpoints: boolean;
   /** Isolate the builder run's effects in a per-run git worktree: the
    * builder/critic file tools' containment root moves to the worktree, while
-   * `.volley/` state stays under `workspace` (the control plane). Off by
+   * the run's state stays where `state_dir` puts it (the control plane). Off by
    * default; requires the workspace to be a git repository. */
   worktree: boolean;
   /** Throw a `--worktree` run's effects away at teardown even when it converged:
@@ -150,6 +151,10 @@ export type ResolvedConfig = {
    * `VOLLEY_SANDBOX_IMAGE` override it. Meaningful only for a local builder —
    * the `claude_cli` path never uses Docker. */
   sandbox_image: string;
+  /** The root that holds each run's state at `<state_dir>/<run_id>/`
+   * (`--state-dir`), resolved to an absolute path. Null keeps it at
+   * `<workspace>/.volley/`, rotated aside by the next fresh run. */
+  state_dir: string | null;
   workspace: string;
   verbose: boolean;
   quiet: boolean;

@@ -45,6 +45,39 @@ describe('presets', () => {
     expect(local_prompt).not.toContain('(Read, Grep, Glob)');
   });
 
+  it('points each critic at prior iteration state where the build root holds it', () => {
+    for (const [critic_provider, line] of [
+      ['claude_cli', 'Prior iteration state is visible in .volley/iterations/.'],
+      ['ollama', 'Prior iteration state is visible under the .volley/iterations/ directory.'],
+    ] as const) {
+      expect(resolve_critic_prompt(test_config({ workspace: '/w', critic_provider }))).toContain(
+        line,
+      );
+    }
+    // A root inside the workspace is named by where it actually is.
+    const nested = resolve_critic_prompt(
+      test_config({ workspace: '/w', state_dir: '/w/runs', run_id: 'r1' }),
+    );
+    expect(nested).toContain('Prior iteration state is visible in runs/r1/iterations/.');
+    expect(nested).not.toContain('{{');
+  });
+
+  it("drops the prior-state line when the run's state sits outside the build root", () => {
+    for (const critic_provider of ['claude_cli', 'ollama'] as const) {
+      for (const outside of [
+        test_config({ workspace: '/w', critic_provider, state_dir: '/state' }),
+        // Under --worktree the critic reads the sibling checkout, not `.volley/`.
+        test_config({ workspace: '/w', critic_provider, worktree: true }),
+      ]) {
+        const prompt = resolve_critic_prompt(outside);
+        expect(prompt).not.toContain('Prior iteration state');
+        expect(prompt).not.toContain('{{');
+        expect(prompt).toContain('You are running inside the volley harness.');
+        expect(prompt).toContain('read-only access');
+      }
+    }
+  });
+
   it('uses a custom prompt file when configured', () => {
     const { workspace, cleanup } = temp_workspace();
     try {

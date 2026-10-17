@@ -4,7 +4,7 @@
  * and every critic system prompt gets the harness append.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config_error } from '../types.js';
 import type {
@@ -14,6 +14,8 @@ import type {
   CheckResult,
   ResolvedConfig,
 } from '../types.js';
+import { state_path } from '../workspace.js';
+import { build_root } from '../worktree.js';
 
 /** Walk up from this module to the package root (works from src/ under tsx
  * and from dist/ in the published package, which ships src/critic/presets). */
@@ -40,7 +42,27 @@ export function resolve_critic_prompt(config: ResolvedConfig): string {
   const append_file =
     config.critic_provider === 'claude_cli' ? 'harness_append.md' : 'harness_append_local.md';
   const append = readFileSync(join(presets_dir(), append_file), 'utf8');
-  return `${base.trimEnd()}\n\n${append.trimEnd()}`;
+  return `${base.trimEnd()}\n\n${place_iterations_dir(append, config).trimEnd()}`;
+}
+
+const ITERATIONS_DIR = '{{iterations_dir}}';
+
+/** Fill the harness append's line about prior iteration state with where the
+ * run's `iterations/` sits, relative to the build root the critic reads from,
+ * or drop the line when the run's state is outside that root: a confined
+ * critic can't reach it, and naming it would only spend the critic's steps on
+ * a path it can't open. */
+function place_iterations_dir(append: string, config: ResolvedConfig): string {
+  const path = relative(
+    build_root(config.workspace, config.worktree),
+    state_path(config, 'iterations'),
+  );
+  const outside = path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
+  return append
+    .split('\n')
+    .filter((line) => !(outside && line.includes(ITERATIONS_DIR)))
+    .join('\n')
+    .replaceAll(ITERATIONS_DIR, `${path}/`);
 }
 
 export type CriticPromptInput = {

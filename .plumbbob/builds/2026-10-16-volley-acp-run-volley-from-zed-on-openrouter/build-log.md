@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 2 — feat(orchestrator): inject seat tools, approval, and a trajectory sink
+**Current step:** 3 — feat(state): add --state-dir to keep run state out of the workspace
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -24,7 +24,7 @@ line above. Only ONE step is in flight; a step is done only after a checkpoint:
 check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 
 - ☑ 1. feat(provider): add an openrouter seat provider
-- ☐ 2. feat(orchestrator): inject seat tools, approval, and a trajectory sink
+- ☑ 2. feat(orchestrator): inject seat tools, approval, and a trajectory sink
 - ☐ 3. feat(state): add --state-dir to keep run state out of the workspace
 - ☐ 4. feat(acp): give acp seats fascicle's workspace tools and prompts
 - ☐ 5. feat(acp): serve volley to Zed as an ACP agent
@@ -39,6 +39,8 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 > Mid-step, every new problem / idea / "ooh what if" lands HERE, untouched, and you
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/plumbbob:park` composes it). Harvest happens only at the boundary.
+
+- [ ] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -157,3 +159,50 @@ folder, so it rides the branch into the PR.)*
   **5.** The seat options moved into one helper, and a test pins the run command's option order
 
   `with_seat_options(command)` in `src/cli.ts` declares the eight seat options D9 (acp-flags) names, in their old positions, and the run command calls it between `--check` and `--builder-permission-mode`. A diff of `--help` taken before and after the change shows the same flags in the same order, with only the descriptions changed. `test/integration/cli.test.ts` now asserts the full ordered option list and that both provider lines list `openrouter`. It also spawns the CLI to check four things: an unset key exits 5 naming it, for both seats or the critic alone; an uncontained openrouter builder is refused; and a dry run prints each seat's resolved endpoint and names the one that's unreachable.
+
+- 2026-10-17 — step 2 checkpointed · a692f835e — feat(orchestrator): inject seat tools, approval, and a trajectory sink (1 drift, 18m)
+
+  **Summary**: `run_volley` now takes per-seat tools, an approval handler for the builder, and an outside trajectory sink, and with none of them a run is exactly what it was, which a new test pins against the code as it stood before this step.
+
+  1. Each seat can take its own tools, and the builder an approval handler, and they reach only that seat's calls.
+  2. With a sink, the run streams through `run.stream` into both the file and the sink, and the file skips only the model chunks.
+  3. The "changes nothing" test pins today's generate options and file event kinds exactly, and it passed against the old source first.
+  4. A `claude_cli` seat takes none of the injected deps, since it brings its own tools.
+  5. One stray outside the seam: the builder's `presets_dir` is now `builder_presets_dir`, and `test/unit/builder_prompt.test.ts` follows it.
+
+  **Readout**: Step 2 - feat(orchestrator): inject seat tools, approval, and a trajectory sink
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    2 of 2 honored
+  constraints  6 of 6 honored
+  seam         strayed: 1 path outside the seam
+               → test/unit/builder_prompt.test.ts
+  diff         +504 -43 across 8 files
+  spent        18 min · 1 turn · 11s gate · green first run
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Approve and land step 2. The baseline tests pass against the code before and after the change, so "leaving them out changes nothing" is shown rather than assumed, and the one stray is a two-line rename the gate forced.
+
+  **1.** Each seat can take its own tools, and the builder an approval handler, and they reach only that seat's calls.
+
+  `FlowDeps.engines` grew into `FlowDeps.seats` ([D2 (seat-deps)](#d2)): `{ builder: { engine, tools?, on_tool_approval? }, critic: { engine, tools? } }`, typed as `BuilderSeat` and `CriticSeat` in `src/flow.ts` as `Pick`s of the existing `BuilderDeps` and `CriticDeps`, so no parallel fields were added. `run_volley`'s deps gained `seats?`, the same shapes without the engine, and `deps.engine` still serves both seats. In `src/builder.ts` an injected set replaces `builder_tools(...)` and the handler lands as `on_tool_approval`; in `src/critic/run.ts` an injected set replaces `read_only_tools(...)` on the tool-bearing call only. The tool-less rung and the dry-run canary take no injected tools. The tests check by object identity that the builder's set and handler reach the builder's call, the critic's set reaches `critic_tools`, and the tool-less pass carries neither.
+
+  **2.** With a sink, the run streams through `run.stream` into both the file and the sink, and the file skips only the model chunks.
+
+  `execute_flow` in `src/orchestrator.ts` keeps today's single `run` into `trajectory.jsonl` when there's no sink. With a sink it calls `run.stream` with `tee_logger(without_model_chunks(file), sink)` and closes the handle's own event stream at once ([D1 (stream-inner-run)](#d1)). That matters because fascicle's `model_call` records `model_chunk` only when `ctx.streaming` is set. The file goes first in the tee on purpose. fascicle's `tee_logger` hands out the first sink's span ids as parents, so the file's parent links stay whole for the viewer. The sink sees parent ids it never issued, and I checked that this costs Zed nothing: `to_session_updates` counts a step's runs by the `id` on each `span_start` and never reads span ids. The test shows the sink gets the span starts (`build`, `builder`, `check`, `critic_tools`) and the builder's and critic's chunks in order. The file's event sequence equals the sink's minus `model_chunk`. The renderer still sees every builder chunk beside the forwarder.
+
+  **3.** The "changes nothing" test pins today's generate options and file event kinds exactly, and it passed against the old source first.
+
+  `test/integration/seat_deps.test.ts` compares each seat's whole generate options with `toStrictEqual`, on `claude_cli` and on `lmstudio`. That covers every key the call carried, the prompts, today's system prompts, the tool names, the loop knobs, and `on_chunk` being the renderer's own function, which shows no deps means no `run.stream`. It also pins the file trajectory's kinds (`flow_structure`, `run_end`, `span_end`, `span_start`) while both seats stream chunks. I captured those values with a throwaway probe on the old code (since deleted), then ran the three baseline tests with `src/` stashed back to HEAD, and they passed there too. `test/helpers/mock_engine.ts` gained a `chunks` field so a mock call streams through `on_chunk` as a provider would.
+
+  **4.** A `claude_cli` seat takes none of the injected deps, since it brings its own tools.
+
+  fascicle's `claude_cli` adapter ignores `on_tool_approval`, with an `option_ignored` event, and can refuse executable tools, so injected tools and the handler apply only on the tool-loop branch, where volley supplies tools today. That keeps a `claude_cli` critic under acp on the CLI's own reads, as [D20 (cli-critic-allowed)](#d20) expects. A test injects both seats' deps into a `claude_cli` run and gets today's options unchanged.
+
+  **5.** One stray outside the seam: the builder's `presets_dir` is now `builder_presets_dir`, and `test/unit/builder_prompt.test.ts` follows it.
+
+  The new test is the first file to import from both `src/builder.ts` and `src/critic/prompt.ts`, and fallow then flagged the `presets_dir` both modules export as a duplicate export, failing the dead slot. A dynamic import didn't clear it. The choices were a rename, a fallow suppression (the codebase has none), or a weaker test. I renamed the builder's, since `src/builder.ts` is in the seam, and the only file outside it is that unit test's import and one call. The critic's `presets_dir` keeps its name, and the `cli.ts` comment that mentions it still holds.
