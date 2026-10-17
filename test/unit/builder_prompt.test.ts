@@ -1,12 +1,20 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { run } from 'fascicle';
+import { acp_seat_tools } from '../../src/acp_tools.js';
 import {
   builder_presets_dir,
   compose_builder_prompt,
   compose_builder_system,
   compose_builder_system_local,
+  make_builder_step,
 } from '../../src/builder.js';
+import type { BuilderDeps } from '../../src/builder.js';
+import type { BuilderProvider } from '../../src/types.js';
+import { acp_session, temp_workspace, test_config } from '../helpers/harness.js';
+import { mock_engine } from '../helpers/mock_engine.js';
 
 const base = {
   task: 'implement the widget',
@@ -98,6 +106,101 @@ describe('compose_builder_system_local', () => {
   it('instructs stating a plan before the first tool call', () => {
     expect(flat).toContain('Plan first');
     expect(flat).toContain('before your first tool call, state your plan');
+  });
+});
+
+describe('compose_builder_system_local: the acp set', () => {
+  const flat = compose_builder_system_local('acp').replace(/\s+/g, ' ');
+
+  it('ships the acp preset beside the local one', () => {
+    expect(readdirSync(builder_presets_dir())).toContain('harness_append_acp.md');
+  });
+
+  it("names fascicle's workspace tools and volley's finish", () => {
+    for (const call of [
+      'read_file(path, offset?, limit?)',
+      'list_files(pattern?, path?)',
+      'search(pattern, path?, glob?)',
+      'write_file(path, content)',
+      'edit_file(path, old_text, new_text, replace_all?)',
+      'run_command(command, timeout_ms?)',
+      'finish(summary)',
+    ]) {
+      expect(flat).toContain(call);
+    }
+  });
+
+  it("names none of volley's own tools, which the acp builder doesn't hold", () => {
+    for (const absent of ['bash(', 'search_files', 'fetch(', 'old_str']) {
+      expect(flat).not.toContain(absent);
+    }
+  });
+
+  it('says what a refused call means and what to do about it', () => {
+    expect(flat).toContain('tool_approval_denied means the user said no');
+    expect(flat).toContain("Don't repeat that call, and don't reach the same result another way");
+    expect(flat).toContain('call finish with a summary that names what was refused');
+  });
+
+  it('keeps the local preset\'s identity, finish stop, and plan-first rule', () => {
+    expect(flat).toContain('You are the builder inside the volley harness');
+    expect(flat).toContain('finish call ends your turn');
+    expect(flat).toContain('before your first tool call, state your plan');
+  });
+});
+
+describe("the builder seat's system prompt", () => {
+  /** The system prompt a builder seat's call carries, given the seat's
+   * injected deps. */
+  async function seat_system(
+    builder_provider: BuilderProvider,
+    seat: Pick<BuilderDeps, 'tools' | 'tool_set'> = {},
+  ): Promise<string | undefined> {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const engine = mock_engine(() => ({ content: 'done' }));
+      const config = test_config({ workspace, builder_provider, builder_model: 'builder-model' });
+      const step = make_builder_step({ engine, config, on_chunk: () => undefined, ...seat });
+      await run(step, 'build it', { install_signal_handlers: false });
+      return engine.calls[0]?.opts.system;
+    } finally {
+      cleanup();
+    }
+  }
+
+  it("is today's prompt, byte for byte, for a seat with no injected set", async () => {
+    const today = [
+      'You are the builder inside the volley harness: an autonomous agent',
+      'iterating on a workspace until it satisfies a task and its acceptance',
+      'criteria.',
+      '',
+      readFileSync(join(builder_presets_dir(), 'harness_append_local.md'), 'utf8').trimEnd(),
+    ].join('\n');
+    for (const provider of ['ollama', 'lmstudio', 'openrouter'] as const) {
+      expect(await seat_system(provider)).toBe(today);
+      expect(await seat_system(provider, { tool_set: 'volley' })).toBe(today);
+    }
+    expect(compose_builder_system_local()).toBe(today);
+  });
+
+  it('is the acp preset for a seat holding the acp set', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { builder } = acp_seat_tools(acp_session(workspace));
+      const system = await seat_system('openrouter', builder);
+      expect(system).toBe(compose_builder_system_local('acp'));
+      expect(system).toContain('run_command');
+      expect(system).toContain('search(');
+      expect(system).toContain('tool_approval_denied');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('stays the CLI prompt for a claude_cli seat, which takes no injected set', async () => {
+    expect(await seat_system('claude_cli', { tools: [], tool_set: 'acp' })).toBe(
+      compose_builder_system(),
+    );
   });
 });
 

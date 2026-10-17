@@ -15,6 +15,7 @@ import type {
   ResolvedConfig,
 } from '../types.js';
 import { state_path } from '../workspace.js';
+import type { ToolSet } from '../workspace_tools.js';
 import { build_root } from '../worktree.js';
 
 /** Walk up from this module to the package root (works from src/ under tsx
@@ -31,17 +32,22 @@ export function presets_dir(): string {
   throw config_error('critic presets directory not found');
 }
 
-export function resolve_critic_prompt(config: ResolvedConfig): string {
+/** The harness append that names the critic's reads. The CLI critic reads
+ * via built-in Read/Grep/Glob and never takes an injected set; every other
+ * critic, local or `openrouter`, reads via volley's read_file/search_files/
+ * list_files, or under `volley acp` via fascicle's read_file/list_files/
+ * search. */
+function harness_append_file(config: ResolvedConfig, tool_set: ToolSet): string {
+  if (config.critic_provider === 'claude_cli') return 'harness_append.md';
+  return tool_set === 'acp' ? 'harness_append_acp.md' : 'harness_append_local.md';
+}
+
+export function resolve_critic_prompt(config: ResolvedConfig, tool_set: ToolSet = 'volley'): string {
   const base =
     config.critic_prompt_path !== null
       ? readFileSync(config.critic_prompt_path, 'utf8')
       : readFileSync(join(presets_dir(), `${config.critic_preset}.md`), 'utf8');
-  // The CLI critic reads via built-in Read/Grep/Glob; every other critic, local
-  // or `openrouter`, reads via volley's supplied read_file/search_files/
-  // list_files tools, so its harness instructions name a different tool set.
-  const append_file =
-    config.critic_provider === 'claude_cli' ? 'harness_append.md' : 'harness_append_local.md';
-  const append = readFileSync(join(presets_dir(), append_file), 'utf8');
+  const append = readFileSync(join(presets_dir(), harness_append_file(config, tool_set)), 'utf8');
   return `${base.trimEnd()}\n\n${place_iterations_dir(append, config).trimEnd()}`;
 }
 

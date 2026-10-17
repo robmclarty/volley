@@ -19,9 +19,10 @@ export const READ_FILE_MAX_BYTES = 200_000;
 export const SEARCH_MAX_MATCHES = 200;
 const LIST_MAX_ENTRIES = 2000;
 
-/** Directories never worth handing a critic; they bury signal and blow the
- * traversal budget. */
-const IGNORED_DIRS = new Set([
+/** Directories never worth handing a seat; they bury signal and blow the
+ * traversal budget. The acp seats' `list_files` and `search` skip the same
+ * names (`./acp_tools.ts`), so a seat sees one tree under acp and on the CLI. */
+export const IGNORED_DIRS: ReadonlySet<string> = new Set([
   'node_modules',
   '.git',
   '.volley',
@@ -29,6 +30,11 @@ const IGNORED_DIRS = new Set([
   'dist',
   '.cache',
 ]);
+
+/** Which tool set a seat holds, so its prompt names the tools it has: volley's
+ * own (`'volley'`), or fascicle's workspace tools under `volley acp`
+ * (`'acp'`). */
+export type ToolSet = 'volley' | 'acp';
 
 /** Resolve `rel` inside `workspace`, rejecting absolute paths and any `..`
  * escape. Returns the absolute path; throws on containment violation. The

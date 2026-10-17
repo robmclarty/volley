@@ -22,6 +22,7 @@ import { seat_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
 import { error_kind, phase_error } from '../types.js';
 import type { CauseKind, DegradeCause, LoopState, ResolvedConfig } from '../types.js';
+import type { ToolSet } from '../workspace_tools.js';
 import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
 import { read_only_tools, workspace_inventory } from './tools.js';
@@ -56,6 +57,9 @@ export type CriticDeps = {
    * tools and never takes these. The critic takes no approval handler, since
    * nothing it reads with should ever ask. */
   tools?: ReadonlyArray<Tool>;
+  /** Which set `tools` is, so the harness append names the reads the critic
+   * holds; absent, volley's own. */
+  tool_set?: ToolSet;
 };
 
 /** Read-only tool wiring per provider. The claude_cli critic is confined at
@@ -233,7 +237,7 @@ function critic_call_config(deps: CriticDeps) {
     engine: deps.engine,
     provider: config.critic_provider,
     model: config.critic_model,
-    system: resolve_critic_prompt(config),
+    system: resolve_critic_prompt(config, deps.tool_set),
     schema: verdict_schema,
     on_chunk: deps.on_chunk,
   };

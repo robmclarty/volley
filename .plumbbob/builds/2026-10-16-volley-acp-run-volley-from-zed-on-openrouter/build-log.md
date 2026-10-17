@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 3 — feat(state): add --state-dir to keep run state out of the workspace
+**Current step:** 4 — feat(acp): give acp seats fascicle's workspace tools and prompts
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -25,7 +25,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 
 - ☑ 1. feat(provider): add an openrouter seat provider
 - ☑ 2. feat(orchestrator): inject seat tools, approval, and a trajectory sink
-- ☐ 3. feat(state): add --state-dir to keep run state out of the workspace
+- ☑ 3. feat(state): add --state-dir to keep run state out of the workspace
 - ☐ 4. feat(acp): give acp seats fascicle's workspace tools and prompts
 - ☐ 5. feat(acp): serve volley to Zed as an ACP agent
 - ☐ 6. feat(acp): show rounds, the check, and the verdict in Zed
@@ -40,7 +40,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 > go straight back to the step. Acting the instant an idea arrives is the disease.
 > Capture is one line (`/plumbbob:park` composes it). Harvest happens only at the boundary.
 
-- [ ] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
+- [x] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -58,7 +58,7 @@ from sprawling across branches.
 
 Harvest results this boundary:
 
-- (none yet)
+- 2026-10-17, after step 3: "a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints" → **tangent**, deferred. No step in this build reaches it: acp defaults the root to `$XDG_STATE_HOME/volley`, outside the repo (D5 (state-layout)), and the CLI with no flag still excludes `.volley/`. A later fix would exclude the root's path, relative to the build root, in `changes.ts`.
 
 ## Log
 
@@ -206,3 +206,73 @@ folder, so it rides the branch into the PR.)*
   **5.** One stray outside the seam: the builder's `presets_dir` is now `builder_presets_dir`, and `test/unit/builder_prompt.test.ts` follows it.
 
   The new test is the first file to import from both `src/builder.ts` and `src/critic/prompt.ts`, and fallow then flagged the `presets_dir` both modules export as a duplicate export, failing the dead slot. A dynamic import didn't clear it. The choices were a rename, a fallow suppression (the codebase has none), or a weaker test. I renamed the builder's, since `src/builder.ts` is in the seam, and the only file outside it is that unit test's import and one call. The critic's `presets_dir` keeps its name, and the `cli.ts` comment that mentions it still holds.
+
+- 2026-10-17 — step 3 checkpointed · 562498bda — feat(state): add --state-dir to keep run state out of the workspace (1 drift, 13m)
+
+  **Summary**: `--state-dir <root>` (or `state_dir` in a config file) now keeps each run's state at `<root>/<run_id>/`. Without it, every path is today's `.volley/`, rotation included. `volley resume <id> --state-dir <root>` finds and finishes such a run, and a matrix seat is read back from the root while `.volley-matrix/` stays in the workspace.
+
+  1. One path rule, `run_state_dir`, now decides where every state file goes
+  2. The critic's prior-state line is filled in, or dropped when state is outside the build root
+  3. resume takes `--state-dir`, and the root you name wins over the recorded one
+  4. Tests: spawned CLI runs against the OpenRouter stand-ins, plus a mutation check
+  5. Four test files outside the seam needed small mechanical edits
+
+  **Readout**: Step 3 - feat(state): add --state-dir to keep run state out of the workspace
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    4 of 4 honored
+  constraints  6 of 6 honored
+  seam         strayed: 4 paths outside the seam
+               - test/helpers/harness.ts
+               - test/integration/cli.test.ts
+               - test/unit/config.test.ts
+               - test/unit/critic_fallback.test.ts
+  diff         +582 -97 across 19 files
+  spent        13 min · 1 turn · 10s gate · green first run
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Approve and land step 3. The done-when is met with CLI-level evidence, and the `--worktree` prompt change is the only behavior change that D6 (critic-state-note) didn't spell out word for word.
+
+  **1.** One path rule, `run_state_dir`, now decides where every state file goes
+
+  `src/workspace.ts` swaps `volley_path(workspace, …)` for `run_state_dir`, `state_path`, and `iteration_dir`. Each takes a `StateLocation`, which is `{ workspace, state_dir, run_id }` (a `ResolvedConfig` fits it as-is). The rule is `<state_dir>/<run_id>/` when a root is set, else `<workspace>/.volley/`. `initialize_workspace` became `initialize_run_state` and rotates `<dir>` to `<dir>.bak.<stamp>`. For the default, that is exactly today's `.volley.bak.<stamp>`. Under a root, it only fires when a `--run-id` is reused, so two runs never share a directory. The orchestrator, iteration archive, resume, summary, and matrix all call the rule now; none builds a `.volley` path of its own. `config.json` records the resolved `state_dir`, and resume restores it.
+
+  **2.** The critic's prior-state line is filled in, or dropped when state is outside the build root
+
+  Both harness presets now put that sentence on its own line, with a `{{iterations_dir}}` placeholder. `place_iterations_dir` in `src/critic/prompt.ts` takes the path of the run's `iterations/` relative to `build_root`:
+  - inside the build root, the line names that path (`.volley/iterations/` by default, `runs/<id>/iterations/` for a root inside the workspace);
+  - outside it, the line is dropped.
+
+  Two side effects of doing this:
+  - The default prompt is re-wrapped. Same words, but the sentence now starts on a new line.
+  - Under `--worktree` with no `--state-dir`, the line now drops too. The build root there is the sibling `<ws>.worktree` checkout, which has no `.volley/`, so the old line pointed the critic at a path that wasn't there. This follows D6 (critic-state-note) as written, but it is a small CLI prompt change.
+
+  **3.** resume takes `--state-dir`, and the root you name wins over the recorded one
+
+  `load_resume_state` takes an optional root. The CLI resolves `--state-dir` against the cwd and also merges it into the resumed config, so a root that was moved still resumes where it now is. While there, the dupes slot flagged the resume command's hand-copied output-flag subset. That block now destructures `{ workspace, stateDir, ...output }`, which is safe because cac refuses any option the command doesn't declare. The "not found" error now names the state directory rather than the workspace.
+
+  **4.** Tests: spawned CLI runs against the OpenRouter stand-ins, plus a mutation check
+
+  `test/integration/state_dir.test.ts` covers:
+  - **Rooted run:** a run under a root keeps all seven state files there, and leaves only `done.txt` in the workspace.
+  - **Reused id:** a reused id rotates aside.
+  - **No flag:** without the flag, `.volley/` holds everything and rotates.
+  - **Config:** a relative root resolves against the cwd.
+  - **Resume:** a spawned `volley resume … --state-dir` finishes an interrupted openrouter run at iteration 2. `--workspace` is left at its default, which points somewhere else.
+  - **Matrix:** a spawned `volley matrix` whose seat gets a 400 is counted as a recovered `error`, not `broke`. That only happens if its summary was read back from the root.
+
+  The mutation check: pointing that read-back at the workspace instead fails the test. The critic tests cover the filled line, the nested root, and the dropped line (root outside, and `--worktree`).
+
+  **5.** Four test files outside the seam needed small mechanical edits
+
+  - `test/helpers/harness.ts` gains `state_dir: null`.
+  - `test/unit/config.test.ts` and `test/unit/critic_fallback.test.ts` follow the new helper signatures.
+  - `test/integration/cli.test.ts` adds `--state-dir` to its help-order list.
+
+  Two other things outside the seam:
+  - I parked one tangent: a root inside the workspace would show up in the builder's change list and in `--git` checkpoints.
+  - The renderer's verbose cut-off hint now names the real trajectory path. `matrix` shows a `<run id>` placeholder there, since each seat has its own id.

@@ -1,14 +1,19 @@
-import { readdirSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { run } from 'fascicle';
+import { acp_seat_tools } from '../../src/acp_tools.js';
 import {
   compose_critic_prompt,
   presets_dir,
   resolve_critic_prompt,
 } from '../../src/critic/prompt.js';
+import { make_critic_toolless_step, make_critic_tools_step } from '../../src/critic/run.js';
+import type { CriticDeps } from '../../src/critic/run.js';
 import { skipped_check } from '../../src/check/command.js';
-import { temp_workspace, test_config } from '../helpers/harness.js';
-import type { ChangeSet, CheckResult } from '../../src/types.js';
+import { acp_session, temp_workspace, test_config } from '../helpers/harness.js';
+import { approve_reply, mock_engine } from '../helpers/mock_engine.js';
+import type { ChangeSet, CheckResult, CriticProvider, ResolvedConfig } from '../../src/types.js';
 
 describe('presets', () => {
   it('ships one markdown file per preset, discoverable by listing', () => {
@@ -17,6 +22,8 @@ describe('presets', () => {
     expect(files).toContain('optimizer.md');
     expect(files).toContain('researcher.md');
     expect(files).toContain('harness_append.md');
+    expect(files).toContain('harness_append_local.md');
+    expect(files).toContain('harness_append_acp.md');
   });
 
   it('appends the harness instructions to every preset', () => {
@@ -90,6 +97,93 @@ describe('presets', () => {
       expect(prompt).toContain('volley harness');
     } finally {
       cleanup();
+    }
+  });
+});
+
+describe('resolve_critic_prompt: the acp set', () => {
+  const acp = (overrides: Partial<ResolvedConfig> = {}): string =>
+    resolve_critic_prompt(test_config({ workspace: '/w', critic_provider: 'openrouter', ...overrides }), 'acp');
+
+  it("names fascicle's three reads and none of volley's", () => {
+    const flat = acp().replace(/\s+/g, ' ');
+    for (const call of [
+      'read_file(path, offset?, limit?)',
+      'list_files(pattern?, path?)',
+      'search(pattern, path?, glob?)',
+    ]) {
+      expect(flat).toContain(call);
+    }
+    for (const absent of ['search_files', '(Read, Grep, Glob)', 'run_command(', 'write_file(']) {
+      expect(flat).not.toContain(absent);
+    }
+    expect(flat).toContain('read-only access');
+    expect(flat).toContain('structured verdict');
+  });
+
+  it('places or drops the prior-state line as the local append does', () => {
+    expect(acp()).toContain('Prior iteration state is visible under the .volley/iterations/ directory.');
+    // acp's default state root is outside the workspace, where no read reaches.
+    const outside = acp({ state_dir: '/state' });
+    expect(outside).not.toContain('Prior iteration state');
+    expect(outside).not.toContain('{{');
+  });
+});
+
+describe("the critic seat's system prompt", () => {
+  /** The system prompt each rung of a critic seat's ladder carries, given the
+   * seat's injected deps. */
+  async function seat_systems(
+    critic_provider: CriticProvider,
+    seat: Pick<CriticDeps, 'tools' | 'tool_set'> = {},
+  ): Promise<Array<string | undefined>> {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const engine = mock_engine(() => approve_reply());
+      const config = test_config({ workspace, critic_provider, critic_model: 'critic-model' });
+      const deps: CriticDeps = { engine, config, on_chunk: () => undefined, ...seat };
+      for (const step of [make_critic_tools_step(deps), make_critic_toolless_step(deps)]) {
+        await run(step, 'review it', { install_signal_handlers: false });
+      }
+      return engine.calls.map((call) => call.opts.system);
+    } finally {
+      cleanup();
+    }
+  }
+
+  it("is today's prompt, byte for byte, for a seat with no injected set", async () => {
+    const append = readFileSync(join(presets_dir(), 'harness_append_local.md'), 'utf8')
+      .replaceAll('{{iterations_dir}}', '.volley/iterations/')
+      .trimEnd();
+    const reviewer = readFileSync(join(presets_dir(), 'reviewer.md'), 'utf8').trimEnd();
+    const today = `${reviewer}\n\n${append}`;
+    for (const provider of ['ollama', 'lmstudio', 'openrouter'] as const) {
+      expect(await seat_systems(provider)).toEqual([today, today]);
+      expect(await seat_systems(provider, { tool_set: 'volley' })).toEqual([today, today]);
+    }
+  });
+
+  it('is the acp append on both rungs for a seat holding the acp set', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { critic } = acp_seat_tools(acp_session(workspace));
+      const systems = await seat_systems('openrouter', critic);
+      expect(systems).toHaveLength(2);
+      for (const system of systems) {
+        expect(system).toContain('search(pattern, path?, glob?)');
+        expect(system).not.toContain('search_files');
+      }
+      expect(systems[0]).toBe(systems[1]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('stays the CLI append for a claude_cli critic, which takes no injected set', async () => {
+    const systems = await seat_systems('claude_cli', { tools: [], tool_set: 'acp' });
+    for (const system of systems) {
+      expect(system).toContain('(Read, Grep, Glob)');
+      expect(system).not.toContain('search(pattern');
     }
   });
 });

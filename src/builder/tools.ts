@@ -584,7 +584,13 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       }),
   };
 
-  const finish: Tool = {
+  return [...read_only_tools(workspace), write_file, edit_file, bash, fetch, finish_tool()];
+}
+
+/** The terminal `finish` tool, on its own for a builder set that brings its
+ * own file and command tools (`../acp_tools.ts`). */
+export function finish_tool(): Tool {
+  return {
     name: 'finish',
     description:
       'Declare the task complete. Calling this tool ends your turn — do not ' +
@@ -599,6 +605,4 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       return `finished: ${input.summary}`;
     },
   };
-
-  return [...read_only_tools(workspace), write_file, edit_file, bash, fetch, finish];
 }

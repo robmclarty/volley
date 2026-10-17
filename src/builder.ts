@@ -25,6 +25,7 @@ import { seat_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
 import { config_error, phase_error } from './types.js';
 import type { LoopState, ResolvedConfig } from './types.js';
+import type { ToolSet } from './workspace_tools.js';
 import { build_root } from './worktree.js';
 
 export const BUILDER_ALLOWED_TOOLS = [
@@ -59,29 +60,36 @@ export function builder_presets_dir(): string {
   throw config_error('builder presets directory not found');
 }
 
+/** The harness append each tool set's builder reads: one naming volley's own
+ * tools, or one naming fascicle's workspace tools under `volley acp` and
+ * saying what a call the user refused means. */
+const HARNESS_APPENDS: Record<ToolSet, string> = {
+  volley: 'harness_append_local.md',
+  acp: 'harness_append_acp.md',
+};
+
 // The CLI system prompt assumes CLI semantics (built-in tools, implicit
-// cwd), so the local builder gets its own — the volley tool set, the
+// cwd), so the local builder gets its own — its tool set, the
 // workspace-is-cwd convention, and the harness-enforced `finish` stop.
-export function compose_builder_system_local(): string {
+export function compose_builder_system_local(tool_set: ToolSet = 'volley'): string {
   const identity = [
     'You are the builder inside the volley harness: an autonomous agent',
     'iterating on a workspace until it satisfies a task and its acceptance',
     'criteria.',
   ].join('\n');
-  const append = readFileSync(join(builder_presets_dir(), 'harness_append_local.md'), 'utf8');
+  const append = readFileSync(join(builder_presets_dir(), HARNESS_APPENDS[tool_set]), 'utf8');
   return `${identity}\n\n${append.trimEnd()}`;
 }
 
 /** The builder system prompt for the active provider: the `claude_cli`
  * prompt (implicit built-in tools, "the current working directory") for the
- * CLI builder, or the local prompt (volley's tool set, workspace-is-cwd, and
- * the harness-enforced `finish` stop) for every provider that runs volley's
- * tool loop, `openrouter` included. Mirrors the critic's
- * `resolve_critic_prompt`. */
-function resolve_builder_system(config: ResolvedConfig): string {
+ * CLI builder, which never takes an injected set, or the local prompt naming
+ * the seat's tool set for every provider that runs volley's tool loop,
+ * `openrouter` included. Mirrors the critic's `resolve_critic_prompt`. */
+function resolve_builder_system(config: ResolvedConfig, tool_set?: ToolSet): string {
   return config.builder_provider === 'claude_cli'
     ? compose_builder_system()
-    : compose_builder_system_local();
+    : compose_builder_system_local(tool_set);
 }
 
 // Salvage budget for a tool call a local model emits as assistant text instead
@@ -212,6 +220,9 @@ export type BuilderDeps = {
    * that set. A `claude_cli` builder brings its own tools and never takes
    * these. */
   tools?: ReadonlyArray<Tool>;
+  /** Which set `tools` is, so the prompt names the tools the builder holds;
+   * absent, volley's own. */
+  tool_set?: ToolSet;
   /** Answers each call to a tool that asks first (`needs_approval`). Like
    * `tools`, it reaches every builder but `claude_cli`. Absent, such a call
    * fails closed. */
@@ -234,7 +245,7 @@ export function make_builder_step(deps: BuilderDeps): BuilderStep {
     description: 'model call: one agentic session in the build root',
     provider: config.builder_provider,
     model: config.builder_model,
-    system: resolve_builder_system(config),
+    system: resolve_builder_system(config, deps.tool_set),
     on_chunk: deps.on_chunk,
     ...builder_tool_options(deps),
   });

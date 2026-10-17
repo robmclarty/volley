@@ -56,13 +56,15 @@ import type { PhaseDeps } from './phases.js';
 import type { LoopState, RunInput } from './types.js';
 
 /** The builder seat: the engine its calls go through, and, when the caller
- * injects them, the tools that replace volley's own set and the handler that
- * answers their approval requests. */
-export type BuilderSeat = Pick<BuilderDeps, 'engine' | 'tools' | 'on_tool_approval'>;
+ * injects them, the tools that replace volley's own set, the name of that set
+ * (which its prompt names), and the handler that answers their approval
+ * requests. */
+export type BuilderSeat = Pick<BuilderDeps, 'engine' | 'tools' | 'tool_set' | 'on_tool_approval'>;
 
 /** The critic seat: its engine and, when injected, the tools that replace its
- * reads. It takes no approval handler, since its reads never ask. */
-export type CriticSeat = Pick<CriticDeps, 'engine' | 'tools'>;
+ * reads and the name of their set. It takes no approval handler, since its
+ * reads never ask. */
+export type CriticSeat = Pick<CriticDeps, 'engine' | 'tools' | 'tool_set'>;
 
 /** What the flow is built from: the step bodies' dependencies, plus each
  * seat's model wiring and the builder's `bash` executor. The two seats share

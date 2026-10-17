@@ -1,11 +1,12 @@
 /**
  * Shared integration-test scaffolding: temp workspaces, a silent renderer,
- * and a ResolvedConfig factory.
+ * a ResolvedConfig factory, and an ACP session.
  */
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import type { AcpMode, AcpSession } from 'fascicle/acp';
 import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import type { Renderer } from '../../src/render/renderer.js';
@@ -97,4 +98,23 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
 
 export function write_file(workspace: string, name: string, content: string): void {
   writeFileSync(join(workspace, name), content);
+}
+
+/** An ACP session as `serve_acp` makes one for `session/new`: `roots` is
+ * `cwd`, then each additional directory, as real paths. Its approver refuses
+ * every call. */
+export function acp_session(
+  cwd: string,
+  additional: string[] = [],
+  mode: AcpMode = 'manual',
+): AcpSession {
+  return {
+    id: 'session-1',
+    cwd,
+    additional_directories: additional,
+    roots: [cwd, ...additional].map((dir) => realpathSync(dir)),
+    client_capabilities: {},
+    mode: () => mode,
+    approve: () => false,
+  };
 }
