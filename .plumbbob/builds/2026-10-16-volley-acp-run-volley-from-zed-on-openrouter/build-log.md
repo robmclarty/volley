@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 8 — test(acp): drive a whole volley turn through an in-process ACP client
+**Current step:** 9 — docs(readme): document volley acp, OpenRouter, and the Zed setup
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -30,7 +30,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 5. feat(acp): serve volley to Zed as an ACP agent
 - ☑ 6. feat(acp): show rounds, the check, and the verdict in Zed
 - ☑ 7. feat(acp): ask before uncontained commands and hide provider keys
-- ☐ 8. test(acp): drive a whole volley turn through an in-process ACP client
+- ☑ 8. test(acp): drive a whole volley turn through an in-process ACP client
 - ☐ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
 - ☐ 10. test(acp): script and pass the live check in Zed
 
@@ -43,6 +43,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - [x] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
 - [ ] acp_tools' cwd_only session copy hides fascicle's per-session preview store (a WeakMap keyed on the session object): an edit's card closes without its diff, and in a client that draws terminals (Zed) every run_command terminal closes empty with no exit code
 - [ ] the check's permission request carries kind 'other' (fascicle's approver defaults a tool it has no presenter for), so a client that applies the request's fields may redraw the check's execute card as a plain one while it asks; watch for it in the live check's step 4
+- [ ] src/flow.ts's critic retry step says 'local providers only', but is_retryable_critic_error retries every provider but claude_cli, openrouter included; the README's diagram copy repeats it (a test holds the two in step)
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -605,3 +606,5 @@ folder, so it rides the branch into the PR.)*
   **5.** Two test files sit outside the seam: `test/helpers/acp_client.ts` and `test/integration/acp_cli.test.ts`
 
   Only fascicle's real approver decides which options a prompt offers, and only an in-process `acp_agent` session reaches it. So `open_session` now takes `{ on_permission, mode }`: it answers `session/request_permission` and can switch the session's mode. The acp turn tests sit beside the turn tests already there. Step 8 lists both files in its seam and can reuse the helper as is. `src/flow.ts` is in the seam but needed no change, since `FlowDeps` already extends `PhaseDeps`.
+
+- 2026-10-17 — step 8 checkpointed · bc9f19ce6 — test(acp): drive a whole volley turn through an in-process ACP client (6m)

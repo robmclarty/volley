@@ -55,7 +55,8 @@ The cap is enforced in the loop guard after each phase. Sessions are never
 killed mid-flight for cost (a builder killed mid-edit leaves the workspace
 undefined), so set the cap below your true ceiling by roughly one iteration's
 expected cost. Per-run totals land in `.volley/summary.json` and the final
-terminal summary.
+terminal summary. An [OpenRouter](#openrouter) seat's cost isn't recorded yet,
+so on one the cap can't trip, and `--max-iterations` is the guard.
 
 ## How it works
 
@@ -122,8 +123,10 @@ the one in the `src/flow.ts` header to what the code builds, so neither drifts.
 
 ## Install
 
-Requires Node ≥ 24, pnpm, and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
-installed and authenticated.
+Requires Node ≥ 24 and pnpm. The default seats run on the
+[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code), installed and
+authenticated; seats on [OpenRouter](#openrouter) or a
+[local model server](#local-critic) don't need it.
 
 From a checkout:
 
@@ -147,6 +150,8 @@ volley [options]
 volley --config <path>
 volley resume <run-id>
 volley matrix --builders <models> --critics <models> --config <path>
+volley acp --builder-provider <name> --builder-model <model> \
+  --critic-provider <name> --critic-model <model> [options]
 ```
 
 | Flag | Default | Description |
@@ -156,13 +161,13 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--criteria` | (required) | Acceptance criteria. Literal string or `@path`. |
 | `--check` | `auto` | `auto` (checkride if detected, else none), `none`, or a shell command. |
 | `--builder-model` | `opus` | `opus`/`sonnet`/`haiku` or a full model id. |
-| `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local builder](#local-builder)). |
-| `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama` or `lmstudio` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
-| `--builder-max-steps` | `50` | Local builder tool-loop step cap per iteration. Ignored for `claude_cli`. |
-| `--allow-unsandboxed-builder` | off | Permit a local builder to run without a sandbox (see [Local builder](#local-builder)). |
+| `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local builder](#local-builder) and [OpenRouter](#openrouter)). |
+| `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
+| `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Ignored for `claude_cli`. |
+| `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
-| `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, or `lmstudio` (see [Local critic](#local-critic)). |
-| `--critic-url` | the provider's env var | The critic's model server base URL, for `ollama` or `lmstudio` only. |
+| `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
+| `--critic-url` | the provider's env var | The critic's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. |
 | `--builder-permission-mode` | `acceptEdits` | Or `bypassPermissions` for fully trusted workspaces. |
 | `--critic` | `reviewer` | `reviewer`, `optimizer`, `researcher`, or a prompt file path. |
 | `--max-iterations` | `10` | Hard iteration cap. |
@@ -173,8 +178,9 @@ volley matrix --builders <models> --critics <models> --config <path>
 | `--gate-paths` | (built-in list) | Comma-separated globs naming the gate — tests, fixtures, check config. Replaces the defaults; see [What the builder changed](#what-the-builder-changed). |
 | `--fail-on-gate-edit` | off | Halt the run (exit 8) if the builder edits a gate path, instead of reporting it. |
 | `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
-| `--run-id` | a fresh UUID | The run's id, naming its `.volley/` state and its `volley/<id>` branch, so a harness that owns the id finds it in both. Letters, digits, `-`, and `_`, starting with a letter or digit. |
-| `--dry-run` | off | Validate config, run `checkride doctor`, probe each local seat's model endpoint, run the critic-seat canary (for a local critic), then exit. |
+| `--state-dir` | the workspace's `.volley/` | Keep each run's state under `<path>/<run id>/` instead, and none in the workspace (see [Run artifacts](#run-artifacts)). Or `state_dir` in a config file. |
+| `--run-id` | a fresh UUID | The run's id, naming its run state and its `volley/<id>` branch, so a harness that owns the id finds it in both. Letters, digits, `-`, and `_`, starting with a letter or digit. |
+| `--dry-run` | off | Validate config, run `checkride doctor`, probe each tool-loop seat's model endpoint (local or OpenRouter), run the critic-seat canary (for a local critic), then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
 | `--json` | off | Machine mode: one summary JSON document on stdout. |
 | `--verbose` | off | Full tool inputs/outputs (truncated at 4000 chars). |
@@ -225,7 +231,12 @@ export default config;
 ```sh
 volley resume <run-id>            # in the workspace directory
 volley resume <run-id> --workspace ./my-project
+volley resume <run-id> --state-dir ~/volley-runs   # a run started with --state-dir
 ```
+
+Given the root a run was started under, `resume` finds it at
+`<root>/<run-id>/` from any directory, since the run's recorded config names its
+workspace.
 
 Continues from the last completed iteration with the saved feedback and cost
 totals. An iteration interrupted mid-phase is discarded and re-run.
@@ -503,6 +514,189 @@ on the host, for example `ssh -N -L 11522:localhost:11434 gpu-box`. On a Linux
 host, `host-gateway` is the Docker bridge's address, so the forward, like Ollama
 itself, has to listen there rather than on `127.0.0.1` alone.
 
+## OpenRouter
+
+`--builder-provider openrouter` and `--critic-provider openrouter` put a seat on
+[OpenRouter](https://openrouter.ai), so one API key runs both seats, Claude
+included, with no Claude Code CLI and no local model server:
+
+```sh
+OPENROUTER_API_KEY=sk-or-v1-... volley \
+  --prompt "@task.md" --workspace ./my-project --criteria "@criteria.md" \
+  --builder-provider openrouter --builder-model anthropic/claude-sonnet-5.5 \
+  --critic-provider openrouter --critic-model anthropic/claude-haiku-5.5 \
+  --allow-unsandboxed-builder --max-iterations 3
+```
+
+- **The key.** `OPENROUTER_API_KEY` is required whenever either seat is on
+  `openrouter`. Unset, volley exits 5 naming it, before any work. It goes out
+  as a Bearer token, with `X-Title: volley` so OpenRouter attributes the
+  traffic.
+- **The URL.** `VOLLEY_OPENROUTER_URL` (default `https://openrouter.ai/api/v1`)
+  points both seats at a proxy or another OpenAI-compatible gateway, and
+  `--builder-url` / `--critic-url` give one seat a URL of its own, under the
+  rules in [Seats on different machines](#seats-on-different-machines).
+  OpenRouter runs on fascicle's native transport, so there's no peer to
+  install, and the run summary records the transport as `native`.
+- **The seats.** An OpenRouter seat runs volley's tool loop, the same as a
+  local one. The builder gets volley's tools, `bash` included, so it's refused
+  uncontained unless you opt out, exactly like a
+  [local builder](#local-builder). The critic gets the read-only tools and the
+  same retry-and-degrade ladder as a [local critic](#local-critic).
+  `--dry-run` probes each OpenRouter seat's endpoint but runs no critic canary,
+  which would cost money here.
+- **No cost or reasoning yet.** fascicle 0.14.0 records an OpenRouter call's
+  cost as missing, so `--max-cost-usd` can't trip on an OpenRouter seat:
+  `--max-iterations` is the guard, and `VOLLEY_PRICING_PATH` can supply prices.
+  An OpenRouter seat streams no reasoning either.
+- **In the sandbox.** The container's allowlist reaches only the host gateway,
+  so a contained OpenRouter seat needs `openrouter.ai` let through your
+  `DOCKER-USER` rules. volley doesn't install that rule for you.
+
+## Run volley from Zed
+
+`volley acp` serves volley to an editor over the
+[Agent Client Protocol](https://agentclientprotocol.com), through fascicle's
+`serve_acp`, so a prompt in [Zed](https://zed.dev)'s agent panel starts a volley
+run on the folder Zed has open. The builder's work streams in as the reply, each
+round opens with a **Round N** line, the check shows as a command card, the
+critic's verdict arrives as a thought, and the turn ends with a summary.
+
+```sh
+volley acp \
+  --builder-provider openrouter --builder-model anthropic/claude-sonnet-5.5 \
+  --critic-provider openrouter --critic-model anthropic/claude-haiku-5.5 \
+  --check "pnpm test"
+```
+
+It reads the protocol on stdin and writes nothing but the protocol to stdout,
+with its own progress on stderr, which Zed shows in its agent log. Zed starts it
+for you ([below](#zed-setup)).
+
+### Each prompt is a run
+
+- **Fresh, in place.** Each prompt is a new volley run on the open folder, with
+  no worktree. Its task and its acceptance criteria are both the conversation so
+  far, then the new prompt. An earlier reply keeps only its last 2,000
+  characters, where its summary sits. An earlier prompt's attached files shrink
+  to a line naming each, since they're still on disk. A turn you stopped is
+  marked as stopped.
+- **Three rounds.** `--max-iterations` defaults to 3 per prompt, not 10, since
+  nothing else caps spend on an OpenRouter seat. Follow a run that didn't
+  converge with "keep going": the summary it ended with lists what the critic
+  still found missing.
+- **The tools.** The builder gets fascicle's workspace tools (`read_file`,
+  `list_files`, `search`, `write_file`, `edit_file`, `run_command`) plus
+  volley's `finish`. The critic gets the three reads. Both stay inside the open
+  folder, leaving out any additional directories the editor sends, and neither
+  gets `fetch`.
+- **The summary.** The turn's last message says whether the run converged, in
+  how many rounds, and with what last verdict. When it didn't converge, it
+  lists the unmet criteria, and it names any gate edits and any verdict the
+  critic reached without its tools. A run that fails ends with a summary saying
+  in which round and phase, and why, so "try again" has a request to retry.
+- **Stop.** Pressing stop ends the turn as cancelled, and kills a running
+  command or check along with its whole process group.
+
+### Flags and refusals
+
+`volley acp` takes the run command's seat flags, and requires four of them:
+`--builder-provider`, `--builder-model`, `--critic-provider`, and
+`--critic-model`. A missing one is refused with every missing flag named. The
+rest are optional: `--builder-url`, `--critic-url`, `--builder-max-steps`,
+`--allow-unsandboxed-builder`, `--critic`, `--check`, `--max-iterations`,
+`--max-cost-usd`, and `--state-dir`.
+
+It refuses these before serving, each with exit 5:
+
+| Refused | Why |
+|---|---|
+| `--worktree` | A sibling worktree sits outside the project the editor has open. |
+| `--git` | It commits to the open repo after every phase, which no permission prompt covers. |
+| `--json` | Stdout carries the protocol alone. |
+| a `claude_cli` builder | The Claude CLI runs its own tools under its own permission model, so its edits would never reach the editor's prompts. |
+
+A `claude_cli` critic is allowed: it only reads, and it runs on the host, where
+its login works. The whole config resolves once at startup, so a bad flag or an
+unset `OPENROUTER_API_KEY` exits 5 there, where Zed's agent log shows it, rather
+than failing every prompt.
+
+### Modes and approvals
+
+Each session starts in Manual. Zed's mode picker switches it, and a switch holds
+from the next call on, mid-turn included:
+
+| Mode | Asks before an edit | Asks before a command |
+|---|---|---|
+| Manual | yes | yes |
+| Accept edits | no | yes |
+| Auto | no | no, unless volley is uncontained (below) |
+
+An edit asks with its diff, and offers "Allow all edits this session", which
+switches the session to Accept edits. A command offers "Always allow" for its
+program and its first argument that isn't a flag (`pnpm test`), but never for a
+command with shell control syntax such as `;` or `|`. A call you reject reaches the builder as
+`tool_approval_denied`, and its prompt tells it not to reach the same result
+another way.
+
+- **Uncontained, every command asks.** Outside volley's
+  [sandbox container](#local-builder) (`VOLLEY_CONTAINED`), a person approving
+  each command takes the container's place, so the builder's `run_command` asks
+  in every mode, Auto included. `--allow-unsandboxed-builder` or
+  `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` opts out, and commands then follow the
+  mode. So unlike the run command, `volley acp` never refuses an uncontained
+  builder.
+- **The check asks whenever a command would.** In Accept edits and Auto the
+  builder can rewrite a test without asking, and the check runs it next. So the
+  check asks on its own card exactly when a builder command would ask, offering
+  only Allow and Reject, since an "always" for checkride's `pnpm exec` would
+  cover the builder's commands too. A rejected check counts as a failed one, so
+  a round can't converge on work nobody checked.
+- **No keys in commands.** The builder's commands and the check run with the
+  agent's environment minus `OPENROUTER_API_KEY` and `ANTHROPIC_API_KEY`,
+  `PATH` kept, so nothing the builder writes can read the key a seat runs on.
+
+### Where its state goes
+
+Nothing of volley's own lands in the repo. Each prompt's run state goes to
+`<root>/<run id>/`, where the root is `--state-dir`, else
+`$XDG_STATE_HOME/volley`, else `~/.local/state/volley`. Nothing prunes old runs.
+The whole root is safe to delete whenever no prompt is running. A run's
+`trajectory.jsonl` there replays in `fascicle-viewer` like a CLI run's
+([Run artifacts](#run-artifacts)).
+
+### Zed setup
+
+Run `pnpm build` first: Zed runs `dist/cli.js`, and nothing else rebuilds it.
+Then add volley as a custom agent server in Zed's `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "Volley": {
+      "type": "custom",
+      "command": "node",
+      "args": [
+        "/abs/path/to/volley/dist/cli.js", "acp",
+        "--builder-provider", "openrouter", "--builder-model", "anthropic/claude-sonnet-5.5",
+        "--critic-provider", "openrouter", "--critic-model", "anthropic/claude-haiku-5.5",
+        "--check", "pnpm test"
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "sk-or-v1-...",
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  }
+}
+```
+
+`PATH` is there for the builder's commands and the check. Each runs with
+`/bin/sh -c`, which reads no shell profile, so a `node` or `pnpm` from nvm, fnm,
+volta, or asdf can come back as `command not found` unless it's on this `PATH`.
+Put the directories that `dirname "$(command -v node)"` and
+`dirname "$(command -v pnpm)"` print at its front.
+
 ## What the builder changed
 
 A check that exits 0 proves the check passed. It does not prove the builder did
@@ -546,7 +740,7 @@ that `--fail-on-gate-edit` cannot fire there.
 
 ## Run artifacts
 
-Everything volley knows lives in the workspace:
+By default, everything volley knows lives in the workspace:
 
 ```
 .volley/
@@ -560,18 +754,30 @@ Everything volley knows lives in the workspace:
 
 A stale `.volley/` from a previous run is rotated to `.volley.bak.<timestamp>/`.
 
+With `--state-dir <root>` (or `state_dir` in a config file), each run writes the
+same files to `<root>/<run id>/` instead, and nothing to the workspace. A
+directory per run never needs rotating, and `config.json` records the root.
+`volley acp` always works this way, under a root of its own
+([Where its state goes](#where-its-state-goes)). `volley matrix` still writes
+its sweep to `.volley-matrix/` in the workspace, and a base config's
+`state_dir` moves only each seat's run state.
+
 The trajectory replays in fascicle's bundled viewer — the `fascicle-viewer` bin
 ships inside the `fascicle` package; there is no separate viewer package:
 
 ```sh
 pnpm dlx --package=fascicle fascicle-viewer .volley/trajectory.jsonl
+pnpm dlx --package=fascicle fascicle-viewer <root>/<run id>/trajectory.jsonl   # under --state-dir
 ```
 
 ## Environment variables
 
 See [.env.example](./.env.example): `VOLLEY_CLAUDE_BIN`, `VOLLEY_AUTH_MODE`,
-`VOLLEY_LOG_LEVEL`, `VOLLEY_NO_COLOR`, `VOLLEY_PRICING_PATH`, and the
-`ANTHROPIC_API_KEY` billing-meter warning.
+`VOLLEY_LOG_LEVEL`, `VOLLEY_NO_COLOR`, `VOLLEY_PRICING_PATH`, the
+`ANTHROPIC_API_KEY` billing-meter warning, each seat's base URL
+(`VOLLEY_OLLAMA_URL`, `VOLLEY_LMSTUDIO_URL`, `VOLLEY_OPENROUTER_URL`), and
+`OPENROUTER_API_KEY` for [OpenRouter](#openrouter) seats. `volley acp` also
+reads `XDG_STATE_HOME` for its state root.
 
 ## Development
 
