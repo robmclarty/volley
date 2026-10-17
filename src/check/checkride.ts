@@ -58,6 +58,15 @@ function kill_group(proc: ChildProcess): void {
   }
 }
 
+/** What a check runs with beside its command. */
+export type CheckSpawnOptions = {
+  abort?: AbortSignal;
+  /** The whole environment the check runs with, in place of volley's own;
+   * nothing is merged in, so it carries the `PATH` the check needs. Absent,
+   * the check inherits volley's. */
+  env?: Readonly<Record<string, string>>;
+};
+
 /** Run a check to its end in a process group of its own, capturing its
  * output. The abort kills the whole group and rejects with `aborted_error`,
  * and the shell's exit kills whatever it left behind, so a stopped run leaves
@@ -65,13 +74,14 @@ function kill_group(proc: ChildProcess): void {
 export function spawn_capture(
   cmd: string,
   args: string[],
-  options: { cwd: string; abort?: AbortSignal },
+  options: CheckSpawnOptions & { cwd: string },
 ): Promise<SpawnCaptureResult> {
   const { abort } = options;
   if (abort?.aborted === true) return Promise.reject(new aborted_error('check aborted'));
   return new Promise((resolve_promise, reject) => {
     const proc = spawn(cmd, args, {
       cwd: options.cwd,
+      ...(options.env !== undefined ? { env: options.env } : {}),
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -183,15 +193,15 @@ export function read_failing_artifacts(
   });
 }
 
-export type CheckrideOpts = {
+export type CheckrideOpts = CheckSpawnOptions & {
   workspace: string;
-  abort?: AbortSignal;
 };
 
 export async function run_checkride(opts: CheckrideOpts): Promise<CheckResult> {
+  const { workspace, ...spawn_options } = opts;
   const proc = await spawn_capture('pnpm', ['exec', 'checkride', '--json'], {
-    cwd: opts.workspace,
-    ...(opts.abort !== undefined ? { abort: opts.abort } : {}),
+    ...spawn_options,
+    cwd: workspace,
   });
   // checkride exit 2 is a harness/usage error — an operator problem, not
   // something to iterate on.

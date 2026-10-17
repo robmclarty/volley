@@ -10,6 +10,7 @@ import {
   expand_at_file,
   load_config_file,
   resolve_config,
+  unguarded_builder,
 } from '../../src/config.js';
 import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
@@ -788,6 +789,29 @@ describe('resolve_config: the openrouter provider', () => {
   });
 });
 
+describe('resolve_config: an uncontained builder under acp', () => {
+  const KEYED = { OPENROUTER_API_KEY: 'sk-or-test' };
+
+  it('asks before each command under acp rather than refusing, while the CLI still refuses', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const provider of ['ollama', 'lmstudio', 'openrouter'] as const) {
+        const raw = { ...base(workspace), builder_provider: provider };
+        expect(() => resolve_config(raw, { env: KEYED })).toThrow(/refused unless contained/);
+        expect(() => resolve_config(raw, { env: KEYED, uncontained_builder: 'refuse' })).toThrow(
+          /refused unless contained/,
+        );
+        const config = resolve_config(raw, { env: KEYED, uncontained_builder: 'ask' });
+        expect(config.builder_provider).toBe(provider);
+        // Nobody opted out: each command asks instead.
+        expect(config.allow_unsandboxed_builder).toBe(false);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('resolve_config: the check, resolved as the CLI resolves it', () => {
   const cases: Array<{ check: string; checkride: boolean; resolved: string }> = [
     { check: 'auto', checkride: true, resolved: 'checkride' },
@@ -955,6 +979,16 @@ describe('detect_containment', () => {
       expect(detect_containment({ VOLLEY_CONTAINED: value })).toBe(false);
     }
     expect(detect_containment({})).toBe(false);
+  });
+});
+
+describe('unguarded_builder', () => {
+  it('holds only outside a container, with neither the flag nor the variable opting out', () => {
+    expect(unguarded_builder({}, {})).toBe(true);
+    expect(unguarded_builder({ allow_unsandboxed_builder: false }, { VOLLEY_CONTAINED: '0' })).toBe(true);
+    expect(unguarded_builder({}, { VOLLEY_CONTAINED: '1' })).toBe(false);
+    expect(unguarded_builder({ allow_unsandboxed_builder: true }, {})).toBe(false);
+    expect(unguarded_builder({}, { VOLLEY_ALLOW_UNSANDBOXED_BUILDER: 'true' })).toBe(false);
   });
 });
 

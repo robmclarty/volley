@@ -3,15 +3,17 @@
  * writes and command ask as the session's mode says, plus volley's `finish`;
  * the critic's three reads out of the same set. Both skip volley's
  * `IGNORED_DIRS` and reach `session.cwd` alone, whatever other directories the
- * client sent.
+ * client sent. Outside a container, with no opt-out, every command asks, and
+ * the check asks exactly when a command would; neither sees the seats' keys.
  */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Tool } from 'fascicle';
+import type { Tool, ToolApprovalRequest } from 'fascicle';
 import { workspace_tools } from 'fascicle/acp';
-import { acp_seat_tools } from '../../src/acp_tools.js';
+import { acp_command_env, acp_seat_tools } from '../../src/acp_tools.js';
+import { SEAT_CREDENTIAL_VARS } from '../../src/engine.js';
 import { IGNORED_DIRS } from '../../src/workspace_tools.js';
 import { acp_session } from '../helpers/harness.js';
 
@@ -93,12 +95,12 @@ describe('acp_seat_tools: the builder', () => {
     expect(await call(tools.finish, { summary: 'wrote the thing' })).toBe('finished: wrote the thing');
   });
 
-  it('runs commands with the command_env it was given, in place of the agent environment', async () => {
+  it("runs commands with the agent environment it was given, in place of the process's", async () => {
     const cwd = temp_dir();
     process.env.VOLLEY_ACP_TOOLS_LEAK = 'leaked';
     try {
-      const command_env = { PATH: process.env.PATH ?? '/usr/bin:/bin', VOLLEY_ACP_TOOLS_MARK: 'passed' };
-      const tools = by_name(acp_seat_tools(acp_session(cwd), { command_env }).builder.tools);
+      const env = { PATH: process.env.PATH ?? '/usr/bin:/bin', VOLLEY_ACP_TOOLS_MARK: 'passed' };
+      const tools = by_name(acp_seat_tools(acp_session(cwd), { env }).builder.tools);
       const output = await call(tools.run_command, {
         command: 'echo "$VOLLEY_ACP_TOOLS_MARK ${VOLLEY_ACP_TOOLS_LEAK:-absent}"',
       });
@@ -106,6 +108,87 @@ describe('acp_seat_tools: the builder', () => {
     } finally {
       delete process.env.VOLLEY_ACP_TOOLS_LEAK;
     }
+  });
+
+  it("asks through the session's own approval", () => {
+    const session = acp_session(temp_dir());
+    expect(acp_seat_tools(session).builder.on_tool_approval).toBe(session.approve);
+  });
+});
+
+describe('acp_seat_tools: commands outside a container', () => {
+  const MODES = ['manual', 'accept_edits', 'auto'] as const;
+
+  it('asks before every command in all three modes, while an edit still asks as the mode says', async () => {
+    const cwd = temp_dir();
+    for (const mode of MODES) {
+      const tools = by_name(
+        acp_seat_tools(acp_session(cwd, [], mode), { always_ask_commands: true }).builder.tools,
+      );
+      expect(await asks(tools.run_command, { command: 'pnpm test' })).toBe(true);
+      expect(await asks(tools.write_file, { path: 'a.txt', content: 'x' })).toBe(mode === 'manual');
+    }
+  });
+
+  it('asks through the session before the check exactly when a builder command would', async () => {
+    const cwd = temp_dir();
+    const command = 'pnpm exec checkride --json';
+    const request: ToolApprovalRequest = {
+      tool_name: command,
+      input: { command },
+      tool_call_id: 'check',
+      step_index: 0,
+      abort: new AbortController().signal,
+    };
+    for (const always_ask_commands of [false, true]) {
+      for (const mode of MODES) {
+        const asked: ToolApprovalRequest[] = [];
+        const session = {
+          ...acp_session(cwd, [], mode),
+          approve: (sent: ToolApprovalRequest) => {
+            asked.push(sent);
+            return false;
+          },
+        };
+        const { builder, check } = acp_seat_tools(session, { always_ask_commands });
+        const expected = always_ask_commands || mode !== 'auto';
+        expect(await asks(by_name(builder.tools).run_command, request.input)).toBe(expected);
+        // Asked, the session refuses; unasked, the check just runs.
+        expect(await check.on_approval?.(request)).toBe(!expected);
+        expect(asked).toEqual(expected ? [request] : []);
+      }
+    }
+  });
+});
+
+describe('acp_command_env', () => {
+  it("is the agent's environment, PATH kept, less every variable a seat reads a key from", () => {
+    expect(SEAT_CREDENTIAL_VARS).toEqual(['OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY']);
+    expect(
+      acp_command_env({
+        PATH: '/usr/bin:/bin',
+        HOME: '/home/someone',
+        OPENROUTER_API_KEY: 'sk-or-secret',
+        ANTHROPIC_API_KEY: 'sk-ant-secret',
+        UNSET: undefined,
+      }),
+    ).toEqual({ PATH: '/usr/bin:/bin', HOME: '/home/someone' });
+  });
+
+  it('keeps both keys from the check and from a command the builder runs, which still finds its programs on PATH', async () => {
+    const env = {
+      ...process.env,
+      OPENROUTER_API_KEY: 'sk-or-secret',
+      ANTHROPIC_API_KEY: 'sk-ant-secret',
+    };
+    const { builder, check } = acp_seat_tools(acp_session(temp_dir()), { env });
+    expect(check.env).toEqual(acp_command_env(env));
+    // `env` itself is found on PATH, and prints everything the command sees.
+    const output = await call(by_name(builder.tools).run_command, { command: 'env' });
+    expect(output).toContain(`PATH=${process.env.PATH ?? ''}`);
+    expect(output).not.toContain('OPENROUTER_API_KEY');
+    expect(output).not.toContain('ANTHROPIC_API_KEY');
+    expect(output).not.toContain('secret');
   });
 });
 

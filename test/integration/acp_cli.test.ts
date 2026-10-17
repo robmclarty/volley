@@ -3,16 +3,19 @@
  * `initialize` on stdout with nothing else there, and refuses what it can't
  * serve before serving anything. In process, one prompt runs a whole volley
  * turn through fascicle's `acp_agent` and the SDK's client, with both seats on
- * stand-in OpenRouter servers.
+ * stand-in OpenRouter servers, and the check asks on its card first whenever a
+ * builder command would.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { RequestPermissionRequest, SessionModeId, SessionUpdate } from '@agentclientprotocol/sdk';
 import { acp_agent } from 'fascicle/acp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acp_base_config, acp_serve_config, acp_state_root } from '../../src/acp.js';
+import { CHECK_REJECTED } from '../../src/check/command.js';
 import { package_version } from '../../src/cli.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
 import type { ResolvedConfig } from '../../src/types.js';
@@ -186,6 +189,12 @@ describe('acp_base_config', () => {
     expect(acp_base_config({ ...seats, max_iterations: 7 }, env).max_iterations).toBe(7);
   });
 
+  it('serves an uncontained builder with no opt-out, whose commands will each ask instead', () => {
+    expect(acp_base_config({ ...seats, allow_unsandboxed_builder: false }, env).builder_provider).toBe(
+      'openrouter',
+    );
+  });
+
   it('keeps state under XDG_STATE_HOME, else ~/.local/state, unless --state-dir names a root', () => {
     expect(acp_base_config(seats, env).state_dir).toBe('/state/volley');
     expect(acp_base_config({ ...seats, state_dir: '/elsewhere' }, env).state_dir).toBe('/elsewhere');
@@ -326,5 +335,138 @@ describe('one prompt through acp_agent and the SDK client', () => {
     } finally {
       cleanup();
     }
+  });
+
+  describe('the check, asking first', () => {
+    /** The check's command: it prints the environment it ran with. */
+    const CHECK = 'env > check_env.txt';
+
+    type CheckedTurn = {
+      requests: RequestPermissionRequest[];
+      updates: SessionUpdate[];
+      /** What the check printed, or null when it never ran. */
+      check_env: string | null;
+    };
+
+    /** One prompt in `mode` with the check `CHECK`, no opt-out from the
+     * sandbox, both seats' keys in the agent's environment, and each
+     * permission request answered `answer`. */
+    async function checked_turn(options: {
+      mode: SessionModeId;
+      contained: boolean;
+      answer: 'allow_once' | 'reject_once';
+    }): Promise<CheckedTurn> {
+      const builder_server = await stub_openai('Wrote the file.');
+      const critic_server = await stub_openai(APPROVED);
+      const { workspace, cleanup } = temp_workspace();
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const env = {
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        OPENROUTER_API_KEY: KEY,
+        ANTHROPIC_API_KEY: 'sk-ant-test',
+        VOLLEY_ACP_AGENT_MARK: 'agent-env',
+        XDG_STATE_HOME: state_home,
+        ...(options.contained ? { VOLLEY_CONTAINED: '1' } : {}),
+      };
+      try {
+        const base = acp_base_config(
+          {
+            builder_provider: 'openrouter',
+            builder_model: 'vendor/builder-model',
+            builder_url: builder_server.url,
+            critic_provider: 'openrouter',
+            critic_model: 'vendor/critic-model',
+            critic_url: critic_server.url,
+            check: CHECK,
+            max_iterations: 1,
+          },
+          env,
+        );
+        const app = await acp_agent(acp_serve_config(base, { version: '1.2.3', env }));
+        const requests: RequestPermissionRequest[] = [];
+        const session = await open_session(app, workspace, {
+          mode: options.mode,
+          on_permission: (request) => {
+            requests.push(request);
+            return { outcome: { outcome: 'selected', optionId: options.answer } };
+          },
+        });
+        await session.prompt('write the file');
+        const { updates } = await read_turn(session);
+        const printed = join(workspace, 'check_env.txt');
+        return { requests, updates, check_env: existsSync(printed) ? readFileSync(printed, 'utf8') : null };
+      } finally {
+        cleanup();
+      }
+    }
+
+    /** The check's card as it opened, and the update that closed it. */
+    function check_card(updates: SessionUpdate[]) {
+      const opened = updates.find(
+        (update) => update.sessionUpdate === 'tool_call' && update.kind === 'execute',
+      );
+      const id = opened?.sessionUpdate === 'tool_call' ? opened.toolCallId : undefined;
+      const closed = updates.findLast(
+        (update) => update.sessionUpdate === 'tool_call_update' && update.toolCallId === id,
+      );
+      return { id, closed };
+    }
+
+    it('asks uncontained even in Auto, on its own card, offering Allow and Reject alone', async () => {
+      const { requests, updates, check_env } = await checked_turn({
+        mode: 'auto',
+        contained: false,
+        answer: 'allow_once',
+      });
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.options).toEqual([
+        { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' },
+        { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
+      ]);
+      const card = check_card(updates);
+      expect(card.id).toBeDefined();
+      expect(requests[0]?.toolCall).toMatchObject({
+        toolCallId: card.id,
+        title: CHECK,
+        rawInput: { command: CHECK },
+      });
+      expect(card.closed).toMatchObject({ status: 'completed' });
+      // It ran with the agent's environment, PATH kept, less both seats' keys.
+      expect(check_env).toContain('VOLLEY_ACP_AGENT_MARK=agent-env');
+      expect(check_env).toContain(`PATH=${process.env.PATH ?? '/usr/bin:/bin'}`);
+      expect(check_env).not.toContain('OPENROUTER_API_KEY');
+      expect(check_env).not.toContain('ANTHROPIC_API_KEY');
+    });
+
+    it('records a rejected check as failed, closing its card with the refusal, and never runs it', async () => {
+      const { requests, updates, check_env } = await checked_turn({
+        mode: 'auto',
+        contained: false,
+        answer: 'reject_once',
+      });
+
+      expect(requests).toHaveLength(1);
+      expect(check_env).toBeNull();
+      expect(check_card(updates).closed).toMatchObject({
+        status: 'failed',
+        content: [{ type: 'content', content: { type: 'text', text: CHECK_REJECTED } }],
+      });
+      // The critic approved, but nothing checked the work.
+      expect(updates.at(-1)).toMatchObject({
+        sessionUpdate: 'agent_message_chunk',
+        content: { text: expect.stringContaining('**Not converged** after 1 round') },
+      });
+    });
+
+    it('follows the mode once contained: no prompt in Auto, a prompt in Manual', async () => {
+      const auto = await checked_turn({ mode: 'auto', contained: true, answer: 'reject_once' });
+      expect(auto.requests).toHaveLength(0);
+      expect(auto.check_env).not.toBeNull();
+
+      const manual = await checked_turn({ mode: 'manual', contained: true, answer: 'allow_once' });
+      expect(manual.requests).toHaveLength(1);
+      expect(manual.check_env).not.toBeNull();
+    });
   });
 });

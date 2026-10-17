@@ -23,6 +23,15 @@ export const DEFAULT_OPENROUTER_URL = 'https://openrouter.ai/api/v1';
 /** The variable an `openrouter` seat's API key is read from. */
 const OPENROUTER_KEY_VAR = 'OPENROUTER_API_KEY';
 
+/** The variable a `claude_cli` seat's API key is read from, which the Claude
+ * CLI also reads on its own. */
+const ANTHROPIC_KEY_VAR = 'ANTHROPIC_API_KEY';
+
+/** Every variable a seat reads a credential from. Under acp, the builder's
+ * commands and the check run without them, so nothing the builder writes can
+ * read the keys its seats spend. */
+export const SEAT_CREDENTIAL_VARS: ReadonlyArray<string> = [OPENROUTER_KEY_VAR, ANTHROPIC_KEY_VAR];
+
 /** Loopback authorities the container→host crossing rewrites. A base URL
  * pointing at one of these is local to wherever volley runs; contained, that is
  * *inside* the sandbox container, where the host LLM daemon is unreachable
@@ -259,8 +268,8 @@ export function create_volley_engine(options: EngineOptions): Engine {
       setting_sources: ['project', 'local'],
       auth_mode,
       ...(binary !== undefined && binary.length > 0 ? { binary } : {}),
-      ...(auth_mode === 'api_key' && env['ANTHROPIC_API_KEY'] !== undefined
-        ? { api_key: env['ANTHROPIC_API_KEY'] }
+      ...(auth_mode === 'api_key' && env[ANTHROPIC_KEY_VAR] !== undefined
+        ? { api_key: env[ANTHROPIC_KEY_VAR] }
         : {}),
     },
   };

@@ -142,6 +142,11 @@ export type ResolveOptions = {
   run_id?: string;
   started_at?: string;
   env?: Record<string, string | undefined>;
+  /** What happens to a tool-loop builder with nothing between its commands
+   * and the host (`unguarded_builder`): the CLI `refuse`s it, the default,
+   * while under `volley acp` each of its commands `ask`s a person first, which
+   * takes the container's place. */
+  uncontained_builder?: 'refuse' | 'ask';
 };
 
 /** `--builder-max-steps` (a merged flag/config value) wins over the
@@ -193,7 +198,7 @@ function resolve_sandbox_image(
  * (incl. `0`/`false`/unset) leaves a tool-loop builder refused unless
  * contained. */
 function resolve_allow_unsandboxed_builder(
-  raw: VolleyConfig,
+  raw: Pick<VolleyConfig, 'allow_unsandboxed_builder'>,
   env: Record<string, string | undefined>,
 ): boolean {
   if (raw.allow_unsandboxed_builder === true) return true;
@@ -275,6 +280,16 @@ export function detect_containment(env: Record<string, string | undefined>): boo
   return value === '1' || value === 'true';
 }
 
+/** Whether a tool-loop builder's commands would reach the host with nothing in
+ * between: volley isn't contained, and the operator hasn't opted out with
+ * `--allow-unsandboxed-builder` or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER`. */
+export function unguarded_builder(
+  raw: Pick<VolleyConfig, 'allow_unsandboxed_builder'>,
+  env: Record<string, string | undefined>,
+): boolean {
+  return !detect_containment(env) && !resolve_allow_unsandboxed_builder(raw, env);
+}
+
 /** A caller's run id names the run's `volley/<run id>` branch, so it is held to
  * what a branch name accepts without quoting: letters, digits, `-`, and `_`,
  * starting with a letter or digit so it never reads as an option. */
@@ -346,13 +361,14 @@ export function resolve_config(
   // Safety gate: a tool-loop builder gets a real `bash` (write + exec), local
   // model or hosted, so refuse it — before any model spend — unless volley is
   // running *inside* a container (the correct blast-radius default) or the
-  // operator explicitly opts out to run uncontained on the host.
+  // operator explicitly opts out to run uncontained on the host. Under acp,
+  // a person approves each command instead, so nothing is refused here.
   const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, env);
   const contained = detect_containment(env);
   if (
     TOOL_LOOP_BUILDER_PROVIDERS.includes(builder_provider) &&
-    !contained &&
-    !allow_unsandboxed_builder
+    options.uncontained_builder !== 'ask' &&
+    unguarded_builder(raw, env)
   ) {
     throw config_error(
       `builder-provider '${builder_provider}' runs volley's tool loop with a real bash ` +

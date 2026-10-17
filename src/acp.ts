@@ -17,6 +17,10 @@
  * the turn with a summary saying so, rather than as an error, which would
  * leave it out of the session's history; a stopped turn still ends cancelled.
  *
+ * Outside a container, unless the operator opted out, a person approving each
+ * command takes the container's place: every builder command and every check
+ * asks first, whatever the mode. Neither sees the keys the seats spend.
+ *
  * The flags are checked once at startup, and every config error exits 5
  * before serving, so it shows in the editor's agent log once rather than
  * failing every prompt. Stdout carries the protocol alone: the run's renderer
@@ -35,9 +39,10 @@ import {
   turn_task,
 } from './acp_progress.js';
 import { acp_seat_tools } from './acp_tools.js';
-import { resolve_config } from './config.js';
+import { resolve_config, unguarded_builder } from './config.js';
 import { run_volley } from './orchestrator.js';
 import type { OrchestratorDeps } from './orchestrator.js';
+import type { CheckGate } from './phases.js';
 import { create_renderer } from './render/renderer.js';
 import { build_run_summary } from './summary.js';
 import { config_error } from './types.js';
@@ -128,7 +133,10 @@ export function acp_base_config(raw: AcpFlags, env: Env = process.env): AcpFlags
     state_dir:
       raw.state_dir === undefined || is_blank(raw.state_dir) ? acp_state_root(env) : raw.state_dir,
   };
-  resolve_config({ ...base, workspace: tmpdir(), prompt: STAND_IN_TASK, criteria: STAND_IN_TASK }, { env });
+  resolve_config(
+    { ...base, workspace: tmpdir(), prompt: STAND_IN_TASK, criteria: STAND_IN_TASK },
+    { env, uncontained_builder: 'ask' },
+  );
   return base;
 }
 
@@ -139,7 +147,7 @@ export function acp_base_config(raw: AcpFlags, env: Env = process.env): AcpFlags
 function turn_config(base: AcpFlags, workspace: string, task: string, env: Env): ResolvedConfig {
   const resolved = resolve_config(
     { ...base, workspace, prompt: STAND_IN_TASK, criteria: STAND_IN_TASK },
-    { env },
+    { env, uncontained_builder: 'ask' },
   );
   return { ...resolved, prompt: task, criteria: task };
 }
@@ -151,12 +159,14 @@ function stream_route(step_id: string): AcpStreamRoute {
 }
 
 /** What one session's turns share: the flags, the environment each turn's
- * config reads, the session's workspace, and both seats' tools. */
+ * config reads, the session's workspace, both seats' tools, and how the check
+ * runs. */
 type TurnDeps = {
   base: AcpFlags;
   env: Env;
   workspace: string;
   seats: NonNullable<OrchestratorDeps['seats']>;
+  check: CheckGate;
 };
 
 /** One prompt: a volley run on the session's workspace, its events flowing
@@ -177,6 +187,7 @@ async function run_turn(deps: TurnDeps, turn: AcpTurn, ctx: RunContext): Promise
         max_cost_usd: config.max_cost_usd,
       }),
       seats: deps.seats,
+      check: deps.check,
       trajectory: rounds.sink,
       abort: ctx.abort,
       install_signal_handlers: false,
@@ -190,23 +201,17 @@ async function run_turn(deps: TurnDeps, turn: AcpTurn, ctx: RunContext): Promise
   }
 }
 
-/** The flow for one session: both seats' tools are built once, from the
- * session, and each prompt runs volley on the session's `cwd` with them. */
+/** The flow for one session: both seats' tools and the check's gate are
+ * built once, from the session, and each prompt runs volley on the session's
+ * `cwd` with them. */
 function session_flow(
   base: AcpFlags,
   env: Env,
 ): (session: AcpSession) => Step<AcpTurn, RunResult | null> {
+  const always_ask_commands = unguarded_builder(base, env);
   return (session) => {
-    const tools = acp_seat_tools(session);
-    const deps: TurnDeps = {
-      base,
-      env,
-      workspace: session.cwd,
-      seats: {
-        builder: { ...tools.builder, on_tool_approval: session.approve },
-        critic: tools.critic,
-      },
-    };
+    const { builder, critic, check } = acp_seat_tools(session, { env, always_ask_commands });
+    const deps: TurnDeps = { base, env, workspace: session.cwd, seats: { builder, critic }, check };
     return step('acp_turn', (turn: AcpTurn, ctx) => run_turn(deps, turn, ctx), {
       description: "one volley run on the session's workspace, per prompt",
     });

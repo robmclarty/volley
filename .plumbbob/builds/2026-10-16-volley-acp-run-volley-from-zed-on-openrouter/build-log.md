@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 6 — feat(acp): show rounds, the check, and the verdict in Zed
+**Current step:** 7 — feat(acp): ask before uncontained commands and hide provider keys
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -28,7 +28,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 3. feat(state): add --state-dir to keep run state out of the workspace
 - ☑ 4. feat(acp): give acp seats fascicle's workspace tools and prompts
 - ☑ 5. feat(acp): serve volley to Zed as an ACP agent
-- ☐ 6. feat(acp): show rounds, the check, and the verdict in Zed
+- ☑ 6. feat(acp): show rounds, the check, and the verdict in Zed
 - ☐ 7. feat(acp): ask before uncontained commands and hide provider keys
 - ☐ 8. test(acp): drive a whole volley turn through an in-process ACP client
 - ☐ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
@@ -465,3 +465,86 @@ folder, so it rides the branch into the PR.)*
   **5.** fallow reads the SDK as test-only, so it joins `ignoreDependencies` as D17 planned
 
   Only fascicle loads `@agentclientprotocol/sdk` at runtime, through a dynamic import. volley's own source never imports it, and only the ACP tests do, for the client. So fallow's dead slot flagged it as a test-only dependency. Per D17 (sdk-pin), it now sits in `ignoreDependencies` beside `ai`, under the same comment, extended to say why. It stays in `dependencies` at exactly `1.8.0`, and the lockfile now resolves fascicle with the SDK as its peer.
+
+- 2026-10-17 — step 6 checkpointed · dde26aaf0 — feat(acp): show rounds, the check, and the verdict in Zed (1 drift, 143m)
+
+  **Summary**: A volley turn in Zed now shows its progress: each round opens with a `**Round N**` line in the reply, the check runs as an `execute` card titled with its command and closes with its output, the critic's verdict arrives as a thought, and the turn ends with a summary message, including when the run failed. Each prompt's task is now the whole conversation so far, and a CLI run's `trajectory.jsonl` carries the same progress events.
+
+  1. The phases emit round, check, and verdict events, and the check records its own card while it runs
+  2. One wrapper turns those events into the round line, the command card, the verdict thought, and the summary
+  3. A failed run ends the turn with a summary naming the round, the phase, and the error, and the next prompt reads it back
+  4. Each turn's task is now the conversation so far, with earlier files named rather than repeated
+  5. Two test files outside the seam pinned the old output, and two smaller judgment calls
+
+  **Readout**: Step 6 - feat(acp): show rounds, the check, and the verdict in Zed
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    honored
+               - D10 (turn-task)
+               - D12 (emit-events)
+               - D13 (check-card)
+               - D14 (failed-turn)
+               - D19 (round-in-reply)
+               - D26 (summary-content)
+  constraints  6 of 6 honored
+  seam         strayed: 2 paths outside the seam
+               - test/integration/acp_cli.test.ts
+               - test/integration/seat_deps.test.ts
+  diff         +1114 -59 across 7 files
+  spent        2h 23m · 1 turn · 10s gate · green first run
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Approve and land step 6. Every done-when clause has a test that fails when its piece is removed, and the gate is green; the two strays only move pinned expectations to this step's new output.
+
+  **1.** The phases emit round, check, and verdict events, and the check records its own card while it runs
+
+  `src/phases.ts` now emits four `ctx.emit` payloads, each tagged with a `volley` field, because `ctx.emit` overwrites `kind` (D12 (emit-events)):
+  - `round_start` when the build opens a round;
+  - `check_start` and `check_end` around a check that runs a command;
+  - `verdict` after the critique, carrying the feedback, the unmet criteria, and whether the verdict was degraded.
+
+  On a streamed run (`ctx.streaming`), the check also records its card as `model_chunk` events under step id `check`, the same chunks `model_call` records for a tool call: `tool_call_start`, then `tool_call_end` with `{ command }` as input, then `tool_result` with the `CheckResult` as output, or the error when the check threw (D13 (check-card)). The step id matches the check step's own, so fascicle's mapper counts each round's check as a new run and opens a fresh card. The tool's name is `check`, outside fascicle's gated three, which leaves step 7 room to ask Allow/Reject on this card (D25). On the CLI nothing streams, so no chunks are recorded, and the emits land in `.volley/trajectory.jsonl`. `test/integration/happy_path.test.ts` asserts all four emits in order there, and no `model_chunk`.
+
+  **2.** One wrapper turns those events into the round line, the command card, the verdict thought, and the summary
+
+  `progress_updates` in the new `src/acp_progress.ts` is volley's `to_updates`. It calls fascicle's `to_session_updates` on every event first, so the run counts and the builder's cards keep working, then adds volley's own updates:
+  - **Round line:** `round_start` becomes `**Round N**` in the reply. Rounds after the first get a blank line first, so they sit apart from the builder's text (D19 (round-in-reply)).
+  - **Check card:** the card's updates are dressed as a command. It opens as `kind: 'execute'`, is retitled with the command line when its input lands (as fascicle's `run_command` card is), and closes `completed` or `failed` with the output in a `console` block, cut at 32,000 bytes with fascicle's marker and ending `[exit code N]`. A check that threw closes as fascicle closes any failed call, with its error text. `check_start` and `check_end` add nothing, since the card already shows both (D13 (check-card)).
+  - **Verdict thought:** `verdict` becomes a thought holding the verdict, the feedback, and the unmet criteria as a list. A degraded verdict is marked `(judged without its tools)`.
+  - **Summary:** the summary becomes the turn's last message. It says whether the run converged, in how many rounds, and the last verdict. A run that didn't converge also lists what's still unmet, and any gate edits and any degraded verdict are named (D26 (summary-content)).
+
+  `acp_turn` builds the summary from `build_run_summary`, which already gathers the unmet criteria, gate edits, and degraded flag from the run's archive, so no new bookkeeping was needed. The unit test at the heart of this runs a real two-round `run_volley`, nested in an outer streamed step the way `acp_turn` nests it. Round 1's check fails and the critic asks for changes; round 2's passes and the critic approves. Fed through the wrapper, the events must equal the exact twelve-update sequence, card ids included.
+
+  **3.** A failed run ends the turn with a summary naming the round, the phase, and the error, and the next prompt reads it back
+
+  `acp_turn` now catches a failure. Unless the turn's own signal fired, it emits a failure summary and ends the turn normally, so fascicle keeps the exchange in the session's history and "try again" has something to retry (D14 (failed-turn)). An abort still rethrows, so a stopped turn ends cancelled.
+  - **Phase:** a phase error names its phase and carries the underlying message, which is what the summary shows. A check error is the check's.
+  - **Round:** a check error carries no round, so `follow_rounds` wraps the turn's trajectory and remembers the last `round_start` that passed through.
+
+  The in-process ACP test checks both halves. A critic stub that answers `not a verdict` makes the turn end `end_turn` with `**Run failed** in round 1, during the critique: …` as its last message. A second prompt's recorded task then holds that whole exchange, summary included. The abort rethrow has no test of its own: driving a cancel mid-run needs a slow stub, which is step 8's and step 10's ground.
+
+  **4.** Each turn's task is now the conversation so far, with earlier files named rather than repeated
+
+  `turn_task` renders each `turn.history` entry ahead of the prompt, and that rendering is both the task and the criteria (D10 (turn-task)). A first turn is still its prompt alone, so step 5's config assertion holds unchanged.
+  - **Earlier user entries:** each attached file's `<context ref>` block is replaced by one `[attached: <uri>]` line per file.
+  - **Agent entries:** each is cut to its last 2,000 characters behind a `…`.
+  - **Stopped turns:** a `cancelled` entry is followed by acp-agent's own "[The user stopped this turn here…]" line.
+  - **The new prompt:** it comes last, with its own files whole.
+
+  One robustness call: a file's own text can contain `</context>` (this step's test file does). So a block ends only where the next block starts, not at the first closing tag, and the test attaches exactly such a file. A plain regex was tried first and dropped.
+
+  **5.** Two test files outside the seam pinned the old output, and two smaller judgment calls
+
+  - `test/integration/acp_cli.test.ts` asserted that a turn sends exactly one message chunk. It now asserts the round line, the builder's text, the verdict thought, and the summary, and it gains the failed-turn test from highlight 3. A shared `serve` helper keeps the two turns from tripping the dupes check.
+  - `test/integration/seat_deps.test.ts` pinned the CLI file trajectory's event kinds from before step 2. Those kinds now include `emit`, which is this step's own done-when and an additive change under C5 (cli-unchanged).
+  - **checkride's card text:** volley keeps no raw stdout for checkride, only its JSON summary and each failing slot's artifact. So its card lists each slot (`ok`, `skip`, `FAIL`), then each failing slot's output, rather than showing raw JSON.
+  - **Summary wording:** the converged line says `**Converged** in N rounds. Last verdict: approved.` I dropped "the check passed" because a run with no check converges too.
+
+  I mutation-checked eleven pieces, and each fails its own test when removed:
+  - the `to_updates` wiring, the history rendering, the failure emit, and the round tracker;
+  - opening and closing the check card, the streaming guard, and the round emit;
+  - the stopped marker, the context seam, and the `execute` kind.

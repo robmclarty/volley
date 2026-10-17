@@ -23,6 +23,7 @@ import { create_seat_engines, dispose_seat_engines } from './engine.js';
 import type { SeatEngines } from './engine.js';
 import { build_flow } from './flow.js';
 import type { BuilderSeat, CriticSeat, LoopOutcome } from './flow.js';
+import type { CheckGate } from './phases.js';
 import { run_result_from_state } from './iteration.js';
 import { initial_state, status_of } from './loop_state.js';
 import { write_run_summary } from './summary.js';
@@ -62,6 +63,9 @@ export type OrchestratorDeps = {
    * sink also receives each model call's streamed chunks as `model_chunk`
    * events, which the file never keeps. */
   trajectory?: TrajectoryLogger;
+  /** The environment the check runs with and the approval it asks first, in
+   * place of inheriting volley's environment and running unasked. */
+  check?: CheckGate;
   abort?: AbortSignal;
   install_signal_handlers?: boolean;
 };
@@ -178,7 +182,17 @@ async function run_loop(
     builder: { ...deps.seats?.builder, engine: engines.builder },
     critic: { ...deps.seats?.critic, engine: engines.critic },
   };
-  const flow = build_flow({ seats, config, renderer, bash_executor, baseline }, resume_from);
+  const flow = build_flow(
+    {
+      seats,
+      config,
+      renderer,
+      bash_executor,
+      baseline,
+      ...(deps.check !== undefined ? { check: deps.check } : {}),
+    },
+    resume_from,
+  );
 
   try {
     const { value, converged } = await execute_flow(config, deps, flow, { resume_from });

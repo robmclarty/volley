@@ -2,12 +2,15 @@
  * The check runs in a process group of its own, so stopping it stops
  * everything it started: a test runner's workers, or a server it put in the
  * background. These drive the real `sh` against a temp workspace, with the
- * background process's pid written to a file so the test can watch it.
+ * background process's pid written to a file so the test can watch it. It
+ * runs with the environment it's handed, as under acp, or inherits volley's,
+ * as on the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { run_command_check } from '../../src/check/command.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { acp_command_env } from '../../src/acp_tools.js';
+import { CHECK_REJECTED, rejected_check, run_command_check } from '../../src/check/command.js';
 import { error_kind } from '../../src/types.js';
 import { temp_workspace } from '../helpers/harness.js';
 
@@ -37,6 +40,60 @@ async function background_pid(workspace: string): Promise<number> {
   expect(await eventually(() => existsSync(file) && readFileSync(file, 'utf8').trim() !== '')).toBe(true);
   return Number(readFileSync(file, 'utf8').trim());
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+/** What a check that prints its environment saw. */
+async function check_env(env?: Readonly<Record<string, string>>): Promise<string> {
+  const { workspace, cleanup } = temp_workspace();
+  try {
+    const result = await run_command_check({
+      command: 'env',
+      workspace,
+      ...(env !== undefined ? { env } : {}),
+    });
+    expect(result.ok).toBe(true);
+    return result.log ?? '';
+  } finally {
+    cleanup();
+  }
+}
+
+describe('run_command_check: its environment', () => {
+  it('sees PATH but neither seat key when handed the acp command env', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-or-secret');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
+    const log = await check_env(acp_command_env(process.env));
+    expect(log).toContain(`PATH=${process.env.PATH ?? ''}`);
+    expect(log).not.toContain('OPENROUTER_API_KEY');
+    expect(log).not.toContain('ANTHROPIC_API_KEY');
+  });
+
+  it("inherits volley's whole environment when handed none, as on the CLI", async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-or-secret');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
+    const log = await check_env();
+    expect(log).toContain('OPENROUTER_API_KEY=sk-or-secret');
+    expect(log).toContain('ANTHROPIC_API_KEY=sk-ant-secret');
+  });
+});
+
+describe('rejected_check', () => {
+  it('is a failed check of its runner, with the refusal as its output', () => {
+    expect(rejected_check('checkride')).toEqual({
+      ran: true,
+      runner: 'checkride',
+      ok: false,
+      exit_code: null,
+      duration_ms: 0,
+      failing_slots: [],
+      detail: [],
+      log: CHECK_REJECTED,
+    });
+  });
+});
 
 describe('run_command_check', () => {
   it('captures the output and exit code of a command that ends on its own', async () => {

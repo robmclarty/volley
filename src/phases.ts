@@ -6,12 +6,13 @@
  * git checkpoints, the per-iteration archive, and the progress events a
  * trajectory reader follows the run by.
  */
-import type { RunContext, StreamChunk } from 'fascicle';
+import { aborted_error } from 'fascicle';
+import type { RunContext, StreamChunk, ToolApprovalHandler } from 'fascicle';
 import { run_builder } from './builder.js';
 import type { BuilderStep } from './builder.js';
 import { collect_changes } from './changes.js';
 import { run_checkride } from './check/checkride.js';
-import { run_command_check, skipped_check } from './check/command.js';
+import { CHECK_REJECTED, rejected_check, run_command_check, skipped_check } from './check/command.js';
 import { run_critic } from './critic/run.js';
 import type { CriticStep } from './critic/run.js';
 import { archive_iteration, run_result_from_state } from './iteration.js';
@@ -81,6 +82,18 @@ function check_command(config: ResolvedConfig): string | null {
   return null;
 }
 
+/** How the check runs when the caller sets it, as `volley acp` does. Left
+ * out, the check inherits volley's environment and runs unasked, as on the
+ * CLI. */
+export type CheckGate = {
+  /** The whole environment the check runs with, in place of volley's own. */
+  env?: Readonly<Record<string, string>>;
+  /** Asked on the check's card before each check, the way a model call asks
+   * before a gated tool runs. Anything short of an allow keeps the check from
+   * running, and it's recorded as failed. */
+  on_approval?: ToolApprovalHandler;
+};
+
 /** What every step body closes over, fixed for the whole run. */
 export type PhaseDeps = {
   config: ResolvedConfig;
@@ -90,6 +103,7 @@ export type PhaseDeps = {
    * build root is not a git repo — then the run reports no changes at all
    * rather than guessing at them. */
   baseline: string | null;
+  check?: CheckGate;
 };
 
 /** How many gate edits a warning names before it summarises the rest. */
@@ -128,20 +142,41 @@ function report_changes(
   );
 }
 
-async function execute_check(
-  config: ResolvedConfig,
-  abort: AbortSignal,
-): Promise<CheckResult> {
+/** Run the configured check, checkride or a command, with the environment
+ * the caller set for it, else volley's own. */
+async function execute_check(deps: PhaseDeps, abort: AbortSignal): Promise<CheckResult> {
+  const { config } = deps;
   // The check gates the tree the builder actually wrote: the worktree
   // under `--worktree`, else the workspace.
   const root = build_root(config.workspace, config.worktree);
-  if (config.check_resolved === 'checkride') {
-    return run_checkride({ workspace: root, abort });
-  }
-  if (config.check_resolved === 'command') {
-    return run_command_check({ command: config.check, workspace: root, abort });
-  }
-  return skipped_check('none');
+  const options = { abort, ...(deps.check?.env !== undefined ? { env: deps.check.env } : {}) };
+  return config.check_resolved === 'checkride'
+    ? run_checkride({ ...options, workspace: root })
+    : run_command_check({ ...options, command: config.check, workspace: root });
+}
+
+/** Whether the check may run `command`: yes, unless the caller set an
+ * approval and it answers no. It asks on the check's card under the command
+ * line as its tool name, which titles the prompt the way the card is titled,
+ * and which names none of fascicle's gated tools, so the prompt offers Allow
+ * and Reject alone, never an "always" that would cover the builder's commands
+ * too. A stop while it asks ends the check as a stop, not a rejection. */
+async function check_allowed(
+  deps: PhaseDeps,
+  command: string,
+  abort: AbortSignal,
+): Promise<boolean> {
+  const approve = deps.check?.on_approval;
+  if (approve === undefined) return true;
+  const allowed = await approve({
+    tool_name: command,
+    input: { command },
+    tool_call_id: CHECK_CALL.id,
+    step_index: 0,
+    abort,
+  });
+  if (abort.aborted) throw new aborted_error('check aborted');
+  return allowed;
 }
 
 /** Open the next iteration: advance the counter and clear every per-iteration
@@ -238,7 +273,8 @@ function close_check_card(ctx: RunContext, outcome: { result: CheckResult } | { 
 /** `check`: the deterministic gate over the tree the builder wrote. A check
  * that runs a command emits its start and end, and on a streamed run also
  * records its card as a tool call, so a reader of the stream shows it running
- * while it runs. */
+ * while it runs. When the caller set an approval, the check asks on that card
+ * first, and a rejected check closes it failed and is recorded as failed. */
 export async function check_phase(
   deps: PhaseDeps,
   s: LoopState,
@@ -247,40 +283,43 @@ export async function check_phase(
   const { config, renderer } = deps;
   renderer.phase_start(s.iteration, 'check');
   const command = check_command(config);
-  if (command !== null) {
-    emit(ctx, { volley: 'check_start', round: s.iteration, command });
-    open_check_card(ctx, command);
+  if (command === null) {
+    renderer.info('no deterministic check configured; loop is critic-gated only');
+    return { ...s, check: skipped_check('none') };
   }
+  emit(ctx, { volley: 'check_start', round: s.iteration, command });
+  open_check_card(ctx, command);
   try {
-    const result = await execute_check(config, ctx.abort);
-    if (result.ran) {
-      close_check_card(ctx, { result });
-      emit(ctx, {
-        volley: 'check_end',
-        round: s.iteration,
-        ok: result.ok,
-        exit_code: result.exit_code,
-        failing_slots: result.failing_slots,
-        duration_ms: result.duration_ms,
-      });
-      renderer.phase_end(
-        s.iteration,
-        'check',
-        result.ok,
-        result.failing_slots.length > 0
+    const allowed = await check_allowed(deps, command, ctx.abort);
+    const result = allowed
+      ? await execute_check(deps, ctx.abort)
+      : rejected_check(config.check_resolved);
+    close_check_card(ctx, allowed ? { result } : { error: CHECK_REJECTED });
+    emit(ctx, {
+      volley: 'check_end',
+      round: s.iteration,
+      ok: result.ok,
+      exit_code: result.exit_code,
+      failing_slots: result.failing_slots,
+      duration_ms: result.duration_ms,
+    });
+    renderer.phase_end(
+      s.iteration,
+      'check',
+      result.ok,
+      !allowed
+        ? 'rejected'
+        : result.failing_slots.length > 0
           ? `failing: ${result.failing_slots.join(', ')}`
           : undefined,
-      );
-    } else {
-      renderer.info('no deterministic check configured; loop is critic-gated only');
-    }
+    );
     return {
       ...s,
       check: result,
       check_duration_ms: s.check_duration_ms + result.duration_ms,
     };
   } catch (err) {
-    if (command !== null) close_check_card(ctx, { error: err });
+    close_check_card(ctx, { error: err });
     if (error_kind(err) === 'check_error') throw err;
     throw phase_error('check', s.iteration, err);
   }
