@@ -67,6 +67,7 @@
     "diagram": "fascicle-diagram src/diagram.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.8.0",
     "@mozilla/readability": "0.6.0",
     "ai": "7.0.140",
     "cac": "7.1.0",

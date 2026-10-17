@@ -14,11 +14,13 @@ entry = [
 ignorePatterns = ["examples/**"]
 
 # CLI/build tooling: invoked via package scripts or by checkride's adapters,
-# never imported from source, so fallow can't see the usage. `ai` and
-# `ai-sdk-ollama` are fascicle peers: fascicle loads them, volley never imports
-# them. volley also declares ai-sdk-ollama's 4.3.0 floor as its own optional
-# peer, the release that streams a thinking model's reasoning unasked.
-ignoreDependencies = ["@ast-grep/cli", "ai", "ai-sdk-ollama"]
+# never imported from source, so fallow can't see the usage. `ai`,
+# `ai-sdk-ollama`, and `@agentclientprotocol/sdk` are fascicle peers: fascicle
+# loads them, volley's source never imports them (only the ACP tests import the
+# SDK, for its client). volley also declares ai-sdk-ollama's 4.3.0 floor as its
+# own optional peer, the release that streams a thinking model's reasoning
+# unasked.
+ignoreDependencies = ["@agentclientprotocol/sdk", "@ast-grep/cli", "ai", "ai-sdk-ollama"]
 
 [rules]
 unused-exports = "error"

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 1.8.0
+        version: 1.8.0(zod@4.4.3)
       '@mozilla/readability':
         specifier: 0.6.0
         version: 0.6.0
@@ -19,7 +22,7 @@ importers:
         version: 7.1.0
       fascicle:
         specifier: 0.14.0
-        version: 0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
+        version: 0.14.0(@agentclientprotocol/sdk@1.8.0(zod@4.4.3))(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -80,6 +83,11 @@ importers:
         version: 5.0.4(@types/node@24.19.2)(vite@7.3.6(@types/node@24.19.2)(tsx@4.23.15))
 
 packages:
+
+  '@agentclientprotocol/sdk@1.8.0':
+    resolution: {integrity: sha512-fbP7qHZsFyTJVT0/RPrcWJ8An26qLXHEuGCHHEKDyxD1xpXV+Ejyh2LAE6vBAFePkpVjZeeohnbgvuEhZ7wLMg==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@ai-sdk/gateway@4.0.113':
     resolution: {integrity: sha512-fYov5+sH1A20/eN1PaL5z8bZ9RUq0CcL9yAsAhCHz/qUCKliDOg9HXjNYzOUlH6o21lIrp/aKQc8QLGkEEZGlQ==}
@@ -1523,6 +1531,10 @@ packages:
 
 snapshots:
 
+  '@agentclientprotocol/sdk@1.8.0(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
+
   '@ai-sdk/gateway@4.0.113(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 4.0.27
@@ -2189,8 +2201,9 @@ snapshots:
       '@fallow-cli/win32-x64-msvc': 3.33.1
       fallow-type-aware: 3.33.1
 
-  fascicle@0.14.0(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.14.0(@agentclientprotocol/sdk@1.8.0(zod@4.4.3))(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3):
     optionalDependencies:
+      '@agentclientprotocol/sdk': 1.8.0(zod@4.4.3)
       ai: 7.0.140(zod@4.4.3)
       ai-sdk-ollama: 4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
       zod: 4.4.3

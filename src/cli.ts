@@ -8,6 +8,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cac } from 'cac';
 import type { Command } from 'cac';
+import { serve_acp } from 'fascicle/acp';
+import { ACP_MAX_ITERATIONS, acp_base_config, acp_serve_config } from './acp.js';
 import {
   DEFAULT_CHECK,
   DEFAULT_SANDBOX_IMAGE,
@@ -163,16 +165,19 @@ export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Rende
 
 /** The seat options, declared once for every command that runs seats: each
  * seat's model, provider, and URL, the tool-loop builder's step cap, and the
- * unsandboxed opt-out. */
-function with_seat_options(command: Command): Command {
+ * unsandboxed opt-out. `required` marks each seat's model and provider as
+ * having no default, as under `acp`. */
+function with_seat_options(command: Command, required = false): Command {
+  const model_note = required ? ' (required)' : '';
+  const provider_note = required ? 'required' : 'default: claude_cli';
   return command
-    .option('--builder-model <model>', 'Builder model')
-    .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio | openrouter (default: claude_cli)')
+    .option('--builder-model <model>', `Builder model${model_note}`)
+    .option('--builder-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
     .option('--builder-url <url>', "Builder's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)")
     .option('--builder-max-steps <n>', 'Tool-loop builder step cap per iteration, any provider but claude_cli (default: 50)')
     .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)')
-    .option('--critic-model <model>', 'Critic model')
-    .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio | openrouter (default: claude_cli)')
+    .option('--critic-model <model>', `Critic model${model_note}`)
+    .option('--critic-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
     .option('--critic-url <url>', "Critic's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)");
 }
 
@@ -376,6 +381,24 @@ async function main(argv: string[]): Promise<number> {
         process.stdout.write(`${JSON.stringify({ combos: outcome.rows }, null, 2)}\n`);
       }
       exit_code = outcome.ok ? EXIT_SUCCESS : EXIT_MATRIX_INCOMPLETE;
+    });
+
+  // `--worktree`, `--git`, and `--json` are declared only so they can be
+  // refused with a reason; cac would answer an undeclared one with a bare
+  // "Unknown option".
+  const acp_command = cli.command('acp', 'Serve volley to an editor as an ACP agent over stdio');
+  with_seat_options(acp_command, true)
+    .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
+    .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
+    .option('--max-iterations <n>', `Iteration cap per prompt (default: ${String(ACP_MAX_ITERATIONS)})`)
+    .option('--max-cost-usd <usd>', 'Hard USD ceiling per prompt, enforced in the loop guard')
+    .option('--state-dir <path>', "Keep each run's state under <path>/<run id>/ (default: $XDG_STATE_HOME/volley, else ~/.local/state/volley)")
+    .option('--worktree', 'Refused: a sibling worktree sits outside the project the editor has open')
+    .option('--git', 'Refused: phase commits would bypass the permission prompts')
+    .option('--json', 'Refused: stdout carries the protocol')
+    .action(async (flags: CliFlags) => {
+      const base = acp_base_config(merge_flags({} as VolleyConfig, flags));
+      await serve_acp(acp_serve_config(base, { version: package_version() }));
     });
 
   cli.help();
