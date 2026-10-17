@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cac } from 'cac';
+import type { Command } from 'cac';
 import {
   DEFAULT_CHECK,
   DEFAULT_SANDBOX_IMAGE,
@@ -137,19 +138,34 @@ function warn_api_key_meter(renderer: Renderer): void {
   }
 }
 
-/** One loud warning when a local builder is about to run *uncontained* on the
- * host via the opt-out. Config resolution has already refused this
+/** One loud warning when a tool-loop builder is about to run *uncontained* on
+ * the host via the opt-out. Config resolution has already refused this
  * unless volley is contained or the opt-out is set, so reaching here with the
  * opt-out active means the operator accepted the uncontained risk. */
 export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Renderer): void {
   if (config.builder_provider !== 'claude_cli' && config.allow_unsandboxed_builder) {
     renderer.warn(
-      `UNSANDBOXED BUILDER: '${config.builder_provider}' runs a local model with a real bash ` +
+      `UNSANDBOXED BUILDER: '${config.builder_provider}' runs volley's tool loop with a real bash ` +
         `(write + exec) directly on this machine in ${config.workspace} — no container isolation. ` +
         `Proceeding because --allow-unsandboxed-builder / VOLLEY_ALLOW_UNSANDBOXED_BUILDER is set; ` +
         `run volley inside its sandbox container for blast-radius containment instead.`,
     );
   }
+}
+
+/** The seat options, declared once for every command that runs seats: each
+ * seat's model, provider, and URL, the tool-loop builder's step cap, and the
+ * unsandboxed opt-out. */
+function with_seat_options(command: Command): Command {
+  return command
+    .option('--builder-model <model>', 'Builder model')
+    .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio | openrouter (default: claude_cli)')
+    .option('--builder-url <url>', "Builder's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)")
+    .option('--builder-max-steps <n>', 'Tool-loop builder step cap per iteration, any provider but claude_cli (default: 50)')
+    .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)')
+    .option('--critic-model <model>', 'Critic model')
+    .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio | openrouter (default: claude_cli)')
+    .option('--critic-url <url>', "Critic's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)");
 }
 
 function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
@@ -218,20 +234,13 @@ async function main(argv: string[]): Promise<number> {
 
   let exit_code = EXIT_SUCCESS;
 
-  cli
+  const run_command = cli
     .command('', 'Run the builder/critic loop')
     .option('--prompt <prompt>', 'Task prompt (string or @file)')
     .option('--workspace <path>', 'Workspace directory (must exist and be writable)')
     .option('--criteria <criteria>', 'Acceptance criteria (string or @file)')
-    .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
-    .option('--builder-model <model>', 'Builder model')
-    .option('--builder-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
-    .option('--builder-url <url>', "Builder's model server base URL, ollama or lmstudio only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL)")
-    .option('--builder-max-steps <n>', 'Local builder tool-loop step cap per iteration (default: 50)')
-    .option('--allow-unsandboxed-builder', 'Permit a local builder to run without a sandbox (real host bash + write)')
-    .option('--critic-model <model>', 'Critic model')
-    .option('--critic-provider <name>', 'claude_cli | ollama | lmstudio (default: claude_cli)')
-    .option('--critic-url <url>', "Critic's model server base URL, ollama or lmstudio only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL)")
+    .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`);
+  with_seat_options(run_command)
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')
     .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
     .option('--max-iterations <n>', 'Iteration cap')

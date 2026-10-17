@@ -700,6 +700,94 @@ describe('resolve_config: per-seat model URLs', () => {
   });
 });
 
+describe('resolve_config: the openrouter provider', () => {
+  const KEYED = { OPENROUTER_API_KEY: 'sk-or-test' };
+
+  /** Both seats on OpenRouter, the builder opted out of the sandbox. */
+  function openrouter_seats(workspace: string) {
+    return {
+      ...base(workspace),
+      builder_provider: 'openrouter' as const,
+      critic_provider: 'openrouter' as const,
+      allow_unsandboxed_builder: true,
+    };
+  }
+
+  it('accepts openrouter for both seats, each with a URL of its own', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        {
+          ...openrouter_seats(workspace),
+          builder_url: 'https://proxy.local/api/v1',
+          critic_url: 'http://localhost:8080/v1',
+        },
+        { env: KEYED },
+      );
+      expect(config.builder_provider).toBe('openrouter');
+      expect(config.critic_provider).toBe('openrouter');
+      expect(config.builder_url).toBe('https://proxy.local/api/v1');
+      expect(config.critic_url).toBe('http://localhost:8080/v1');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses an uncontained openrouter builder without the opt-out, since it gets a real bash', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config(
+          { ...openrouter_seats(workspace), allow_unsandboxed_builder: false },
+          { env: KEYED },
+        ),
+      ).toThrow(/builder-provider 'openrouter' .*refused unless contained/);
+      const contained = resolve_config(
+        { ...openrouter_seats(workspace), allow_unsandboxed_builder: false },
+        { env: { ...KEYED, VOLLEY_CONTAINED: '1' } },
+      );
+      expect(contained.builder_provider).toBe('openrouter');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses either seat on openrouter when OPENROUTER_API_KEY is unset or blank, naming it', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const builder_only = { ...openrouter_seats(workspace), critic_provider: 'claude_cli' as const };
+      const critic_only = { ...base(workspace), critic_provider: 'openrouter' as const };
+      for (const raw of [openrouter_seats(workspace), builder_only, critic_only]) {
+        for (const env of [{}, { OPENROUTER_API_KEY: '  ' }]) {
+          let caught: unknown;
+          try {
+            resolve_config(raw, { env });
+          } catch (err) {
+            caught = err;
+          }
+          expect(error_kind(caught)).toBe('config_error');
+          expect(String(caught)).toContain('OPENROUTER_API_KEY is not set');
+        }
+      }
+      // No openrouter seat, no key needed.
+      expect(resolve_config(base(workspace), { env: {} }).builder_provider).toBe('claude_cli');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('names every URL-taking provider when it refuses a URL on a claude_cli seat', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config({ ...base(workspace), critic_url: 'http://localhost:11434' }),
+      ).toThrow('applies only to a critic on ollama, lmstudio, or openrouter');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('resolve_config: the check, resolved as the CLI resolves it', () => {
   const cases: Array<{ check: string; checkride: boolean; resolved: string }> = [
     { check: 'auto', checkride: true, resolved: 'checkride' },

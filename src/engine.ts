@@ -17,6 +17,11 @@ export type { Engine } from 'fascicle';
  * and 404s. */
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 export const DEFAULT_LMSTUDIO_URL = 'http://localhost:1234/v1';
+/** OpenRouter's API root, the one fascicle's openrouter adapter defaults to. */
+export const DEFAULT_OPENROUTER_URL = 'https://openrouter.ai/api/v1';
+
+/** The variable an `openrouter` seat's API key is read from. */
+const OPENROUTER_KEY_VAR = 'OPENROUTER_API_KEY';
 
 /** Loopback authorities the container→host crossing rewrites. A base URL
  * pointing at one of these is local to wherever volley runs; contained, that is
@@ -56,7 +61,7 @@ export function cross_to_host_gateway(
 
 /** The providers a seat reaches at a base URL volley configures. `claude_cli`
  * picks its own endpoint, so it never appears here. */
-type UrlProvider = 'ollama' | 'lmstudio';
+type UrlProvider = 'ollama' | 'lmstudio' | 'openrouter';
 
 /** Where a URL-taking provider's base URL comes from when a seat names none of
  * its own: the provider's env var, then its default. `normalize` canonicalizes
@@ -87,9 +92,17 @@ const SEAT_URL_SOURCES: Readonly<Record<UrlProvider, SeatUrlSource>> = {
     default_url: DEFAULT_LMSTUDIO_URL,
     normalize: strip_trailing_slashes,
   },
+  // OpenRouter's base URL keeps its `/api/v1` the same way, so a seat URL can
+  // name a proxy or another OpenAI-compatible gateway.
+  openrouter: {
+    env: 'VOLLEY_OPENROUTER_URL',
+    default_url: DEFAULT_OPENROUTER_URL,
+    normalize: strip_trailing_slashes,
+  },
 };
 
-/** The providers that take a seat URL (`--builder-url` / `--critic-url`). */
+/** The providers that take a seat URL (`--builder-url` / `--critic-url`), and
+ * so get their endpoint probed by `--dry-run`. */
 export const SEAT_URL_PROVIDERS = Object.keys(SEAT_URL_SOURCES) as ReadonlyArray<UrlProvider>;
 
 /** Whether a seat on `provider` reaches its model at a base URL volley
@@ -107,11 +120,11 @@ function present(value: string | null | undefined): string | null {
 }
 
 /** The base URL a seat's model calls go to: the seat's own URL, else the
- * provider's env var (`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL`), else its
- * default. A seat never falls back to the other seat's URL. The result is
- * normalized, then a loopback authority is crossed to the host LLM endpoint
- * when volley runs contained. Both seats can be loopback URLs on different
- * ports, and each crosses on its own port. */
+ * provider's env var (`VOLLEY_OLLAMA_URL` / `VOLLEY_LMSTUDIO_URL` /
+ * `VOLLEY_OPENROUTER_URL`), else its default. A seat never falls back to the
+ * other seat's URL. The result is normalized, then a loopback authority is
+ * crossed to the host LLM endpoint when volley runs contained. Both seats can
+ * be loopback URLs on different ports, and each crosses on its own port. */
 export function seat_base_url(
   provider: UrlProvider,
   seat_url: string | null,
@@ -120,6 +133,20 @@ export function seat_base_url(
   const source = SEAT_URL_SOURCES[provider];
   const raw = present(seat_url) ?? present(env[source.env]) ?? source.default_url;
   return cross_to_host_gateway(source.normalize(raw), env);
+}
+
+/** The API key an `openrouter` seat sends, from `OPENROUTER_API_KEY`. An unset
+ * or blank key is a config error naming the variable, which `resolve_config`
+ * raises before any work, because fascicle's own "requires a non-empty
+ * api_key" doesn't say where the key comes from. */
+export function openrouter_api_key(env: Record<string, string | undefined>): string {
+  const key = present(env[OPENROUTER_KEY_VAR]);
+  if (key === null) {
+    throw config_error(
+      `${OPENROUTER_KEY_VAR} is not set: an openrouter seat sends it as its API key`,
+    );
+  }
+  return key;
 }
 
 function load_pricing_overrides(path: string): PricingTable {
@@ -139,14 +166,14 @@ export type EngineOptions = {
    * is the worktree under `--worktree`, so the builder writes where the check
    * and the critic look. */
   workspace: string;
-  /** When the builder runs on a local model, its provider is configured
-   * alongside claude_cli so one engine drives both roles. */
+  /** When the builder runs on a URL-taking provider, that provider is
+   * configured alongside claude_cli so one engine drives both roles. */
   builder_provider?: BuilderProvider;
   /** The builder seat's own base URL (`--builder-url`); null or absent falls
    * back to the provider's env var, then its default. */
   builder_url?: string | null;
-  /** When the critic runs on a local model, its provider is configured
-   * alongside claude_cli so one engine drives both roles. */
+  /** When the critic runs on a URL-taking provider, that provider is
+   * configured alongside claude_cli so one engine drives both roles. */
   critic_provider?: CriticProvider;
   /** The critic seat's own base URL (`--critic-url`), resolved the same way. */
   critic_url?: string | null;
@@ -157,24 +184,30 @@ export type EngineOptions = {
  * peer (`ai-sdk-ollama` / `@ai-sdk/openai-compatible`) is loaded lazily by
  * fascicle only when the provider actually runs. The entry is complete, because
  * `Engine.with_providers` replaces a provider's whole entry: whatever this
- * returns is all a seat's derived engine knows about the provider.
+ * returns is all a seat's derived engine knows about the provider, so an
+ * `openrouter` entry carries its key and its transport along with its URL.
  *
- * Native transport is the deferred future bridge, not adopted here: volley stays
- * on the ai_sdk transport, which fascicle 0.14.0 already selects by default
- * (`transport?: 'ai_sdk' | 'native'` defaults to `'ai_sdk'`), so no field is
- * needed today. Flipping later is a one-line change — add `transport: 'native'`
- * to the ollama/lmstudio entry returned below, which both seats' engines then
- * share. No URL re-pointing is required: `seat_base_url` already yields the
- * daemon-root URL the native `/api/chat` transport wants (its adapter appends
- * `/api/chat` itself), which is exactly what the v0.3.1 base-URL fix produces.
+ * `openrouter` runs on fascicle's native transport, its OpenAI-compatible core,
+ * so no ai-sdk peer gets installed for it, and its `X-Title` attributes the
+ * traffic to volley.
+ *
+ * For the local providers, native transport is the deferred future bridge, not
+ * adopted here: they stay on the ai_sdk transport, which fascicle 0.14.0 already
+ * selects by default (`transport?: 'ai_sdk' | 'native'` defaults to `'ai_sdk'`),
+ * so no field is needed today. Flipping later is a one-line change — add
+ * `transport: 'native'` to the ollama/lmstudio entry returned below, which both
+ * seats' engines then share. No URL re-pointing is required: `seat_base_url`
+ * already yields the daemon-root URL the native `/api/chat` transport wants
+ * (its adapter appends `/api/chat` itself), which is exactly what the v0.3.1
+ * base-URL fix produces.
  * Kept as a proven-once-then-reverted option so the transport stays a clean
  * second variable in the model-vs-transport comparison. Flipping it today would
  * also lose the reasoning: fascicle's native Ollama adapter drops
  * `message.thinking`, with `think` unset or true (robmclarty/fascicle#12), so a
  * thinking seat's reasoning would vanish from the terminal and the trajectory.
  *
- * Both providers' base URLs cross a loopback authority to `VOLLEY_MODEL_HOST` when
- * volley runs contained, so an in-container model client reaches the
+ * Every provider's base URL crosses a loopback authority to `VOLLEY_MODEL_HOST`
+ * when volley runs contained, so an in-container model client reaches the
  * host LLM endpoint at `host.docker.internal`; on the host / unsandboxed path the
  * override is unset and this is a no-op. */
 function seat_provider_config(
@@ -183,7 +216,21 @@ function seat_provider_config(
   env: Record<string, string | undefined>,
 ): ProviderConfigMap {
   const base_url = seat_base_url(provider, seat_url, env);
-  return provider === 'ollama' ? { ollama: { base_url } } : { lmstudio: { base_url } };
+  switch (provider) {
+    case 'ollama':
+      return { ollama: { base_url } };
+    case 'lmstudio':
+      return { lmstudio: { base_url } };
+    case 'openrouter':
+      return {
+        openrouter: {
+          api_key: openrouter_api_key(env),
+          base_url,
+          transport: 'native',
+          x_title: 'volley',
+        },
+      };
+  }
 }
 
 /** Per-run engine. `claude_cli` is always configured with `options.workspace`

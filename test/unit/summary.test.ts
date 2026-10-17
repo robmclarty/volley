@@ -65,10 +65,11 @@ function run_result(overrides: Partial<RunResult> = {}): RunResult {
 }
 
 describe('transport_of', () => {
-  it('maps claude_cli to its CLI transport and the local providers to ai_sdk', () => {
+  it('maps claude_cli to its CLI transport, the local providers to ai_sdk, and openrouter to native', () => {
     expect(transport_of('claude_cli')).toBe('claude_cli');
     expect(transport_of('ollama')).toBe('ai_sdk');
     expect(transport_of('lmstudio')).toBe('ai_sdk');
+    expect(transport_of('openrouter')).toBe('native');
   });
 });
 

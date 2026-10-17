@@ -34,9 +34,9 @@ export function resolve_critic_prompt(config: ResolvedConfig): string {
     config.critic_prompt_path !== null
       ? readFileSync(config.critic_prompt_path, 'utf8')
       : readFileSync(join(presets_dir(), `${config.critic_preset}.md`), 'utf8');
-  // The CLI critic reads via built-in Read/Grep/Glob; a local-model critic
-  // reads via volley's supplied read_file/search_files/list_files tools, so
-  // its harness instructions name a different tool set.
+  // The CLI critic reads via built-in Read/Grep/Glob; every other critic, local
+  // or `openrouter`, reads via volley's supplied read_file/search_files/
+  // list_files tools, so its harness instructions name a different tool set.
   const append_file =
     config.critic_provider === 'claude_cli' ? 'harness_append.md' : 'harness_append_local.md';
   const append = readFileSync(join(presets_dir(), append_file), 'utf8');

@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_check_runner } from './check/detect.js';
-import { SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
+import { openrouter_api_key, SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
@@ -37,22 +37,25 @@ const BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
   'claude_cli',
   'ollama',
   'lmstudio',
+  'openrouter',
 ];
 
-/** Builder providers that run a local model through volley's own tool loop —
- * a real `bash` (write + exec). Refused unless volley is running
- * inside a container (the correct blast-radius default) or the operator
- * explicitly opts out; `claude_cli` has its own permission model and is
- * exempt. */
-const LOCAL_BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
+/** Builder providers that drive their model through volley's own tool loop —
+ * a real `bash` (write + exec), wherever the model runs. Refused unless volley
+ * is running inside a container (the correct blast-radius default) or the
+ * operator explicitly opts out; `claude_cli` has its own permission model and
+ * is exempt. */
+const TOOL_LOOP_BUILDER_PROVIDERS: ReadonlyArray<BuilderProvider> = [
   'ollama',
   'lmstudio',
+  'openrouter',
 ];
 
 const CRITIC_PROVIDERS: ReadonlyArray<CriticProvider> = [
   'claude_cli',
   'ollama',
   'lmstudio',
+  'openrouter',
 ];
 
 const CRITIC_PRESETS: ReadonlyArray<CriticPreset> = [
@@ -187,7 +190,8 @@ function resolve_sandbox_image(
 
 /** The `--allow-unsandboxed-builder` flag/config value wins; otherwise
  * `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` (or `=true`) opts out. Any other value
- * (incl. `0`/`false`/unset) leaves the local builder refused unless contained. */
+ * (incl. `0`/`false`/unset) leaves a tool-loop builder refused unless
+ * contained. */
 function resolve_allow_unsandboxed_builder(
   raw: VolleyConfig,
   env: Record<string, string | undefined>,
@@ -218,8 +222,11 @@ function resolve_seat_url(
   const url = value.trim();
   if (url === '') return null;
   if (!takes_seat_url(provider)) {
+    const url_providers = new Intl.ListFormat('en', { type: 'disjunction' }).format(
+      SEAT_URL_PROVIDERS,
+    );
     throw config_error(
-      `${setting} applies only to a ${seat} on ${SEAT_URL_PROVIDERS.join(' or ')}; ` +
+      `${setting} applies only to a ${seat} on ${url_providers}; ` +
         `${seat}-provider is ${provider}`,
     );
   }
@@ -323,19 +330,19 @@ export function resolve_config(
     );
   }
 
-  // Safety gate: a local builder gets a real `bash` (write + exec),
-  // so refuse it — before any model spend — unless volley is running *inside* a
-  // container (the correct blast-radius default) or the operator explicitly
-  // opts out to run uncontained on the host.
+  // Safety gate: a tool-loop builder gets a real `bash` (write + exec), local
+  // model or hosted, so refuse it — before any model spend — unless volley is
+  // running *inside* a container (the correct blast-radius default) or the
+  // operator explicitly opts out to run uncontained on the host.
   const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, env);
   const contained = detect_containment(env);
   if (
-    LOCAL_BUILDER_PROVIDERS.includes(builder_provider) &&
+    TOOL_LOOP_BUILDER_PROVIDERS.includes(builder_provider) &&
     !contained &&
     !allow_unsandboxed_builder
   ) {
     throw config_error(
-      `builder-provider '${builder_provider}' runs a local model with a real bash ` +
+      `builder-provider '${builder_provider}' runs volley's tool loop with a real bash ` +
         `(write + exec) — refused unless contained. Launch volley inside its sandbox container ` +
         `(docker run <hardened flags> <image> volley run …, which sets VOLLEY_CONTAINED=1), or pass ` +
         `--allow-unsandboxed-builder (VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1) to run uncontained on the host.`,
@@ -353,6 +360,12 @@ export function resolve_config(
 
   const builder_url = resolve_seat_url('builder', raw.builder_url, builder_provider);
   const critic_url = resolve_seat_url('critic', raw.critic_url, critic_provider);
+
+  // An openrouter seat sends `OPENROUTER_API_KEY`, so an unset key is refused
+  // here, naming the variable, before any work rather than at the first call.
+  if (builder_provider === 'openrouter' || critic_provider === 'openrouter') {
+    openrouter_api_key(env);
+  }
 
   // Containment auth gate: `claude_cli`'s subscription/OAuth credentials
   // do not survive containerization — the token is mangled inside the container —

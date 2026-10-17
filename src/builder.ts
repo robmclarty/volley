@@ -1,7 +1,7 @@
 /**
  * Builder invocation: one call to the builder leaf per iteration is one
  * complete agentic session in the workspace — Claude Code under `claude_cli`,
- * or a local model driving volley's tools.
+ * or a model driving volley's tools on any other provider, local or hosted.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -73,7 +73,8 @@ export function compose_builder_system_local(): string {
 /** The builder system prompt for the active provider: the `claude_cli`
  * prompt (implicit built-in tools, "the current working directory") for the
  * CLI builder, or the local prompt (volley's tool set, workspace-is-cwd, and
- * the harness-enforced `finish` stop) for a local model. Mirrors the critic's
+ * the harness-enforced `finish` stop) for every provider that runs volley's
+ * tool loop, `openrouter` included. Mirrors the critic's
  * `resolve_critic_prompt`. */
 function resolve_builder_system(config: ResolvedConfig): string {
   return config.builder_provider === 'claude_cli'
@@ -91,10 +92,10 @@ const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
 /** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
  * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
  * permission mode) and brings its own built-in tools — this arm is unchanged
- * from v2. A local builder brings none, so volley supplies its whole
- * workspace tool surface plus the five per-call loop knobs and **no**
- * schema (it produces a workspace, not a verdict); per-call values win over
- * engine defaults. */
+ * from v2. Every other builder, local or `openrouter`, brings none, so volley
+ * supplies its whole workspace tool surface plus the five per-call loop knobs
+ * and **no** schema (it produces a workspace, not a verdict); per-call values
+ * win over engine defaults. */
 function builder_tool_options(
   config: ResolvedConfig,
   bash_executor: BashExecutor | null,

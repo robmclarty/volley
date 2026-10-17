@@ -1,6 +1,7 @@
 /**
- * Critic invocation: a read-only session (`claude_cli`, or a local model with
- * volley's read tools) returning a schema-validated structured verdict. The
+ * Critic invocation: a read-only session (`claude_cli`, or a local or
+ * `openrouter` model with volley's read tools) returning a schema-validated
+ * structured verdict. The
  * harness — not the critic — writes `.volley/feedback.md` and `.volley/verdict`.
  */
 import { z } from 'zod';
@@ -52,12 +53,12 @@ export type CriticDeps = {
 };
 
 /** Read-only tool wiring per provider. The claude_cli critic is confined at
- * the CLI permission layer (allowlist + explicit disallow); a local-model
- * critic gets volley's own workspace-scoped read-only tools and no write
- * path at all.
+ * the CLI permission layer (allowlist + explicit disallow); every other critic,
+ * local or `openrouter`, gets volley's own workspace-scoped read-only tools and
+ * no write path at all.
  *
- * The two providers also enforce `verdict_schema` by two different paths, both
- * verified live. The claude_cli critic compiles the schema for
+ * The providers also enforce `verdict_schema` by different paths, the first
+ * two verified live. The claude_cli critic compiles the schema for
  * `claude --json-schema`; that only works because fascicle 0.14.0's
  * `compile_schema` strips the top-level `$schema`/`$id` that zod v4 stamps (the
  * CLI rejects them) — `live_smoke` asserts a structured verdict comes back, so a
@@ -67,7 +68,10 @@ export type CriticDeps = {
  * structurally guaranteed at decode time, with no prompt-parse-repair;
  * `live_local_builder` exercises that path. Unchanged in v3: on ai_sdk
  * constrained decode needs no wiring, and under the deferred native flip it
- * would move to `provider_options.ollama.format` (parked). */
+ * would move to `provider_options.ollama.format` (parked). An `openrouter`
+ * critic rides fascicle's native OpenAI-compatible core, which has no
+ * constrained decode: the schema travels in the prompt, and the reply is parsed
+ * and repaired. */
 function critic_tool_options(
   config: ResolvedConfig,
 ): Pick<GenerateOptions<VerdictOutput>, 'tools' | 'provider_options' | 'max_steps'> {
@@ -102,8 +106,8 @@ export const CRITIC_MAX_STEPS = 10;
  * tool-less fallback must take over. */
 export const MAX_CRITIC_RETRIES = 1;
 
-/** Is this critic failure the transient local-provider stream death the ladder
- * retries? Local providers only (the `claude_cli` path is proven and its
+/** Is this critic failure the transient provider stream death the ladder
+ * retries? Every provider but `claude_cli` (that path is proven and its
  * retries cost real money), and fascicle's typed `provider_error` only (no
  * message string-matching). A user abort never gets here: `retry` and
  * `fallback` pass control-flow signals through untouched, and `retry` checks the
@@ -374,7 +378,7 @@ function canary_detail(err: unknown): string {
  * The `--dry-run` critic-seat canary: one tiny generate through the *real*
  * production tool wiring (`critic_tool_options`) and `verdict_schema`, $0 on a
  * local model. The caller (preflight) gates it to local critics only —
- * `claude_cli` is proven and its calls cost real money.
+ * `claude_cli` is proven, and its calls and `openrouter`'s cost real money.
  *
  * A tool-bearing death is classified by the same discriminant as the run-time
  * ladder's fallback (a typed `provider_error`, or step exhaustion), then probed

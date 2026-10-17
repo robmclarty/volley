@@ -3,10 +3,13 @@ import {
   cross_to_host_gateway,
   DEFAULT_LMSTUDIO_URL,
   DEFAULT_OLLAMA_URL,
+  DEFAULT_OPENROUTER_URL,
+  openrouter_api_key,
   seat_base_url,
   SEAT_URL_PROVIDERS,
   takes_seat_url,
 } from '../../src/engine.js';
+import { error_kind } from '../../src/types.js';
 
 describe('seat_base_url — ollama', () => {
   it('defaults to the server root — NOT …/api, which ai-sdk-ollama appends itself', () => {
@@ -98,13 +101,56 @@ describe('seat_base_url — a seat of its own', () => {
   });
 });
 
+describe('seat_base_url — openrouter', () => {
+  it("defaults to OpenRouter's API root, fascicle's own default", () => {
+    expect(seat_base_url('openrouter', null, {})).toBe(DEFAULT_OPENROUTER_URL);
+    expect(DEFAULT_OPENROUTER_URL).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('takes the seat URL, then VOLLEY_OPENROUTER_URL, stripping trailing slashes', () => {
+    const env = { VOLLEY_OPENROUTER_URL: 'https://gateway.local/api/v1/' };
+    expect(seat_base_url('openrouter', null, env)).toBe('https://gateway.local/api/v1');
+    expect(seat_base_url('openrouter', 'https://proxy.local/v1//', env)).toBe(
+      'https://proxy.local/v1',
+    );
+  });
+
+  it('leaves the hosted default untouched when contained, and crosses only a loopback proxy', () => {
+    const contained = { VOLLEY_MODEL_HOST: 'host.docker.internal' };
+    expect(seat_base_url('openrouter', null, contained)).toBe(DEFAULT_OPENROUTER_URL);
+    expect(seat_base_url('openrouter', 'http://localhost:8080/v1', contained)).toBe(
+      'http://host.docker.internal:8080/v1',
+    );
+  });
+});
+
+describe('openrouter_api_key', () => {
+  it('reads the key from OPENROUTER_API_KEY', () => {
+    expect(openrouter_api_key({ OPENROUTER_API_KEY: 'sk-or-test' })).toBe('sk-or-test');
+  });
+
+  it('throws a config error naming the variable when it is unset or blank', () => {
+    for (const env of [{}, { OPENROUTER_API_KEY: '' }, { OPENROUTER_API_KEY: '   ' }]) {
+      let caught: unknown;
+      try {
+        openrouter_api_key(env);
+      } catch (err) {
+        caught = err;
+      }
+      expect(error_kind(caught)).toBe('config_error');
+      expect(String(caught)).toContain('OPENROUTER_API_KEY');
+    }
+  });
+});
+
 describe('takes_seat_url', () => {
   it('is true only for the providers volley reaches at a base URL', () => {
     expect(takes_seat_url('ollama')).toBe(true);
     expect(takes_seat_url('lmstudio')).toBe(true);
+    expect(takes_seat_url('openrouter')).toBe(true);
     expect(takes_seat_url('claude_cli')).toBe(false);
     expect(takes_seat_url(undefined)).toBe(false);
-    expect(SEAT_URL_PROVIDERS).toEqual(['ollama', 'lmstudio']);
+    expect(SEAT_URL_PROVIDERS).toEqual(['ollama', 'lmstudio', 'openrouter']);
   });
 });
 

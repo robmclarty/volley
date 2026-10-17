@@ -12,15 +12,16 @@ export type Verdict = 'approved' | 'changes_requested';
 export type CriticPreset = 'reviewer' | 'optimizer' | 'researcher';
 
 /** Transport for the critic role. The critic is read-only + schema-constrained,
- * so it has always been able to run on a local model. */
-export type CriticProvider = 'claude_cli' | 'ollama' | 'lmstudio';
+ * so it has always been able to run on a local model. `openrouter` reaches a
+ * hosted model over one API key and takes the local critic's tools and
+ * degradation ladder. */
+export type CriticProvider = 'claude_cli' | 'ollama' | 'lmstudio' | 'openrouter';
 
 /** Transport for the builder role. `claude_cli` is a full agentic Claude Code
- * session; the local providers run the builder as a volley-driven tool loop
- * (write/exec tools supplied by the harness). The execution path for the local
- * providers lands with the builder tool/termination work; this type and its
- * plumbing exist so that work has somewhere to attach (spec v3). */
-export type BuilderProvider = 'claude_cli' | 'ollama' | 'lmstudio';
+ * session; every other provider runs the builder as a volley-driven tool loop
+ * (write/exec tools supplied by the harness), whether its model is local
+ * (`ollama`, `lmstudio`) or hosted (`openrouter`). */
+export type BuilderProvider = 'claude_cli' | 'ollama' | 'lmstudio' | 'openrouter';
 
 export type BuilderPermissionMode = 'acceptEdits' | 'bypassPermissions';
 
@@ -101,12 +102,13 @@ export type ResolvedConfig = {
    * It is normalized, and crossed to the host LLM endpoint when contained, only
    * where it is used, because the crossing depends on where the run executes.
    * Null falls back to the provider's env var (`VOLLEY_OLLAMA_URL` /
-   * `VOLLEY_LMSTUDIO_URL`), then its default, never to the critic's URL. Only
-   * a provider volley reaches at a base URL (ollama, lmstudio) takes one. */
+   * `VOLLEY_LMSTUDIO_URL` / `VOLLEY_OPENROUTER_URL`), then its default, never to
+   * the critic's URL. Only a provider volley reaches at a base URL (ollama,
+   * lmstudio, openrouter) takes one. */
   builder_url: string | null;
   builder_max_steps: number;
-  /** Operator opt-out permitting a local (non-`claude_cli`) builder to run
-   * without a sandbox — it gets a real host bash. Refused by default. */
+  /** Operator opt-out permitting a non-`claude_cli` builder to run without a
+   * sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;
   critic_model: string;
   critic_provider: CriticProvider;

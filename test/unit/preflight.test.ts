@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { incomplete_generation_error, provider_error, schema_validation_error } from 'fascicle';
 import { resolve_config } from '../../src/config.js';
 import { verdict_schema } from '../../src/critic/run.js';
-import { is_local_builder, is_local_critic, preflight } from '../../src/preflight.js';
+import { is_local_critic, is_tool_loop_builder, preflight } from '../../src/preflight.js';
 import type { PreflightProbes } from '../../src/preflight.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
 import { create_renderer } from '../../src/render/renderer.js';
@@ -57,11 +57,21 @@ function local_config(workspace: string, opts: { worktree?: boolean } = {}): Res
   return config;
 }
 
-describe('is_local_builder', () => {
-  it('is true only for the local providers', () => {
-    expect(is_local_builder('ollama')).toBe(true);
-    expect(is_local_builder('lmstudio')).toBe(true);
-    expect(is_local_builder('claude_cli')).toBe(false);
+/** A resolved config with both seats on OpenRouter, contained, so the
+ * containment preflight applies to its builder. */
+function openrouter_config(workspace: string): ResolvedConfig {
+  return resolve_config(
+    { ...base(workspace), builder_provider: 'openrouter', critic_provider: 'openrouter' },
+    { env: { VOLLEY_CONTAINED: '1', OPENROUTER_API_KEY: 'sk-or-test' } },
+  );
+}
+
+describe('is_tool_loop_builder', () => {
+  it('is true for every provider that runs volley\'s tool loop, local or hosted', () => {
+    expect(is_tool_loop_builder('ollama')).toBe(true);
+    expect(is_tool_loop_builder('lmstudio')).toBe(true);
+    expect(is_tool_loop_builder('openrouter')).toBe(true);
+    expect(is_tool_loop_builder('claude_cli')).toBe(false);
   });
 });
 
@@ -69,6 +79,7 @@ describe('is_local_critic', () => {
   it('is true only for the local providers', () => {
     expect(is_local_critic('ollama')).toBe(true);
     expect(is_local_critic('lmstudio')).toBe(true);
+    expect(is_local_critic('openrouter')).toBe(false);
     expect(is_local_critic('claude_cli')).toBe(false);
   });
 });
@@ -179,6 +190,22 @@ describe('preflight — containment checks for a local builder', () => {
       });
       expect(code).toBe(EXIT_CONFIG_ERROR);
       expect(output()).toMatch(/missing toolchain.*pnpm, git/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('checks an openrouter builder the same way, since it gets the same bash', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const code = await preflight(openrouter_config(workspace), renderer, { VOLLEY_CONTAINED: '1' }, {
+        ...ALL_GREEN,
+        toolchain_missing: () => ['pnpm'],
+      });
+      expect(code).toBe(EXIT_CONFIG_ERROR);
+      expect(output()).toContain('containment: inside the sandbox container');
+      expect(output()).toMatch(/missing toolchain.*pnpm/);
     } finally {
       cleanup();
     }
@@ -513,6 +540,26 @@ describe('preflight — critic-seat canary', () => {
       const { renderer, output } = capturing_renderer();
       let consulted = false;
       const code = await preflight(claude_config(workspace), renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => {
+          consulted = true;
+          return mock_engine(() => approve_reply());
+        },
+      });
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(consulted).toBe(false);
+      expect(output()).not.toContain('critic canary');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('skips the canary for an openrouter critic, whose calls cost money', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      let consulted = false;
+      const code = await preflight(openrouter_config(workspace), renderer, {}, {
         ...ALL_GREEN,
         canary_engine: () => {
           consulted = true;

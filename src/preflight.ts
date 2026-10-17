@@ -6,12 +6,12 @@
  * (`report_worktree_fate`) — integrate, salvage onto the run branch, or
  * discard — so no fate arrives as a surprise at teardown.
  *
- * For a containment-requiring local builder — run from *inside* its container
- * — it additionally checks the two things that contained build needs: the
- * toolchain is present and the worktree is creatable. Any containment check
- * failing exits 5 (`EXIT_CONFIG_ERROR`).
+ * For a containment-requiring tool-loop builder (local or `openrouter`) — run
+ * from *inside* its container — it additionally checks the two things that
+ * contained build needs: the toolchain is present and the worktree is
+ * creatable. Any containment check failing exits 5 (`EXIT_CONFIG_ERROR`).
  *
- * Every seat on a local provider then gets its model endpoint probed: each
+ * Every seat on a URL-taking provider then gets its model endpoint probed: each
  * seat's own resolved base URL (`seat_base_url`, which crosses a loopback
  * authority to the gateway when `VOLLEY_MODEL_HOST` is set — engine.ts), one
  * probe when both seats share a server. An unreachable endpoint exits 5 too.
@@ -24,7 +24,8 @@
  * generate through the real critic tool wiring, run
  * whatever the builder provider is. A degradable failure warns and predicts
  * `critic_degraded`; only a would-fail-even-degraded combo (endpoint down,
- * model missing) exits 5. The `claude_cli` critic path never runs it.
+ * model missing) exits 5. The `claude_cli` and `openrouter` critic paths never
+ * run it: a canary that costs nothing on a local model costs money there.
  *
  * The probes are injectable so the exit-code contract is unit-testable without
  * a daemon, a git repo, or a live model endpoint.
@@ -50,17 +51,18 @@ const REQUIRED_TOOLCHAIN: ReadonlyArray<string> = ['node', 'pnpm', 'git'];
  * rather than hanging the preflight before the loop even starts. */
 const ENDPOINT_PROBE_TIMEOUT_MS = 3000;
 
-/** Builders that run a local model through volley's own tool loop, so the
- * containment preflight applies. `claude_cli` never does. */
-export function is_local_builder(
+/** Builders that drive their model through volley's own tool loop, local or
+ * hosted, so the containment preflight applies. `claude_cli` never does. */
+export function is_tool_loop_builder(
   provider: BuilderProvider,
-): provider is 'ollama' | 'lmstudio' {
-  return provider === 'ollama' || provider === 'lmstudio';
+): provider is 'ollama' | 'lmstudio' | 'openrouter' {
+  return provider !== 'claude_cli';
 }
 
 /** Critics that run a local model through volley's own tool wiring, so the
  * critic-seat canary applies. `claude_cli` never does: that path is
- * proven and its calls cost real money. */
+ * proven and its calls cost real money. Nor does `openrouter`, whose calls cost
+ * money too. */
 export function is_local_critic(
   provider: CriticProvider,
 ): provider is 'ollama' | 'lmstudio' {
@@ -186,8 +188,8 @@ function default_canary_engine(
   });
 }
 
-/** A seat's info line: its model and provider, and the endpoint a local seat
- * will reach. */
+/** A seat's info line: its model and provider, and the endpoint a seat on a
+ * URL-taking provider will reach. */
 function seat_line(
   seat: 'builder' | 'critic',
   model: string,
@@ -254,8 +256,7 @@ export async function preflight(
   env: Record<string, string | undefined>,
   probes: PreflightProbes = {},
 ): Promise<number> {
-  const provider = config.builder_provider;
-  const local_builder = is_local_builder(provider);
+  const tool_loop_builder = is_tool_loop_builder(config.builder_provider);
 
   renderer.info(`dry run: config valid (run ${config.run_id})`);
   renderer.info(`workspace: ${config.workspace}`);
@@ -264,7 +265,7 @@ export async function preflight(
     seat_line('builder', config.builder_model, config.builder_provider, config.builder_url, env),
   );
   renderer.info(`builder max steps: ${config.builder_max_steps}`);
-  if (local_builder) {
+  if (tool_loop_builder) {
     const contained = env['VOLLEY_CONTAINED'] === '1' || env['VOLLEY_CONTAINED'] === 'true';
     renderer.info(
       contained
@@ -294,9 +295,9 @@ export async function preflight(
     renderer.info('checkride doctor: ok');
   }
 
-  // Containment preflight — local builder only, so the all-Claude path never
-  // reaches an exit 5 from here.
-  if (local_builder) {
+  // Containment preflight — tool-loop builder only, so the all-Claude path
+  // never reaches an exit 5 from here.
+  if (tool_loop_builder) {
     const missing = (probes.toolchain_missing ?? toolchain_missing)(REQUIRED_TOOLCHAIN);
     if (missing.length > 0) {
       renderer.error(`preflight: missing toolchain in the sandbox: ${missing.join(', ')}`);
@@ -314,9 +315,9 @@ export async function preflight(
     }
   }
 
-  // Each local seat's own model endpoint, whatever the other seat runs on, so
-  // a critic on a second machine is checked as surely as the builder's server.
-  // The all-Claude path has no endpoint to probe.
+  // Each URL-taking seat's own model endpoint, whatever the other seat runs on,
+  // so a critic on a second machine is checked as surely as the builder's
+  // server. The all-Claude path has no endpoint to probe.
   const reachable = probes.endpoint_reachable ?? endpoint_reachable;
   if (!(await probe_seat_endpoints(config, renderer, env, reachable))) {
     return EXIT_CONFIG_ERROR;

@@ -29,13 +29,22 @@ import { volley_path } from './workspace.js';
 
 /** How a role reached the model. volley stays on the `ai_sdk` transport for the
  * local providers (fascicle 0.14.0 defaults `transport` to `'ai_sdk'`, so
- * volley sets no field); `claude_cli` drives Claude through its own CLI
- * subprocess, not an ai-sdk transport at all. Recording both keeps the transport
- * a clean second variable in the comparison (model vs transport). */
-export type Transport = 'ai_sdk' | 'claude_cli';
+ * volley sets no field); `openrouter` runs on fascicle's `native` transport
+ * (`src/engine.ts` sets it); `claude_cli` drives Claude through its own CLI
+ * subprocess, not an ai-sdk transport at all. Recording each keeps the
+ * transport a clean second variable in the comparison (model vs transport). */
+export type Transport = 'ai_sdk' | 'native' | 'claude_cli';
 
 export function transport_of(provider: BuilderProvider | CriticProvider): Transport {
-  return provider === 'claude_cli' ? 'claude_cli' : 'ai_sdk';
+  switch (provider) {
+    case 'claude_cli':
+      return 'claude_cli';
+    case 'openrouter':
+      return 'native';
+    case 'ollama':
+    case 'lmstudio':
+      return 'ai_sdk';
+  }
 }
 
 /** One iteration's deterministic-gate outcome, in run order. */
