@@ -207,8 +207,10 @@ function seat_call(engine: MockEngine, role: MockCall['role']): MockCall | undef
   return engine.calls.find((call) => call.role === role);
 }
 
-/** The event kinds a one-round run's file trajectory held before the sink. */
-const TODAYS_FILE_KINDS = ['flow_structure', 'run_end', 'span_end', 'span_start'];
+/** The event kinds a one-round run's file trajectory held before the sink,
+ * plus the phases' progress events (`emit`), which joined it later, on the CLI
+ * as under acp. */
+const TODAYS_FILE_KINDS = ['emit', 'flow_structure', 'run_end', 'span_end', 'span_start'];
 
 function kinds_of(events: TrajectoryEvent[]): string[] {
   return [...new Set(events.map((event) => event.kind))].sort();

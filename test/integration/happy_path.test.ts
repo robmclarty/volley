@@ -67,7 +67,32 @@ describe('fresh_workspace_happy_path', () => {
         .trim()
         .split('\n');
       expect(lines.length).toBeGreaterThan(0);
-      for (const line of lines) JSON.parse(line);
+      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+      // The phases' progress events land in it, in order, the same ones an
+      // acp turn maps to its round line, check card, and verdict thought. A
+      // run that isn't streamed records no card chunks.
+      const emitted = events.filter((event) => event['kind'] === 'emit');
+      expect(emitted).toEqual([
+        expect.objectContaining({ volley: 'round_start', round: 1 }),
+        expect.objectContaining({ volley: 'check_start', round: 1, command: 'test -f done.txt' }),
+        expect.objectContaining({
+          volley: 'check_end',
+          round: 1,
+          ok: true,
+          exit_code: 0,
+          failing_slots: [],
+        }),
+        expect.objectContaining({
+          volley: 'verdict',
+          round: 1,
+          verdict: 'approved',
+          feedback: 'All criteria met.',
+          unmet_criteria: [],
+          degraded: false,
+        }),
+      ]);
+      expect(events.some((event) => event['kind'] === 'model_chunk')).toBe(false);
     } finally {
       cleanup();
     }

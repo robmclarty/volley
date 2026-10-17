@@ -11,6 +11,12 @@
  *         └─ trajectory                 the turn's own logger, so the builder's text,
  *                                       cards, and approval prompts reach the editor
  *
+ * The task is the conversation so far, then the prompt, and the run's progress
+ * events become the round lines, the check's card, the verdict thought, and
+ * the summary that ends the turn (`./acp_progress.ts`). A run that fails ends
+ * the turn with a summary saying so, rather than as an error, which would
+ * leave it out of the session's history; a stopped turn still ends cancelled.
+ *
  * The flags are checked once at startup, and every config error exits 5
  * before serving, so it shows in the editor's agent log once rather than
  * failing every prompt. Stdout carries the protocol alone: the run's renderer
@@ -19,12 +25,21 @@
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { step } from 'fascicle';
-import type { Step } from 'fascicle';
+import type { RunContext, Step } from 'fascicle';
 import type { AcpSession, AcpStreamRoute, AcpTurn, ServeAcpConfig } from 'fascicle/acp';
+import {
+  failure_event,
+  follow_rounds,
+  progress_updates,
+  summary_event,
+  turn_task,
+} from './acp_progress.js';
 import { acp_seat_tools } from './acp_tools.js';
 import { resolve_config } from './config.js';
 import { run_volley } from './orchestrator.js';
+import type { OrchestratorDeps } from './orchestrator.js';
 import { create_renderer } from './render/renderer.js';
+import { build_run_summary } from './summary.js';
 import { config_error } from './types.js';
 import type { ResolvedConfig, RunResult, VolleyConfig } from './types.js';
 
@@ -135,35 +150,66 @@ function stream_route(step_id: string): AcpStreamRoute {
   return step_id === 'builder' ? 'message' : 'none';
 }
 
+/** What one session's turns share: the flags, the environment each turn's
+ * config reads, the session's workspace, and both seats' tools. */
+type TurnDeps = {
+  base: AcpFlags;
+  env: Env;
+  workspace: string;
+  seats: NonNullable<OrchestratorDeps['seats']>;
+};
+
+/** One prompt: a volley run on the session's workspace, its events flowing
+ * into the turn's own trajectory, then its summary as the turn's last event.
+ * A failure is summarized too, naming the round it reached, and the turn ends
+ * normally, so the session's history keeps the request for a retry. A turn
+ * whose own signal fired rethrows, and ends cancelled. Resolves to the run's
+ * result, or null when it failed. */
+async function run_turn(deps: TurnDeps, turn: AcpTurn, ctx: RunContext): Promise<RunResult | null> {
+  const rounds = follow_rounds(ctx.trajectory);
+  try {
+    const config = turn_config(deps.base, deps.workspace, turn_task(turn), deps.env);
+    const result = await run_volley(config, {
+      renderer: create_renderer({
+        mode: 'quiet',
+        show_thinking: false,
+        color: false,
+        max_cost_usd: config.max_cost_usd,
+      }),
+      seats: deps.seats,
+      trajectory: rounds.sink,
+      abort: ctx.abort,
+      install_signal_handlers: false,
+    });
+    ctx.emit(summary_event(build_run_summary(config, result)));
+    return result;
+  } catch (err) {
+    if (ctx.abort.aborted) throw err;
+    ctx.emit(failure_event(err, rounds.round()));
+    return null;
+  }
+}
+
 /** The flow for one session: both seats' tools are built once, from the
- * session, and each prompt runs volley on the session's `cwd` with them, its
- * events flowing into the turn's own trajectory. */
-function session_flow(base: AcpFlags, env: Env): (session: AcpSession) => Step<AcpTurn, RunResult> {
+ * session, and each prompt runs volley on the session's `cwd` with them. */
+function session_flow(
+  base: AcpFlags,
+  env: Env,
+): (session: AcpSession) => Step<AcpTurn, RunResult | null> {
   return (session) => {
     const tools = acp_seat_tools(session);
-    const seats = {
-      builder: { ...tools.builder, on_tool_approval: session.approve },
-      critic: tools.critic,
-    };
-    return step(
-      'acp_turn',
-      (turn: AcpTurn, ctx) => {
-        const config = turn_config(base, session.cwd, turn.text, env);
-        return run_volley(config, {
-          renderer: create_renderer({
-            mode: 'quiet',
-            show_thinking: false,
-            color: false,
-            max_cost_usd: config.max_cost_usd,
-          }),
-          seats,
-          trajectory: ctx.trajectory,
-          abort: ctx.abort,
-          install_signal_handlers: false,
-        });
+    const deps: TurnDeps = {
+      base,
+      env,
+      workspace: session.cwd,
+      seats: {
+        builder: { ...tools.builder, on_tool_approval: session.approve },
+        critic: tools.critic,
       },
-      { description: "one volley run on the session's workspace, per prompt" },
-    );
+    };
+    return step('acp_turn', (turn: AcpTurn, ctx) => run_turn(deps, turn, ctx), {
+      description: "one volley run on the session's workspace, per prompt",
+    });
   };
 }
 
@@ -175,11 +221,12 @@ type AcpServeOptions = {
 };
 
 /** What `serve_acp` serves: volley, per session, starting each in Manual. The
- * builder's streamed text is the whole reply, so `to_text` adds nothing. */
+ * builder's streamed text and volley's own lines make the whole reply, ending
+ * with the summary, so `to_text` adds nothing. */
 export function acp_serve_config(
   base: AcpFlags,
   options: AcpServeOptions,
-): ServeAcpConfig<AcpTurn, RunResult> {
+): ServeAcpConfig<AcpTurn, RunResult | null> {
   return {
     name: 'volley',
     version: options.version,
@@ -187,6 +234,7 @@ export function acp_serve_config(
     flow: session_flow(base, options.env ?? process.env),
     to_input: (turn) => turn,
     stream: stream_route,
+    to_updates: progress_updates,
     to_text: () => '',
   };
 }

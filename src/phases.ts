@@ -3,9 +3,10 @@
  * takes the loop's carry-state and returns the next one. The phase modules they
  * call (`./builder.ts`, `./check/`, `./critic/`) do the work; these bodies add
  * what surrounds it: the renderer lines an operator watches, change detection,
- * git checkpoints, and the per-iteration archive.
+ * git checkpoints, the per-iteration archive, and the progress events a
+ * trajectory reader follows the run by.
  */
-import type { RunContext } from 'fascicle';
+import type { RunContext, StreamChunk } from 'fascicle';
 import { run_builder } from './builder.js';
 import type { BuilderStep } from './builder.js';
 import { collect_changes } from './changes.js';
@@ -17,9 +18,68 @@ import { archive_iteration, run_result_from_state } from './iteration.js';
 import type { Renderer } from './render/renderer.js';
 import { write_run_summary } from './summary.js';
 import { error_kind, phase_error } from './types.js';
-import type { ChangeSet, CheckResult, LoopState, ResolvedConfig } from './types.js';
+import type { ChangeSet, CheckResult, LoopState, ResolvedConfig, Verdict } from './types.js';
 import { git_checkpoint } from './workspace.js';
 import { build_root } from './worktree.js';
+
+/** A round starting, emitted as the build opens it. */
+export type RoundStartEvent = { volley: 'round_start'; round: number };
+
+/** The check starting, with the command line it runs. */
+export type CheckStartEvent = { volley: 'check_start'; round: number; command: string };
+
+/** The check's outcome. */
+export type CheckEndEvent = {
+  volley: 'check_end';
+  round: number;
+  ok: boolean;
+  exit_code: number | null;
+  failing_slots: string[];
+  duration_ms: number;
+};
+
+/** The critic's verdict, with what it still found missing, and whether it
+ * came from the tool-less fallback. */
+export type VerdictEvent = {
+  volley: 'verdict';
+  round: number;
+  verdict: Verdict;
+  feedback: string;
+  unmet_criteria: string[];
+  degraded: boolean;
+};
+
+/** The progress events the phases emit through `ctx.emit`, discriminated by
+ * `volley`, since `ctx.emit` overwrites `kind` with `'emit'`. A CLI run's
+ * trajectory keeps them for a viewer, and under acp they become the round
+ * lines, the verdict thought, and the rest of what the editor shows. */
+export type PhaseEvent = RoundStartEvent | CheckStartEvent | CheckEndEvent | VerdictEvent;
+
+/** The step id the check's card is recorded under: the check step's own, in
+ * `./flow.ts`, so each round's check counts as a fresh run of it and opens a
+ * card of its own. */
+export const CHECK_STEP_ID = 'check';
+
+/** The raw call id and tool name of the check's card. The name sits outside
+ * the workspace tools, so nothing dresses the card as one of theirs. */
+const CHECK_CALL = { id: 'check', name: 'check' } as const;
+
+function emit(ctx: RunContext, event: PhaseEvent): void {
+  ctx.emit(event);
+}
+
+/** Record one chunk of the check's card, the way `model_call` records a tool
+ * call's, under a streamed run only, since nothing reads a card otherwise. */
+function record_check_chunk(ctx: RunContext, chunk: StreamChunk): void {
+  if (ctx.streaming) ctx.trajectory.record({ kind: 'model_chunk', step_id: CHECK_STEP_ID, chunk });
+}
+
+/** The command line the check runs, or null when no check is configured. */
+function check_command(config: ResolvedConfig): string | null {
+  if (config.check_resolved === 'checkride') return 'pnpm exec checkride --json';
+  if (config.check_resolved === 'command') return config.check;
+  return null;
+}
 
 /** What every step body closes over, fixed for the whole run. */
 export type PhaseDeps = {
@@ -110,6 +170,7 @@ export async function build_phase(
 ): Promise<LoopState> {
   const { config, renderer } = deps;
   const next = next_iteration(s);
+  emit(ctx, { volley: 'round_start', round: next.iteration });
   renderer.phase_start(next.iteration, 'builder');
   const built = await run_builder({ builder, config, warn: renderer.warn }, next, ctx);
   renderer.phase_end(built.iteration, 'builder', true);
@@ -148,7 +209,36 @@ export function skip_verify_phase(deps: PhaseDeps, s: LoopState): LoopState {
   return { ...s, check: skipped_check('cost_cap') };
 }
 
-/** `check`: the deterministic gate over the tree the builder wrote. */
+/** Open the check's card on a streamed run: the call's start, then the
+ * command as its input, the two chunks `model_call` records for a tool call
+ * before it runs. */
+function open_check_card(ctx: RunContext, command: string): void {
+  record_check_chunk(ctx, { kind: 'tool_call_start', ...CHECK_CALL, step_index: 0 });
+  record_check_chunk(ctx, { kind: 'tool_call_end', id: CHECK_CALL.id, input: { command }, step_index: 0 });
+}
+
+/** Close the check's card with its result, which the card's reader renders,
+ * or with the error that stopped the check before it had one. */
+function close_check_card(ctx: RunContext, outcome: { result: CheckResult } | { error: unknown }): void {
+  record_check_chunk(
+    ctx,
+    'result' in outcome
+      ? { kind: 'tool_result', id: CHECK_CALL.id, output: outcome.result, step_index: 0 }
+      : {
+          kind: 'tool_result',
+          id: CHECK_CALL.id,
+          error: {
+            message: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+          },
+          step_index: 0,
+        },
+  );
+}
+
+/** `check`: the deterministic gate over the tree the builder wrote. A check
+ * that runs a command emits its start and end, and on a streamed run also
+ * records its card as a tool call, so a reader of the stream shows it running
+ * while it runs. */
 export async function check_phase(
   deps: PhaseDeps,
   s: LoopState,
@@ -156,9 +246,23 @@ export async function check_phase(
 ): Promise<LoopState> {
   const { config, renderer } = deps;
   renderer.phase_start(s.iteration, 'check');
+  const command = check_command(config);
+  if (command !== null) {
+    emit(ctx, { volley: 'check_start', round: s.iteration, command });
+    open_check_card(ctx, command);
+  }
   try {
     const result = await execute_check(config, ctx.abort);
     if (result.ran) {
+      close_check_card(ctx, { result });
+      emit(ctx, {
+        volley: 'check_end',
+        round: s.iteration,
+        ok: result.ok,
+        exit_code: result.exit_code,
+        failing_slots: result.failing_slots,
+        duration_ms: result.duration_ms,
+      });
       renderer.phase_end(
         s.iteration,
         'check',
@@ -176,6 +280,7 @@ export async function check_phase(
       check_duration_ms: s.check_duration_ms + result.duration_ms,
     };
   } catch (err) {
+    if (command !== null) close_check_card(ctx, { error: err });
     if (error_kind(err) === 'check_error') throw err;
     throw phase_error('check', s.iteration, err);
   }
@@ -191,6 +296,16 @@ export async function critique_phase(
   const { renderer } = deps;
   renderer.phase_start(s.iteration, 'critic');
   const critiqued = await run_critic({ critic, config: deps.config }, s, ctx);
+  if (critiqued.verdict !== null) {
+    emit(ctx, {
+      volley: 'verdict',
+      round: critiqued.iteration,
+      verdict: critiqued.verdict,
+      feedback: critiqued.feedback ?? '',
+      unmet_criteria: critiqued.unmet_criteria,
+      degraded: critiqued.critic?.critic_degraded === true,
+    });
+  }
   renderer.phase_end(
     critiqued.iteration,
     'critic',

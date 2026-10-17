@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 5 — feat(acp): serve volley to Zed as an ACP agent
+**Current step:** 6 — feat(acp): show rounds, the check, and the verdict in Zed
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -27,7 +27,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 2. feat(orchestrator): inject seat tools, approval, and a trajectory sink
 - ☑ 3. feat(state): add --state-dir to keep run state out of the workspace
 - ☑ 4. feat(acp): give acp seats fascicle's workspace tools and prompts
-- ☐ 5. feat(acp): serve volley to Zed as an ACP agent
+- ☑ 5. feat(acp): serve volley to Zed as an ACP agent
 - ☐ 6. feat(acp): show rounds, the check, and the verdict in Zed
 - ☐ 7. feat(acp): ask before uncontained commands and hide provider keys
 - ☐ 8. test(acp): drive a whole volley turn through an in-process ACP client
@@ -375,3 +375,93 @@ folder, so it rides the branch into the PR.)*
   - `test/helpers/harness.ts`: an `acp_session()` fixture, shared by the three test files. Copying it into each would trip the dupes check, and steps 5 through 8 will want it too.
 
   The seam missed them because D8's "each seat's deps name its tool set" runs through the seat types and the critic's call config.
+
+- 2026-10-17 — step 5 checkpointed · 497d57a1a — feat(acp): serve volley to Zed as an ACP agent (92m)
+
+  **Summary**: `volley acp` now serves volley over stdio through fascicle's `serve_acp`. Each prompt runs a fresh volley run on the session's folder, with fascicle's workspace tools, approvals through `session.approve`, and the turn's own trajectory as the run's sink, so the builder's text arrives as the reply. Run state goes under `$XDG_STATE_HOME/volley`, not the repo. Every refusal and config error exits 5 before serving. `@agentclientprotocol/sdk` is pinned at 1.8.0.
+
+  1. Each prompt is one volley run on the session's folder, streamed into the turn
+  2. Everything that can be refused is refused before serving, with its reason
+  3. Each turn sets the task after resolving, so a prompt starting with `@` isn't read as a file
+  4. A spawn test and an in-process turn, and each piece fails its own test when removed
+  5. fallow reads the SDK as test-only, so it joins `ignoreDependencies` as D17 planned
+
+  **Readout**: Step 5 - feat(acp): serve volley to Zed as an ACP agent
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    honored
+               - D5 (state-layout)
+               - D9 (acp-flags)
+               - D11 (acp-routing)
+               - D17 (sdk-pin)
+               - D20 (cli-critic-allowed)
+               - D21 (acp-iterations-3)
+               - D24 (acp-seats-required)
+               - D27 (startup-resolve)
+  constraints  6 of 6 honored
+  seam         held: 7 of 7 declared, no strays
+  diff         +552 -13 across 7 files
+  spent        92 min · 1 turn · 12s gate · green first run
+  ```
+
+  **Verdict**: ● Plumb
+
+  **Recommendation**: Approve and land step 5. Every done-when clause has a test that fails when its piece is removed, the seam held to its seven paths, and the gate is green; the one call the plan didn't make is setting the task after resolving (highlight 3).
+
+  **1.** Each prompt is one volley run on the session's folder, streamed into the turn
+
+  `src/acp.ts` builds the serve config: name `volley` at the package version, Manual by default, `to_input: turn => turn`, and `to_text: () => ''`. `stream` sends `builder` to the reply and every other step to `none`, so the critic's verdict JSON never reaches the thread (D11 (acp-routing)).
+
+  - **Per session:** `acp_seat_tools(session)` builds both seats' tools once, and the builder also gets `session.approve`.
+  - **Per prompt:** the one step `acp_turn` resolves the config against `session.cwd`. It then calls `run_volley` with those seats, `trajectory: ctx.trajectory`, `abort: ctx.abort`, signal handlers off, and a quiet renderer on stderr.
+  - **State root:** under acp, the state root defaults to `$XDG_STATE_HOME/volley`, else `~/.local/state/volley`. A relative `XDG_STATE_HOME` is ignored, as the XDG spec says (D5 (state-layout)).
+  - **Rounds:** `--max-iterations` defaults to 3 (D21 (acp-iterations-3)).
+
+  Two things are still the CLI's way until later steps:
+  - The task and the criteria are `turn.text` alone. Rendering the history in front of it is step 6's done-when (D10 (turn-task)).
+  - An uncontained tool-loop builder still needs `--allow-unsandboxed-builder`, because `resolve_config`'s refusal only drops under acp in step 7 (D15 (command-gate)). So the Zed snippet won't work without that flag until step 7 lands.
+
+  **2.** Everything that can be refused is refused before serving, with its reason
+
+  `acp_base_config` runs in this order:
+  1. It refuses `--worktree`, `--git`, and `--json`, each with its reason.
+  2. It names every missing seat flag in one message: `volley acp requires every seat flag, and these are missing: …`.
+  3. It refuses a `claude_cli` builder. A `claude_cli` critic passes (D20 (cli-critic-allowed)).
+  4. It resolves the whole config once against the system temp directory with a stand-in task, so an unset `OPENROUTER_API_KEY`, a bad cap, or a missing `--critic` file exits 5 there too (D27 (startup-resolve)).
+
+  Under acp, the shared `with_seat_options` helper now labels each seat's model and provider "(required)". The run command's help is unchanged, and the existing help-order test still passes. `--worktree`, `--git`, and `--json` are declared with "Refused: …" descriptions so cac doesn't answer them with a bare "Unknown option" (D9 (acp-flags)).
+
+  **3.** Each turn sets the task after resolving, so a prompt starting with `@` isn't read as a file
+
+  `resolve_config` expands any prompt or criteria starting with `@` as `@path`, reading the file or throwing a config error. A user who types `@README.md tighten this` in Zed would hit that. So each turn resolves with the stand-in task and then sets `prompt` and `criteria` to the turn's text, which is what `config.json` records. This is a judgment call the plan didn't spell out. It doesn't change what D27 (startup-resolve) asks for: each turn still resolves against `session.cwd`.
+
+  **4.** A spawn test and an in-process turn, and each piece fails its own test when removed
+
+  `test/integration/acp_cli.test.ts` has three parts.
+
+  **Spawned under tsx:**
+  - One `initialize` line gets exactly one JSON-RPC line back on stdout, naming `volley` at `package_version()`, and the agent exits 0 once stdin closes.
+  - A `claude_cli` critic is served.
+  - Each refusal and the unset key exit 5 with their reason and an empty stdout.
+
+  **`acp_base_config` directly:** the 3-round default, an explicit cap kept, and the state root under XDG, `~/.local/state`, and an explicit `--state-dir`.
+
+  **In process:** `test/helpers/acp_client.ts` connects the SDK's own `client()` to `acp_agent` over ndjson. One prompt runs both seats on their own OpenRouter stubs. The test asserts:
+  - the turn ends `end_turn`;
+  - the updates are exactly one message chunk carrying the builder's text;
+  - each stub saw only its own model;
+  - there's no `.volley` in the workspace;
+  - the run's `config.json` sits under the XDG root with the session's workspace, the prompt as task and criteria, and `max_iterations: 3`;
+  - nothing was written to stdout (C4 (stdout-protocol)).
+
+  I mutation-checked four pieces, and each fails its own test:
+  - routing every step to the reply;
+  - dropping `trajectory: ctx.trajectory`;
+  - dropping the state-root default;
+  - skipping the startup resolve.
+
+  **5.** fallow reads the SDK as test-only, so it joins `ignoreDependencies` as D17 planned
+
+  Only fascicle loads `@agentclientprotocol/sdk` at runtime, through a dynamic import. volley's own source never imports it, and only the ACP tests do, for the client. So fallow's dead slot flagged it as a test-only dependency. Per D17 (sdk-pin), it now sits in `ignoreDependencies` beside `ai`, under the same comment, extended to say why. It stays in `dependencies` at exactly `1.8.0`, and the lockfile now resolves fascicle with the SDK as its peer.

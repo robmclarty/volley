@@ -218,47 +218,66 @@ describe('one prompt through acp_agent and the SDK client', () => {
     rmSync(state_home, { recursive: true, force: true });
   });
 
-  it("ends end_turn with the builder's text as the reply, and leaves no .volley in the workspace", async () => {
+  /** volley's agent, served in process with each seat on its own stub, and
+   * one session open on `workspace`. */
+  async function serve(builder_url: string, critic_url: string, workspace: string) {
+    const env = { OPENROUTER_API_KEY: KEY, XDG_STATE_HOME: state_home };
+    const base = acp_base_config(
+      {
+        builder_provider: 'openrouter',
+        builder_model: 'vendor/builder-model',
+        builder_url,
+        critic_provider: 'openrouter',
+        critic_model: 'vendor/critic-model',
+        critic_url,
+        check: 'none',
+        allow_unsandboxed_builder: true,
+      },
+      env,
+    );
+    const app = await acp_agent(acp_serve_config(base, { version: '1.2.3', env }));
+    return open_session(app, workspace);
+  }
+
+  /** Each run's recorded config under the acp state root, oldest first. */
+  function run_configs(): ResolvedConfig[] {
+    const root = join(state_home, 'volley');
+    return readdirSync(root)
+      .map((run) => JSON.parse(readFileSync(join(root, run, 'config.json'), 'utf8')) as ResolvedConfig)
+      .toSorted((a, b) => a.started_at.localeCompare(b.started_at));
+  }
+
+  const text = (sessionUpdate: string, value: string) => ({
+    sessionUpdate,
+    content: { type: 'text', text: value },
+  });
+
+  it("ends end_turn with the round, the builder's text, the verdict, and the summary, and leaves no .volley in the workspace", async () => {
     const builder_server = await stub_openai('Wrote the file.');
     const critic_server = await stub_openai(APPROVED);
     const { workspace, cleanup } = temp_workspace();
     const stdout = vi.spyOn(process.stdout, 'write');
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const env = { OPENROUTER_API_KEY: KEY, XDG_STATE_HOME: state_home };
-      const base = acp_base_config(
-        {
-          builder_provider: 'openrouter',
-          builder_model: 'vendor/builder-model',
-          builder_url: builder_server.url,
-          critic_provider: 'openrouter',
-          critic_model: 'vendor/critic-model',
-          critic_url: critic_server.url,
-          check: 'none',
-          allow_unsandboxed_builder: true,
-        },
-        env,
-      );
-      const app = await acp_agent(acp_serve_config(base, { version: '1.2.3', env }));
-      const session = await open_session(app, workspace);
+      const session = await serve(builder_server.url, critic_server.url, workspace);
 
       await session.prompt('write the file');
       const turn = await read_turn(session);
 
       expect(turn.stop_reason).toBe('end_turn');
       expect(turn.updates).toEqual([
-        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Wrote the file.' } },
+        text('agent_message_chunk', '**Round 1**\n\n'),
+        text('agent_message_chunk', 'Wrote the file.'),
+        text('agent_thought_chunk', '\n\n**Round 1 verdict: approved**\n\nLooks good.'),
+        text('agent_message_chunk', '\n\n**Converged** in 1 round. Last verdict: approved.'),
       ]);
       expect(builder_server.seen.map(({ model }) => model)).toEqual(['vendor/builder-model']);
       expect(critic_server.seen.map(({ model }) => model)).toEqual(['vendor/critic-model']);
 
       expect(existsSync(join(workspace, '.volley'))).toBe(false);
-      const runs = readdirSync(join(state_home, 'volley'));
-      expect(runs).toHaveLength(1);
-      const config = JSON.parse(
-        readFileSync(join(state_home, 'volley', runs[0] ?? '', 'config.json'), 'utf8'),
-      ) as ResolvedConfig;
-      expect(config).toMatchObject({
+      const configs = run_configs();
+      expect(configs).toHaveLength(1);
+      expect(configs[0]).toMatchObject({
         workspace,
         prompt: 'write the file',
         criteria: 'write the file',
@@ -266,6 +285,44 @@ describe('one prompt through acp_agent and the SDK client', () => {
         state_dir: join(state_home, 'volley'),
       });
       expect(stdout).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('ends a failed run with a summary saying so, which the next prompt reads back', async () => {
+    const builder_server = await stub_openai('Wrote the file.');
+    const critic_server = await stub_openai('not a verdict');
+    const { workspace, cleanup } = temp_workspace();
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const session = await serve(builder_server.url, critic_server.url, workspace);
+
+      await session.prompt('write the file');
+      const failed = await read_turn(session);
+
+      expect(failed.stop_reason).toBe('end_turn');
+      const last = failed.updates.at(-1);
+      expect(last).toMatchObject({ sessionUpdate: 'agent_message_chunk' });
+      const summary = last?.sessionUpdate === 'agent_message_chunk' && last.content.type === 'text'
+        ? last.content.text
+        : '';
+      expect(summary).toMatch(/^\n\n\*\*Run failed\*\* in round 1, during the critique: ./);
+
+      await session.prompt('try again');
+      await read_turn(session);
+
+      const retry = run_configs()[1];
+      expect(retry?.prompt).toBe(
+        [
+          'The conversation so far, oldest first:',
+          'User: write the file',
+          `Volley: **Round 1**\n\nWrote the file.${summary}`,
+          'The request now:',
+          'try again',
+        ].join('\n\n'),
+      );
+      expect(retry?.criteria).toBe(retry?.prompt);
     } finally {
       cleanup();
     }
