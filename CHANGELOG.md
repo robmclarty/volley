@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.8.0 — 2026-10-19
+
+### Added
+- **`volley acp` runs volley from Zed.** It serves volley over stdio as an Agent Client Protocol agent, so Zed's agent panel, or any ACP client, can drive it. Each prompt is a fresh volley run on the open project. The builder's work streams in as the reply under a **Round N** line, the check runs as a command card, the critic's verdict shows as a thought, and the turn ends with a summary. Edits and commands go through the editor's permission prompts. Outside volley's sandbox container, every builder command and every check asks first, Auto mode isn't offered, and neither the commands nor the check can read `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`. Run state goes under `$XDG_STATE_HOME/volley`, never the repo. It requires the four seat flags and refuses `--worktree`, `--git`, `--json`, and a `claude_cli` builder (exit 5). The README covers the Zed setup and a check to run by hand.
+- **Either seat can run on OpenRouter.** `--builder-provider openrouter` and `--critic-provider openrouter` reach a hosted model with one `OPENROUTER_API_KEY`, from the plain CLI as well as `volley acp`, and `VOLLEY_OPENROUTER_URL` overrides the endpoint. An OpenRouter builder runs volley's own tool loop under the same containment gate as a local one, and an OpenRouter critic gets the local critic's retry and fallback. OpenRouter reports its own charge, so `--max-cost-usd` trips on it. An unset key is a configuration error (exit 5).
+- **`--state-dir <root>` keeps run state out of the workspace.** Each run's state goes to `<root>/<run_id>/`, and `state_dir` in a config file does the same. `volley resume <id> --state-dir <root>` finds a run there. Without the flag, state stays in `.volley/` as before.
+- **`run_volley` takes per-seat tools, a builder approval handler, and a trajectory sink.** All three are optional, and a run without them is exactly what it was.
+
+### Changed
+- **`ResolvedConfig` has `state_dir`.** It's required (`string | null`), so SDK code that builds a `ResolvedConfig` by hand instead of through `resolve_config` needs it. Null keeps the run's state in `.volley/`.
+
+### Fixed
+- **A local critic that runs out of steps falls back instead of failing the run.** Since fascicle 0.10.1, a critic that spent its step budget reading files threw straight past the retry and the fallback, so the run exited 6, and `--dry-run`'s canary exited 5. It now goes straight to judging without tools. A fallback verdict now says why: `degrade_cause` (`stream_error` or `step_exhaustion`) on the critic record, `critic_degrade_causes` in the summary's comparison block, and `deg:stream` or `deg:steps` in the matrix flags.
+- **Stopping a run mid-check now stops the whole check.** A stop killed only the check's shell, which left a test runner's workers, or a server the check started in the background, still running. The check now runs in a process group of its own, and a stop kills all of it.
+
+### Internal
+- **Built on fascicle 0.16.3 and @agentclientprotocol/sdk 1.8.0.**
+- **The tests drive a whole volley turn through an in-process ACP client**, against a stub model server. The live check in Zed is scripted in the README and was run by hand. Its one miss, the check's card losing its command look while it asks, waits on robmclarty/fascicle#16.
+- **The flow diagram's critic retry and fallback rows name every provider but `claude_cli`.**
+
 ## v0.7.0 — 2026-10-16
 
 ### Added
