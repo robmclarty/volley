@@ -27,9 +27,14 @@ export function add_usage(a: UsageTotals, b: UsageTotals): UsageTotals {
   return sum;
 }
 
+/** The providers whose calls carry the charge they report, which fascicle
+ * records as the call's cost in place of a pricing table's estimate: the
+ * Claude CLI's own total, and OpenRouter's per-response charge. */
+const REPORTING_PROVIDERS: ReadonlySet<string> = new Set(['claude_cli', 'openrouter']);
+
 export function cost_source_of(result: GenerateResult<unknown>): CostSource {
   if (result.cost === undefined) return 'unknown';
-  return result.model_resolved.provider === 'claude_cli'
+  return REPORTING_PROVIDERS.has(result.model_resolved.provider)
     ? 'provider_reported'
     : 'engine_derived';
 }

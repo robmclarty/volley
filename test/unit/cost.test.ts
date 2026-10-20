@@ -85,11 +85,18 @@ describe('accumulate', () => {
 });
 
 describe('cost_source_of / phase_record', () => {
-  it('claude_cli cost is provider_reported; other providers engine_derived', () => {
+  it('claude_cli and openrouter cost is provider_reported; other providers engine_derived', () => {
     expect(cost_source_of(result())).toBe('provider_reported');
     expect(
-      cost_source_of(result({ model_resolved: { provider: 'anthropic', model_id: 'x' } })),
-    ).toBe('engine_derived');
+      cost_source_of(
+        result({ model_resolved: { provider: 'openrouter', model_id: 'vendor/model' } }),
+      ),
+    ).toBe('provider_reported');
+    for (const provider of ['anthropic', 'ollama', 'lmstudio']) {
+      expect(cost_source_of(result({ model_resolved: { provider, model_id: 'x' } }))).toBe(
+        'engine_derived',
+      );
+    }
     const no_cost = result();
     delete (no_cost as { cost?: unknown }).cost;
     expect(cost_source_of(no_cost)).toBe('unknown');

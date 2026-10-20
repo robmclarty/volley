@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 10 — test(acp): script and pass the live check in Zed
+**Current step:** 11 — chore(deps): move to fascicle 0.16.3 and its acp agent options
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -32,7 +32,9 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 7. feat(acp): ask before uncontained commands and hide provider keys
 - ☑ 8. test(acp): drive a whole volley turn through an in-process ACP client
 - ☑ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
-- ☐ 10. test(acp): script and pass the live check in Zed
+- ☑ 10. test(acp): script and pass the live check in Zed
+- ☐ 11. chore(deps): move to fascicle 0.16.3 and its acp agent options
+- ☐ 12. test(acp): run the live check in Zed
 
 ## Park list
 
@@ -41,10 +43,12 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 > Capture is one line (`/plumbbob:park` composes it). Harvest happens only at the boundary.
 
 - [x] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
-- [ ] acp_tools' cwd_only session copy hides fascicle's per-session preview store (a WeakMap keyed on the session object): an edit's card closes without its diff, and in a client that draws terminals (Zed) every run_command terminal closes empty with no exit code
+- [x] acp_tools' cwd_only session copy hides fascicle's per-session preview store (a WeakMap keyed on the session object): an edit's card closes without its diff, and in a client that draws terminals (Zed) every run_command terminal closes empty with no exit code
 - [ ] the check's permission request carries kind 'other' (fascicle's approver defaults a tool it has no presenter for), so a client that applies the request's fields may redraw the check's execute card as a plain one while it asks; watch for it in the live check's step 4
-- [ ] src/flow.ts's critic retry step says 'local providers only', but is_retryable_critic_error retries every provider but claude_cli, openrouter included; the README's diagram copy repeats it (a test holds the two in step)
-- [ ] upgrade to fascicle 0.16.3 (fascicle#15): additional_directories:false and modes ['manual','accept_edits'] when unguarded in acp_serve_config, drop cwd_only and the always-ask wrapper, rewrite the 5 tests of the old mechanism, tighten step 8's write-close diff, fix the README (Auto row, Zed check step 8, exact-line grants, OpenRouter cost/reasoning) and cost_source_of; resolves the session-copy park
+- [x] src/flow.ts's critic retry step says 'local providers only', but is_retryable_critic_error retries every provider but claude_cli, openrouter included; the README's diagram copy repeats it (a test holds the two in step)
+- [x] upgrade to fascicle 0.16.3 (fascicle#15): additional_directories:false and modes ['manual','accept_edits'] when unguarded in acp_serve_config, drop cwd_only and the always-ask wrapper, rewrite the 5 tests of the old mechanism, tighten step 8's write-close diff, fix the README (Auto row, Zed check step 8, exact-line grants, OpenRouter cost/reasoning) and cost_source_of; resolves the session-copy park
+- [ ] src/flow.ts's critic fallback row still says 'if a local critic keeps dying', but is_degradable_critic_error degrades every provider but claude_cli, openrouter included; the README's diagram copy repeats it
+- [ ] fascicle 0.16.3 peers zod at ^4.2.0 (0.14.0 pinned exactly 4.4.3), so C2 (exact-pins)'s zod hold no longer comes from fascicle; zod can move once a newer one clears the 48-hour window
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -63,6 +67,9 @@ from sprawling across branches.
 Harvest results this boundary:
 
 - 2026-10-17, after step 3: "a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints" → **tangent**, deferred. No step in this build reaches it: acp defaults the root to `$XDG_STATE_HOME/volley`, outside the repo (D5 (state-layout)), and the CLI with no flag still excludes `.volley/`. A later fix would exclude the root's path, relative to the build root, in `changes.ts`.
+- 2026-10-19, after step 10: "acp_tools' cwd_only session copy hides fascicle's per-session preview store" → **blocker**, folded into D28 (acp-agent-options) and step 11. Building the tools from the session itself fixes it once `additional_directories: false` takes the copy's place. In a trial on fascicle 0.16.3, the edit card kept its diff.
+- 2026-10-19, after step 10: "src/flow.ts's critic retry step says 'local providers only'" → **blocker**, folded into D29 (retry-label) and step 11, so the diagram stops misdescribing an `openrouter` critic.
+- 2026-10-19, after step 10: "upgrade to fascicle 0.16.3 (fascicle#15)" → **blocker**, folded into D28 (acp-agent-options) as step 11. Step 10 landed with its Zed run still owed, so the run is now step 12, on 0.16.3.
 
 ## Log
 
@@ -610,3 +617,37 @@ folder, so it rides the branch into the PR.)*
 
 - 2026-10-17 — step 8 checkpointed · bc9f19ce6 — test(acp): drive a whole volley turn through an in-process ACP client (6m)
 - 2026-10-17 — step 9 checkpointed · f1fe913c0 — docs(readme): document volley acp, OpenRouter, and the Zed setup (4m)
+- 2026-10-20 — step 10 checkpointed · 74df9f510 — test(acp): script and pass the live check in Zed (3583m)
+
+  **Summary**: The README has the live check in Zed, eight steps plus the key and `.volley` checks. It lands unrun at your call, because the run waits on the parked fascicle 0.16.3 upgrade.
+
+  1. The script is written; the live run is still owed
+  2. The run waits on the fascicle upgrade
+
+  **Readout**:
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    not met: the script is written, but no one has run it in Zed
+               → landed at your call; the Zed run waits on the fascicle upgrade
+  decisions    honored
+               - D15 (command-gate)
+               - D16 (key-strip)
+               - D25 (check-approval)
+  constraints  6 of 6 honored
+  seam         held: 1 of 1 declared, no strays
+  diff         +27 -0 across 1 file
+  spent        59h 43m · 9 turns · 10s gate · green first run
+  ```
+
+  **Verdict**: ○ Out of plumb (done-when not met)
+
+  **Recommendation**: Harvest next, so the upgrade lands as a step of its own. The Zed run then follows, on the stack it will ship on.
+
+  **1.** The script is written; the live run is still owed
+
+  The new "Check it in Zed" section follows the done-when's eight steps, then echoes `$OPENROUTER_API_KEY` and checks for no `.volley`. No one has run it in Zed yet, so the done-when's "a person runs it" and "results in the build log" stay open.
+
+  **2.** The run waits on the fascicle upgrade
+
+  On fascicle 0.14.0, volley's `cwd_only` session copy drops each edit's diff from its card and empties each command's terminal. fascicle#15 shipped `additional_directories` and `modes` in 0.16.2. On 0.16.3, with volley's copy and wrapper gone, the whole-turn test passes and the write card keeps its diff, as tried in a throwaway worktree. That upgrade is parked. It also changes this script's step 8: outside a container, Auto is no longer offered.

@@ -71,7 +71,7 @@
     "@mozilla/readability": "0.6.0",
     "ai": "7.0.140",
     "cac": "7.1.0",
-    "fascicle": "0.14.0",
+    "fascicle": "0.16.3",
     "ipaddr.js": "2.5.0",
     "linkedom": "0.18.13",
     "picocolors": "1.1.1",

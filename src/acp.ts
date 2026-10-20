@@ -18,8 +18,9 @@
  * leave it out of the session's history; a stopped turn still ends cancelled.
  *
  * Outside a container, unless the operator opted out, a person approving each
- * command takes the container's place: every builder command and every check
- * asks first, whatever the mode. Neither sees the keys the seats spend.
+ * command takes the container's place: Auto isn't offered, so every builder
+ * command and every check asks first in either mode that is. Neither sees the
+ * keys the seats spend, and a session reaches the folder it opened on alone.
  *
  * The flags are checked once at startup, and every config error exits 5
  * before serving, so it shows in the editor's agent log once rather than
@@ -30,7 +31,7 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { step } from 'fascicle';
 import type { RunContext, Step } from 'fascicle';
-import type { AcpSession, AcpStreamRoute, AcpTurn, ServeAcpConfig } from 'fascicle/acp';
+import type { AcpMode, AcpSession, AcpStreamRoute, AcpTurn, ServeAcpConfig } from 'fascicle/acp';
 import {
   failure_event,
   follow_rounds,
@@ -54,9 +55,9 @@ type Env = Record<string, string | undefined>;
  * which each prompt supplies. */
 type AcpFlags = Omit<VolleyConfig, 'prompt' | 'workspace' | 'criteria'>;
 
-/** `--max-iterations` under acp. No cost cap can trip on an OpenRouter seat,
- * so the round cap is the only guard on spend, and the user can follow a run
- * with another prompt. */
+/** `--max-iterations` under acp. A prompt is one short exchange, which the
+ * user can follow with another, and `--max-cost-usd` caps what a prompt
+ * spends. */
 export const ACP_MAX_ITERATIONS = 3;
 
 /** The seat flags `volley acp` requires, by the config field each sets. The
@@ -208,9 +209,8 @@ function session_flow(
   base: AcpFlags,
   env: Env,
 ): (session: AcpSession) => Step<AcpTurn, RunResult | null> {
-  const always_ask_commands = unguarded_builder(base, env);
   return (session) => {
-    const { builder, critic, check } = acp_seat_tools(session, { env, always_ask_commands });
+    const { builder, critic, check } = acp_seat_tools(session, { env });
     const deps: TurnDeps = { base, env, workspace: session.cwd, seats: { builder, critic }, check };
     return step('acp_turn', (turn: AcpTurn, ctx) => run_turn(deps, turn, ctx), {
       description: "one volley run on the session's workspace, per prompt",
@@ -225,18 +225,28 @@ type AcpServeOptions = {
   env?: Env;
 };
 
-/** What `serve_acp` serves: volley, per session, starting each in Manual. The
- * builder's streamed text and volley's own lines make the whole reply, ending
- * with the summary, so `to_text` adds nothing. */
+/** The modes a session offers outside a container with no opt-out, where
+ * nothing but a person stands between a command and the host: Auto, which
+ * runs every command unasked, is left out. */
+const HOST_MODES: ReadonlyArray<AcpMode> = ['manual', 'accept_edits'];
+
+/** What `serve_acp` serves: volley, per session, starting each in Manual, on
+ * the folder the session opened alone, since the check, the change list, and
+ * the critic look nowhere else. The builder's streamed text and volley's own
+ * lines make the whole reply, ending with the summary, so `to_text` adds
+ * nothing. */
 export function acp_serve_config(
   base: AcpFlags,
   options: AcpServeOptions,
 ): ServeAcpConfig<AcpTurn, RunResult | null> {
+  const env = options.env ?? process.env;
   return {
     name: 'volley',
     version: options.version,
     default_mode: 'manual',
-    flow: session_flow(base, options.env ?? process.env),
+    additional_directories: false,
+    ...(unguarded_builder(base, env) ? { modes: HOST_MODES } : {}),
+    flow: session_flow(base, env),
     to_input: (turn) => turn,
     stream: stream_route,
     to_updates: progress_updates,

@@ -1,17 +1,23 @@
 /**
  * `volley acp`, the way an editor meets it. Spawned under tsx, it answers an
  * `initialize` on stdout with nothing else there, and refuses what it can't
- * serve before serving anything. In process, one prompt runs a whole volley
- * turn through fascicle's `acp_agent` and the SDK's client, with both seats on
- * stand-in OpenRouter servers, and the check asks on its card first whenever a
- * builder command would.
+ * serve before serving anything. In process, a session offers Auto only in a
+ * container or with the opt-out, and takes no folder beside its own; one
+ * prompt runs a whole volley turn through fascicle's `acp_agent` and the SDK's
+ * client, with both seats on stand-in OpenRouter servers, and the check asks
+ * on its card first whenever a builder command would.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RequestPermissionRequest, SessionModeId, SessionUpdate } from '@agentclientprotocol/sdk';
+import type {
+  RequestPermissionRequest,
+  SessionModeId,
+  SessionModeState,
+  SessionUpdate,
+} from '@agentclientprotocol/sdk';
 import { acp_agent } from 'fascicle/acp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acp_base_config, acp_serve_config, acp_state_root } from '../../src/acp.js';
@@ -106,11 +112,18 @@ describe('volley acp, spawned', () => {
     expect(code, stderr).toBe(EXIT_SUCCESS);
     const lines = stdout.split('\n').filter((line) => line !== '');
     expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({
+    const response = JSON.parse(lines[0] ?? '') as {
+      result: { agentCapabilities: { sessionCapabilities?: Record<string, unknown> } };
+    };
+    expect(response).toMatchObject({
       jsonrpc: '2.0',
       id: 0,
       result: { agentInfo: { name: 'volley', version: package_version() } },
     });
+    // A client that follows the protocol sends no folders beside cwd.
+    expect(response.result.agentCapabilities.sessionCapabilities).not.toHaveProperty(
+      'additionalDirectories',
+    );
   });
 
   it('accepts a claude_cli critic beside a tool-loop builder', async () => {
@@ -337,6 +350,76 @@ describe('one prompt through acp_agent and the SDK client', () => {
     }
   });
 
+  describe('the modes and the folders a session takes', () => {
+    /** volley's agent, served in process with its seats' servers unused,
+     * contained or not, opted out or not. An app serves one connection, so
+     * each session gets its own. */
+    async function app_for(options: { contained: boolean; opted_out: boolean }) {
+      const env = {
+        OPENROUTER_API_KEY: KEY,
+        XDG_STATE_HOME: state_home,
+        ...(options.contained ? { VOLLEY_CONTAINED: '1' } : {}),
+      };
+      const base = acp_base_config(
+        {
+          builder_provider: 'openrouter',
+          builder_model: 'vendor/builder-model',
+          critic_provider: 'openrouter',
+          critic_model: 'vendor/critic-model',
+          allow_unsandboxed_builder: options.opted_out,
+        },
+        env,
+      );
+      return acp_agent(acp_serve_config(base, { version: '1.2.3', env }));
+    }
+
+    const mode_ids = (session: { modes: SessionModeState | null | undefined }) =>
+      session.modes?.availableModes.map(({ id }) => id);
+
+    it('offers Manual and Accept edits alone uncontained with no opt-out, and refuses a switch to Auto', async () => {
+      const { workspace, cleanup } = temp_workspace();
+      const host = { contained: false, opted_out: false };
+      try {
+        const session = await open_session(await app_for(host), workspace, { mode: 'accept_edits' });
+        expect(mode_ids(session)).toEqual(['manual', 'accept_edits']);
+        expect(session.modes?.currentModeId).toBe('manual');
+
+        await expect(open_session(await app_for(host), workspace, { mode: 'auto' })).rejects.toMatchObject({
+          code: -32602,
+        });
+      } finally {
+        cleanup();
+      }
+    });
+
+    it.each([
+      ['contained', { contained: true, opted_out: false }],
+      ['opted out', { contained: false, opted_out: true }],
+    ])('offers all three modes %s, Auto included', async (_, options) => {
+      const { workspace, cleanup } = temp_workspace();
+      try {
+        const session = await open_session(await app_for(options), workspace, { mode: 'auto' });
+        expect(mode_ids(session)).toEqual(['manual', 'accept_edits', 'auto']);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('refuses a session/new that sends a folder beside cwd', async () => {
+      const { workspace, cleanup } = temp_workspace();
+      const extra = mkdtempSync(join(tmpdir(), 'volley-acp-extra-'));
+      try {
+        const app = await app_for({ contained: true, opted_out: false });
+        await expect(
+          open_session(app, workspace, { additional_directories: [extra] }),
+        ).rejects.toMatchObject({ code: -32602 });
+      } finally {
+        cleanup();
+        rmSync(extra, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('the check, asking first', () => {
     /** The check's command: it prints the environment it ran with. */
     const CHECK = 'env > check_env.txt';
@@ -412,9 +495,9 @@ describe('one prompt through acp_agent and the SDK client', () => {
       return { id, closed };
     }
 
-    it('asks uncontained even in Auto, on its own card, offering Allow and Reject alone', async () => {
+    it('asks uncontained in Accept edits, on its own card, offering Allow and Reject alone', async () => {
       const { requests, updates, check_env } = await checked_turn({
-        mode: 'auto',
+        mode: 'accept_edits',
         contained: false,
         answer: 'allow_once',
       });
@@ -441,7 +524,7 @@ describe('one prompt through acp_agent and the SDK client', () => {
 
     it('records a rejected check as failed, closing its card with the refusal, and never runs it', async () => {
       const { requests, updates, check_env } = await checked_turn({
-        mode: 'auto',
+        mode: 'accept_edits',
         contained: false,
         answer: 'reject_once',
       });

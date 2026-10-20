@@ -2,11 +2,10 @@
  * The acp seats' tool sets: fascicle's workspace tools for the builder, whose
  * writes and command ask as the session's mode says, plus volley's `finish`;
  * the critic's three reads out of the same set. Both skip volley's
- * `IGNORED_DIRS` and reach `session.cwd` alone, whatever other directories the
- * client sent. Outside a container, with no opt-out, every command asks, and
- * the check asks exactly when a command would; neither sees the seats' keys.
+ * `IGNORED_DIRS`. The check asks exactly when `run_command`'s own gate would,
+ * and neither it nor a command sees the seats' keys.
  */
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -116,21 +115,8 @@ describe('acp_seat_tools: the builder', () => {
   });
 });
 
-describe('acp_seat_tools: commands outside a container', () => {
-  const MODES = ['manual', 'accept_edits', 'auto'] as const;
-
-  it('asks before every command in all three modes, while an edit still asks as the mode says', async () => {
-    const cwd = temp_dir();
-    for (const mode of MODES) {
-      const tools = by_name(
-        acp_seat_tools(acp_session(cwd, [], mode), { always_ask_commands: true }).builder.tools,
-      );
-      expect(await asks(tools.run_command, { command: 'pnpm test' })).toBe(true);
-      expect(await asks(tools.write_file, { path: 'a.txt', content: 'x' })).toBe(mode === 'manual');
-    }
-  });
-
-  it('asks through the session before the check exactly when a builder command would', async () => {
+describe('acp_seat_tools: the check', () => {
+  it("asks through the session exactly when run_command's own gate would ask before the same command", async () => {
     const cwd = temp_dir();
     const command = 'pnpm exec checkride --json';
     const request: ToolApprovalRequest = {
@@ -140,23 +126,21 @@ describe('acp_seat_tools: commands outside a container', () => {
       step_index: 0,
       abort: new AbortController().signal,
     };
-    for (const always_ask_commands of [false, true]) {
-      for (const mode of MODES) {
-        const asked: ToolApprovalRequest[] = [];
-        const session = {
-          ...acp_session(cwd, [], mode),
-          approve: (sent: ToolApprovalRequest) => {
-            asked.push(sent);
-            return false;
-          },
-        };
-        const { builder, check } = acp_seat_tools(session, { always_ask_commands });
-        const expected = always_ask_commands || mode !== 'auto';
-        expect(await asks(by_name(builder.tools).run_command, request.input)).toBe(expected);
-        // Asked, the session refuses; unasked, the check just runs.
-        expect(await check.on_approval?.(request)).toBe(!expected);
-        expect(asked).toEqual(expected ? [request] : []);
-      }
+    for (const mode of ['manual', 'accept_edits', 'auto'] as const) {
+      const asked: ToolApprovalRequest[] = [];
+      const session = {
+        ...acp_session(cwd, [], mode),
+        approve: (sent: ToolApprovalRequest) => {
+          asked.push(sent);
+          return false;
+        },
+      };
+      const { builder, check } = acp_seat_tools(session);
+      const expected = mode !== 'auto';
+      expect(await asks(by_name(builder.tools).run_command, request.input)).toBe(expected);
+      // Asked, the session refuses; unasked, the check just runs.
+      expect(await check.on_approval?.(request)).toBe(!expected);
+      expect(asked).toEqual(expected ? [request] : []);
     }
   });
 });
@@ -222,38 +206,5 @@ describe('acp_seat_tools: what both seats can see', () => {
     }
     // fascicle's own default skips only .git and node_modules.
     expect(await call(fascicle_default.list_files, { pattern: 'dist/*' })).toBe('dist/needle.txt');
-  });
-
-  it("refuses a path under one of the session's additional directories", async () => {
-    const cwd = temp_dir();
-    const extra = temp_dir();
-    put(cwd, 'inside.txt', 'inside');
-    put(extra, 'outside.txt', 'outside');
-    const session = acp_session(cwd, [extra]);
-    const outside = join(extra, 'outside.txt');
-    // The session itself reaches the extra directory; the seats' copy doesn't.
-    expect(await call(by_name(workspace_tools(session)).read_file, { path: outside })).toContain(
-      'outside',
-    );
-    const { builder, critic } = acp_seat_tools(session);
-    for (const tools of [by_name(builder.tools), by_name(critic.tools)]) {
-      expect(await call(tools.read_file, { path: 'inside.txt' })).toContain('inside');
-      await expect(call(tools.read_file, { path: outside })).rejects.toThrow(/outside the workspace/);
-      await expect(call(tools.list_files, { path: extra })).rejects.toThrow(/outside the workspace/);
-      await expect(call(tools.search, { pattern: 'outside', path: extra })).rejects.toThrow(
-        /outside the workspace/,
-      );
-    }
-    const writes = by_name(builder.tools);
-    const written = join(extra, 'written.txt');
-    await expect(call(writes.write_file, { path: written, content: 'x' })).rejects.toThrow(
-      /outside the workspace/,
-    );
-    await expect(
-      call(writes.edit_file, { path: outside, old_text: 'outside', new_text: 'moved' }),
-    ).rejects.toThrow(/outside the workspace/);
-    expect(existsSync(written)).toBe(false);
-    // The copy leaves the session the client opened as it was.
-    expect(session.roots).toHaveLength(2);
   });
 });

@@ -29,6 +29,9 @@ export type SessionOptions = {
   ) => RequestPermissionResponse | Promise<RequestPermissionResponse>;
   /** The mode the session switches to once it opens, as a user would pick it. */
   mode?: SessionModeId;
+  /** More roots `session/new` sends beside `cwd`, as a client that offers
+   * them would. */
+  additional_directories?: string[];
 };
 
 /** Connect a client to `app`, initialize, and start one session on `cwd`,
@@ -48,7 +51,14 @@ export async function open_session(
   }
   const { agent } = app_client.connect(ndJsonStream(to_agent.writable, to_client.readable));
   await agent.request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} });
-  const session = await agent.buildSession({ cwd, mcpServers: [] }).start();
+  const { additional_directories } = options;
+  const session = await agent
+    .buildSession({
+      cwd,
+      mcpServers: [],
+      ...(additional_directories !== undefined ? { additionalDirectories: additional_directories } : {}),
+    })
+    .start();
   if (options.mode !== undefined) {
     await agent.request('session/set_mode', { sessionId: session.sessionId, modeId: options.mode });
   }

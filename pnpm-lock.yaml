@@ -21,8 +21,8 @@ importers:
         specifier: 7.1.0
         version: 7.1.0
       fascicle:
-        specifier: 0.14.0
-        version: 0.14.0(@agentclientprotocol/sdk@1.8.0(zod@4.4.3))(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
+        specifier: 0.16.3
+        version: 0.16.3(@agentclientprotocol/sdk@1.8.0(zod@4.4.3))(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3)
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -1144,9 +1144,9 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  fascicle@0.14.0:
-    resolution: {integrity: sha512-MfH52mtS+PBAv9tgPLK8NGsu3ETgxQwOOx/8IIFkPwEqcMAH1e0JYJVNCqP0lOlegYit8YOIhr4zwyERNgxAog==}
-    engines: {node: '>=24.0.0', pnpm: '>=10.13.0'}
+  fascicle@0.16.3:
+    resolution: {integrity: sha512-9QduFYWN7wr4SG8JOC+9Yu6dkeaciGRr2W1t5+U24PgdMfAFNJa4M2VQJUQy7Q2N08y4QJcc06YB+IqUlcJcsA==}
+    engines: {node: '>=24.0.0'}
     hasBin: true
     peerDependencies:
       '@agentclientprotocol/sdk': ^1.8.0
@@ -1162,7 +1162,7 @@ packages:
       '@opentelemetry/api': ^1.9.0
       ai: ^7.0.0
       ai-sdk-ollama: ^4.0.0
-      zod: 4.4.3
+      zod: ^4.2.0
     peerDependenciesMeta:
       '@agentclientprotocol/sdk':
         optional: true
@@ -2201,7 +2201,7 @@ snapshots:
       '@fallow-cli/win32-x64-msvc': 3.33.1
       fallow-type-aware: 3.33.1
 
-  fascicle@0.14.0(@agentclientprotocol/sdk@1.8.0(zod@4.4.3))(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3):
+  fascicle@0.16.3(@agentclientprotocol/sdk@1.8.0(zod@4.4.3))(ai-sdk-ollama@4.3.0(ai@7.0.140(zod@4.4.3))(zod@4.4.3))(ai@7.0.140(zod@4.4.3))(zod@4.4.3):
     optionalDependencies:
       '@agentclientprotocol/sdk': 1.8.0(zod@4.4.3)
       ai: 7.0.140(zod@4.4.3)

@@ -8,18 +8,19 @@
  * `finish`; the critic gets that set's three reads, which never ask. Neither
  * gets `fetch`, which would reach the network unasked.
  *
- * Both sets see the session through a copy whose only root is `session.cwd`.
- * The check, the change list, and the critic all look there alone, so an edit
- * in one of the client's additional directories would never be checked or
- * reviewed. And both skip volley's `IGNORED_DIRS` rather than fascicle's
- * shorter default, so a seat sees the same tree under acp as on the CLI.
+ * Both sets are built from the session itself, since fascicle keys a
+ * session's cards and prompts on it: a copy would lose each edit's diff, each
+ * command's terminal, and the "always" a prompt offers. The session holds
+ * `session.cwd` alone, because volley serves no additional directories
+ * (`./acp.ts`), and both sets skip volley's `IGNORED_DIRS` rather than
+ * fascicle's shorter default, so a seat sees the same tree under acp as on the
+ * CLI.
  *
  * The builder's commands and the check run with the agent's environment less
- * every key a seat reads, so nothing the builder writes can read them. Outside
- * a container, with no opt-out, `run_command` asks before every call whatever
- * the mode, since the user can switch modes mid-turn and only a gate on each
- * call holds. The check asks, through the session, exactly when a builder
- * command would.
+ * every key a seat reads, so nothing the builder writes can read them. The
+ * check asks, through the session, exactly when `run_command`'s own gate would
+ * ask before the same command; outside a container, with no opt-out, Auto
+ * isn't offered, so that gate asks in every mode the user can pick.
  */
 import { workspace_tools } from 'fascicle/acp';
 import type { AcpSession } from 'fascicle/acp';
@@ -39,20 +40,10 @@ type AcpToolOptions = {
   /** The agent's environment, which the builder's commands and the check run
    * with, less the seats' keys; default: the process's. */
   env?: Env;
-  /** Ask before every command, in every mode: volley runs uncontained and
-   * the operator hasn't opted out, so a person approving each command takes
-   * the container's place. */
-  always_ask_commands?: boolean;
 };
 
 /** One seat's tools, with the name of their set, which its prompt names. */
 type AcpSeatTools = { tools: ReadonlyArray<Tool>; tool_set: ToolSet };
-
-/** `session` with `cwd` as its only root. `roots` holds `cwd`'s real path
- * first, and that is what the file tools check a path against. */
-function cwd_only(session: AcpSession): AcpSession {
-  return { ...session, additional_directories: [], roots: session.roots.slice(0, 1) };
-}
 
 /** The environment the builder's commands and the check run with under acp:
  * the agent's own, `PATH` included, less every variable a seat reads a
@@ -89,12 +80,7 @@ export function acp_seat_tools(
   check: CheckGate;
 } {
   const command_env = acp_command_env(options.env ?? process.env);
-  const tools = workspace_tools(cwd_only(session), { ignore: [...IGNORED_DIRS], command_env }).map(
-    (tool) =>
-      tool.name === 'run_command' && options.always_ask_commands === true
-        ? { ...tool, needs_approval: true }
-        : tool,
-  );
+  const tools = workspace_tools(session, { ignore: [...IGNORED_DIRS], command_env });
   const run_command = tools.find((tool) => tool.name === 'run_command');
   return {
     builder: {

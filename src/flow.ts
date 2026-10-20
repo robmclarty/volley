@@ -19,7 +19,7 @@
  *   │  │     ├─ check                     the deterministic gate: checkride, a command, or none
  *   │  │     └─ critique                  the read-only critic's verdict and feedback
  *   │  │        └─ critic                 fallback: judge without tools if a local critic keeps dying or runs out of steps
- *   │  │           ├─ retry               one more try after a stream death, local providers only
+ *   │  │           ├─ retry               one more try after a stream death, on any provider but claude_cli
  *   │  │           │  └─ critic_tools     model call with read-only workspace tools
  *   │  │           └─ pipe                mark the verdict degraded
  *   │  │              └─ critic_toolless  model call judging from the check output and a file list
@@ -80,17 +80,17 @@ export type FlowDeps = PhaseDeps & {
  * loop (success, the cost cap, a gate edit) rather than the round budget. */
 export type LoopOutcome = { value: LoopState; converged: boolean };
 
-/** The critic arm: the degradation ladder. A local critic whose tool-bearing
- * stream dies is retried at once (the death is stochastic parser failure, not
- * load, so waiting buys nothing), then judged once without tools. One that runs
- * out of steps skips the retry, since another identical tool loop would only
- * run out again, and goes straight to the tool-less pass. Anything else
- * propagates from either rung untouched. */
+/** The critic arm: the degradation ladder. A critic on any provider but
+ * `claude_cli` whose tool-bearing stream dies is retried at once (the death is
+ * stochastic parser failure, not load, so waiting buys nothing), then judged
+ * once without tools. One that runs out of steps skips the retry, since
+ * another identical tool loop would only run out again, and goes straight to
+ * the tool-less pass. Anything else propagates from either rung untouched. */
 export function build_critic(deps: CriticDeps): CriticStep {
   const retryable = critic_retryable(deps.config);
   return fallback(
     retry(make_critic_tools_step(deps), {
-      description: 'one more try after a stream death, local providers only',
+      description: 'one more try after a stream death, on any provider but claude_cli',
       max_attempts: MAX_CRITIC_RETRIES + 1,
       backoff_ms: 0,
       when: retryable,

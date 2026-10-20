@@ -135,12 +135,13 @@ describe('a whole volley turn through acp_agent and the SDK client', () => {
           write,
           { title: 'write_file', kind: 'edit' },
           { title: 'Write hello.txt', locations: [{ path: in_workspace('hello.txt') }], rawInput: WRITE },
-          expect.objectContaining({
+          {
             sessionUpdate: 'tool_call_update',
             toolCallId: write,
             status: 'completed',
             rawOutput: 'created hello.txt',
-          }),
+            content: [{ type: 'diff', path: in_workspace('hello.txt'), oldText: null, newText: 'hello\n' }],
+          },
         ),
         ...card(
           run,
@@ -196,8 +197,14 @@ describe('a whole volley turn through acp_agent and the SDK client', () => {
       ]);
       expect(readFileSync(in_workspace('hello.txt'), 'utf8')).toBe('hello\n');
 
-      // The command asked on its card, never ran, and the builder read why.
+      // The command asked on its card, offering an "always" for that exact
+      // command line, never ran, and the builder read why.
       expect(command_asked?.toolCall).toMatchObject({ toolCallId: run, title: RUN.command, rawInput: RUN });
+      expect(command_asked?.options).toEqual([
+        ALLOW,
+        { optionId: 'allow_always', name: `Always allow \`${RUN.command}\` this session`, kind: 'allow_always' },
+        REJECT,
+      ]);
       expect(existsSync(in_workspace('ran.txt'))).toBe(false);
       expect(builder_server.seen.map(({ model }) => model)).toEqual(Array(3).fill('vendor/builder-model'));
       expect(builder_server.seen[2]?.messages.at(-1)).toEqual({

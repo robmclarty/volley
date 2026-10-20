@@ -55,8 +55,8 @@ The cap is enforced in the loop guard after each phase. Sessions are never
 killed mid-flight for cost (a builder killed mid-edit leaves the workspace
 undefined), so set the cap below your true ceiling by roughly one iteration's
 expected cost. Per-run totals land in `.volley/summary.json` and the final
-terminal summary. An [OpenRouter](#openrouter) seat's cost isn't recorded yet,
-so on one the cap can't trip, and `--max-iterations` is the guard.
+terminal summary. An [OpenRouter](#openrouter) seat's cost is the charge
+OpenRouter reports for each call, so the cap trips on one as on any other.
 
 ## How it works
 
@@ -110,7 +110,7 @@ volley                                loop: one round per iteration, up to max_i
 │  │     ├─ check                     the deterministic gate: checkride, a command, or none
 │  │     └─ critique                  the read-only critic's verdict and feedback
 │  │        └─ critic                 fallback: judge without tools if a local critic keeps dying or runs out of steps
-│  │           ├─ retry               one more try after a stream death, local providers only
+│  │           ├─ retry               one more try after a stream death, on any provider but claude_cli
 │  │           │  └─ critic_tools     model call with read-only workspace tools
 │  │           └─ pipe                mark the verdict degraded
 │  │              └─ critic_toolless  model call judging from the check output and a file list
@@ -338,7 +338,7 @@ Providers and their setup:
 Install the peer for your provider in the project running volley (e.g.
 `pnpm add ai-sdk-ollama@^4.3.0`); fascicle loads it lazily only when the local
 critic actually runs. The version matters. The major must satisfy fascicle's
-declared peer range (`^4` for fascicle 0.14.0, which tracks the AI SDK v7
+declared peer range (`^4` for fascicle 0.16.3, which tracks the AI SDK v7
 line), and volley declares 4.3.0 as its floor (an optional peer, so your
 package manager flags an older copy at install time). Before 4.3.0,
 ai-sdk-ollama streams a thinking model's reasoning only when the request sets
@@ -545,10 +545,11 @@ OPENROUTER_API_KEY=sk-or-v1-... volley \
   same retry-and-degrade ladder as a [local critic](#local-critic).
   `--dry-run` probes each OpenRouter seat's endpoint but runs no critic canary,
   which would cost money here.
-- **No cost or reasoning yet.** fascicle 0.14.0 records an OpenRouter call's
-  cost as missing, so `--max-cost-usd` can't trip on an OpenRouter seat:
-  `--max-iterations` is the guard, and `VOLLEY_PRICING_PATH` can supply prices.
-  An OpenRouter seat streams no reasoning either.
+- **Cost and reasoning.** OpenRouter reports what each call cost, and that
+  charge is the seat's cost, recorded as `provider_reported`, so
+  `--max-cost-usd` trips on an OpenRouter seat as on any other. A model that
+  reasons streams its reasoning, which the terminal shows dimmed unless
+  `--no-thinking` hides it, and which Zed shows as a thought.
 - **In the sandbox.** The container's allowlist reaches only the host gateway,
   so a contained OpenRouter seat needs `openrouter.ai` let through your
   `DOCKER-USER` rules. volley doesn't install that rule for you.
@@ -582,14 +583,15 @@ for you ([below](#zed-setup)).
   to a line naming each, since they're still on disk. A turn you stopped is
   marked as stopped.
 - **Three rounds.** `--max-iterations` defaults to 3 per prompt, not 10, since
-  nothing else caps spend on an OpenRouter seat. Follow a run that didn't
-  converge with "keep going": the summary it ended with lists what the critic
-  still found missing.
+  a prompt is one short exchange, and `--max-cost-usd` caps what it spends.
+  Follow a run that didn't converge with "keep going": the summary it ended
+  with lists what the critic still found missing.
 - **The tools.** The builder gets fascicle's workspace tools (`read_file`,
   `list_files`, `search`, `write_file`, `edit_file`, `run_command`) plus
   volley's `finish`. The critic gets the three reads. Both stay inside the open
-  folder, leaving out any additional directories the editor sends, and neither
-  gets `fetch`.
+  folder, and neither gets `fetch`. volley doesn't offer the editor additional
+  directories, so in a workspace with several folders Zed opens the session on
+  the first, and a client that sends more anyway has its session refused.
 - **The summary.** The turn's last message says whether the run converged, in
   how many rounds, and with what last verdict. When it didn't converge, it
   lists the unmet criteria, and it names any gate edits and any verdict the
@@ -630,22 +632,26 @@ from the next call on, mid-turn included:
 |---|---|---|
 | Manual | yes | yes |
 | Accept edits | no | yes |
-| Auto | no | no, unless volley is uncontained (below) |
+| Auto | no | no; offered only contained or opted out (below) |
 
 An edit asks with its diff, and offers "Allow all edits this session", which
-switches the session to Accept edits. A command offers "Always allow" for its
-program and its first argument that isn't a flag (`pnpm test`), but never for a
-command with shell control syntax such as `;` or `|`. A call you reject reaches the builder as
+switches the session to Accept edits. A command offers "Always allow" for that
+exact command line: allowing `pnpm test` doesn't cover `pnpm test --watch=false`,
+which asks again. It never offers one for a command with shell control syntax
+such as `;` or `|`. A call you reject reaches the builder as
 `tool_approval_denied`, and its prompt tells it not to reach the same result
 another way.
 
-- **Uncontained, every command asks.** Outside volley's
+- **Uncontained, Auto isn't offered.** Outside volley's
   [sandbox container](#local-builder) (`VOLLEY_CONTAINED`), a person approving
-  each command takes the container's place, so the builder's `run_command` asks
-  in every mode, Auto included. `--allow-unsandboxed-builder` or
-  `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` opts out, and commands then follow the
-  mode. So unlike the run command, `volley acp` never refuses an uncontained
-  builder.
+  each command takes the container's place, so the mode picker lists Manual and
+  Accept edits alone, and the builder's `run_command` asks in both. No client
+  can switch the session to Auto, mid-turn included. A Zed entry left on Auto
+  (`"default_config_options": { "mode": "auto" }`, from a time it was offered)
+  falls back to Manual, with a warning in Zed's log.
+  `--allow-unsandboxed-builder` or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1` opts
+  out, and Auto is offered again. So unlike the run command, `volley acp` never
+  refuses an uncontained builder.
 - **The check asks whenever a command would.** In Accept edits and Auto the
   builder can rewrite a test without asking, and the check runs it next. So the
   check asks on its own card exactly when a builder command would ask, offering
@@ -717,8 +723,9 @@ says otherwise:
    rounds, and the last verdict.
 7. Ask it to run `sleep 60`, allow it, and press stop. The turn should end as
    cancelled, and `pgrep -fl 'sleep 60'` should find nothing.
-8. Switch to Auto in the mode picker and ask for another change. The edits
-   shouldn't ask, but a command still should, since volley runs uncontained.
+8. Open the mode picker. It should list Manual and Accept edits, and no Auto,
+   since volley runs uncontained. Switch to Accept edits and ask for another
+   change. The edits shouldn't ask, but a command still should.
 
 Two more round it out. Ask it to run `echo "key=$OPENROUTER_API_KEY"`, and the
 output should be `key=` with nothing after it. And the repository should hold no
