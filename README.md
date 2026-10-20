@@ -697,6 +697,33 @@ volta, or asdf can come back as `command not found` unless it's on this `PATH`.
 Put the directories that `dirname "$(command -v node)"` and
 `dirname "$(command -v pnpm)"` print at its front.
 
+### Check it in Zed
+
+Run this by hand against a scratch repository with a test command (a
+`package.json` whose `test` script runs `node --test` is enough), using the
+snippet above. Start a thread with "Volley", and stay in Manual unless a step
+says otherwise:
+
+1. Ask for a small change. The builder's work should stream in as the reply,
+   under a **Round 1** line.
+2. When it edits a file, a permission request should show the diff. Allow it,
+   and the card should keep the diff.
+3. When it runs a command, a permission request should show the command before
+   it runs, and once allowed, the card should show the output.
+4. Once the builder finishes, the check should ask, then run as a command card
+   titled `pnpm test`, with its output.
+5. The critic's verdict should show as a thought.
+6. The turn should end with the summary: whether it converged, in how many
+   rounds, and the last verdict.
+7. Ask it to run `sleep 60`, allow it, and press stop. The turn should end as
+   cancelled, and `pgrep -fl 'sleep 60'` should find nothing.
+8. Switch to Auto in the mode picker and ask for another change. The edits
+   shouldn't ask, but a command still should, since volley runs uncontained.
+
+Two more round it out. Ask it to run `echo "key=$OPENROUTER_API_KEY"`, and the
+output should be `key=` with nothing after it. And the repository should hold no
+`.volley`.
+
 ## What the builder changed
 
 A check that exits 0 proves the check passed. It does not prove the builder did

@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 9 — docs(readme): document volley acp, OpenRouter, and the Zed setup
+**Current step:** 10 — test(acp): script and pass the live check in Zed
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -31,7 +31,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 6. feat(acp): show rounds, the check, and the verdict in Zed
 - ☑ 7. feat(acp): ask before uncontained commands and hide provider keys
 - ☑ 8. test(acp): drive a whole volley turn through an in-process ACP client
-- ☐ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
+- ☑ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
 - ☐ 10. test(acp): script and pass the live check in Zed
 
 ## Park list
@@ -44,6 +44,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - [ ] acp_tools' cwd_only session copy hides fascicle's per-session preview store (a WeakMap keyed on the session object): an edit's card closes without its diff, and in a client that draws terminals (Zed) every run_command terminal closes empty with no exit code
 - [ ] the check's permission request carries kind 'other' (fascicle's approver defaults a tool it has no presenter for), so a client that applies the request's fields may redraw the check's execute card as a plain one while it asks; watch for it in the live check's step 4
 - [ ] src/flow.ts's critic retry step says 'local providers only', but is_retryable_critic_error retries every provider but claude_cli, openrouter included; the README's diagram copy repeats it (a test holds the two in step)
+- [ ] upgrade to fascicle 0.16.3 (fascicle#15): additional_directories:false and modes ['manual','accept_edits'] when unguarded in acp_serve_config, drop cwd_only and the always-ask wrapper, rewrite the 5 tests of the old mechanism, tighten step 8's write-close diff, fix the README (Auto row, Zed check step 8, exact-line grants, OpenRouter cost/reasoning) and cost_source_of; resolves the session-copy park
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -608,3 +609,4 @@ folder, so it rides the branch into the PR.)*
   Only fascicle's real approver decides which options a prompt offers, and only an in-process `acp_agent` session reaches it. So `open_session` now takes `{ on_permission, mode }`: it answers `session/request_permission` and can switch the session's mode. The acp turn tests sit beside the turn tests already there. Step 8 lists both files in its seam and can reuse the helper as is. `src/flow.ts` is in the seam but needed no change, since `FlowDeps` already extends `PhaseDeps`.
 
 - 2026-10-17 — step 8 checkpointed · bc9f19ce6 — test(acp): drive a whole volley turn through an in-process ACP client (6m)
+- 2026-10-17 — step 9 checkpointed · f1fe913c0 — docs(readme): document volley acp, OpenRouter, and the Zed setup (4m)
