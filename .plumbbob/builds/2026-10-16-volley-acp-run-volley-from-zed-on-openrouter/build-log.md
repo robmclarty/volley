@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 12 — test(acp): run the live check in Zed
+**Current step:** none (at the boundary)
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -34,7 +34,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
 - ☑ 10. test(acp): script and pass the live check in Zed
 - ☑ 11. chore(deps): move to fascicle 0.16.3 and its acp agent options
-- ☐ 12. test(acp): run the live check in Zed
+- ☑ 12. test(acp): run the live check in Zed
 - ☑ 13. docs(flow): name every provider but claude_cli on the critic's fallback row
 
 ## Park list
@@ -50,7 +50,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - [x] upgrade to fascicle 0.16.3 (fascicle#15): additional_directories:false and modes ['manual','accept_edits'] when unguarded in acp_serve_config, drop cwd_only and the always-ask wrapper, rewrite the 5 tests of the old mechanism, tighten step 8's write-close diff, fix the README (Auto row, Zed check step 8, exact-line grants, OpenRouter cost/reasoning) and cost_source_of; resolves the session-copy park
 - [x] src/flow.ts's critic fallback row still says 'if a local critic keeps dying', but is_degradable_critic_error degrades every provider but claude_cli, openrouter included; the README's diagram copy repeats it
 - [x] fascicle 0.16.3 peers zod at ^4.2.0 (0.14.0 pinned exactly 4.4.3), so C2 (exact-pins)'s zod hold no longer comes from fascicle; zod can move once a newer one clears the 48-hour window
-- [ ] the check's card loses its command look in Zed: the permission request's kind 'other' (fascicle's permission_card, no presenter for the check's tool name) overwrites the card's 'execute', and volley's close never re-sends it, so the card ends with the hammer icon; fix in fascicle (keep the card's opened kind) or re-send kind on the check's updates
+- [x] the check's card loses its command look in Zed: the permission request's kind 'other' (fascicle's permission_card, no presenter for the check's tool name) overwrites the card's 'execute', and volley's close never re-sends it, so the card ends with the hammer icon; fix in fascicle (keep the card's opened kind) or re-send kind on the check's updates
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -75,6 +75,7 @@ Harvest results this boundary:
 - 2026-10-19, after step 11: "the check's permission request carries kind 'other'" → **tangent**, deferred to step 12, whose done-when already checks whether the check's card keeps its command look while it asks. Only a live run can show whether Zed redraws the card, and if it does, the fix comes back as a step of its own.
 - 2026-10-19, after step 11: "src/flow.ts's critic fallback row still says 'if a local critic keeps dying'" → **blocker**. D29 (retry-label) now covers this row too, as step 13, built before step 12 so that the live run in Zed stays the build's last step, on the final code.
 - 2026-10-19, after step 11: "fascicle 0.16.3 peers zod at ^4.2.0" → **tangent**, deferred. Nothing in this build needs a newer zod, and 4.4.3 satisfies the new peer. Moving zod (4.6.7 now clears the 48-hour window) and rewording C2 (exact-pins) belong to a later dependency change.
+- 2026-10-19, after step 12: "the check's card loses its command look in Zed" → **tangent**, deferred to [fascicle#16](https://github.com/robmclarty/fascicle/issues/16). The clean fix is upstream: `permission_card` sends `kind` only when it has a presenter, and Zed keeps a card's kind when a request leaves it out, so the check keeps its command look while it asks. volley picks it up with the fascicle bump that ships it, with no change of its own. Re-sending `kind: 'execute'` on the check's close would restore the look only after the check ends, so it doesn't earn a step.
 
 ## Log
 
@@ -750,3 +751,62 @@ folder, so it rides the branch into the PR.)*
   **3.** The claim was checked against the code, not just the plan
 
   `is_degradable_critic_error` in `src/critic/run.ts` returns false only for `claude_cli`. Otherwise it degrades on a `provider_error` or on step exhaustion. So "any provider but claude_cli … keeps dying or runs out of steps" describes exactly what the predicate does.
+
+- 2026-10-20 — step 12 checkpointed · ec6c1df7b — test(acp): run the live check in Zed (18m)
+
+  **Summary**: You ran the README's "Check it in Zed" on fascicle 0.16.3 against a scratch repo with a `node --test` suite, and every step held but one: the check asks, runs as `pnpm test`, and shows its output, but its card loses its command look the moment it asks, because Zed applies the request's `kind: 'other'` to it. The fix is parked, and the README now says that Zed starts a thread in the last mode you picked, which is what made the first run skip the edit prompts.
+
+  1. Every step held except the look of the check's card
+  2. The check's card takes the permission request's kind 'other' and keeps it, so I parked the fix
+  3. Zed saves a picked mode as the entry's default, so the README now says so
+  4. What the run left on your machine
+
+  **Readout**:
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    not met: step 4's card turns plain when the check asks
+               → every other step held; the fix is parked as its own step
+  decisions    drift: D13 (check-card)'s execute look is lost at the ask
+               → held: D15 (command-gate), D16 (key-strip), D25 (check-approval)
+  constraints  6 of 6 honored
+  seam         held: 1 of 1 declared, no strays
+  diff         +6 -3 across 1 file
+  spent        18 min · 5 turns · 10s gate · green first run
+  ```
+
+  **Verdict**: ✗ Not standing (decisions drifted)
+
+  **Recommendation**: Land step 12 with step 4's card recorded as the one miss, then harvest the park into a step of its own. The run answered the question the step was for, and the fix lives in fascicle's approver or volley's check card, outside this step's seam. If you saw the terminal icon on the `pnpm test` card while it asked, tell me, and I'll correct the record before it lands.
+
+  **1.** Every step held except the look of the check's card
+
+  Results, from your answers, the screenshot of the key run, and each run's `trajectory.jsonl` under `~/.local/state/volley`:
+
+  - **1 holds.** The reply streamed under a **Round 1** line.
+  - **2 holds.** In Manual, both `write_file` calls asked with their diffs, and each card kept its diff once allowed.
+  - **3 holds.** `node --test` asked with its command line, and showed its output once allowed.
+  - **4 holds in part.** The check asked, ran titled `pnpm test`, and showed its output. But its card ends with Zed's hammer icon, the icon for kind `other`, where the `echo` card beside it has the command look. You answered yes here; the screenshot and Zed's source say the card turned plain (see 2).
+  - **5 holds.** The critic's verdict showed as a thought.
+  - **6 holds.** "Converged in 1 round. Last verdict: approved.", plus the gate-edit line D26 (summary-content) asks for, since the change added a test.
+  - **7 holds.** The `sleep 60` run ended `interrupted` ("the ACP client cancelled the turn"), and `pgrep -fl 'sleep 60'` found nothing.
+  - **8 holds.** The picker listed Manual and Accept edits only, and before you opened Zed, a scripted `session/set_mode` to Auto was refused with -32602. In Accept edits (the first run), both writes went through unasked and `node --test` still asked.
+  - **Key holds.** `echo "key=$OPENROUTER_API_KEY"` printed `key=`, in the card and in the trace.
+  - **No `.volley` holds.** The repo holds none; the four runs sit under `~/.local/state/volley`.
+
+  **2.** The check's card takes the permission request's kind 'other' and keeps it, so I parked the fix
+
+  fascicle's `permission_card` sends `kind: opening_fields(...).kind ?? "other"`, and the check's tool name is its command line, which has no presenter, so the request says `other`. Zed's `request_tool_call_authorization` upserts the request's fields into the card it already drew, and `thread_view.rs` maps `Execute` to the terminal icon and the terminal card, and anything else to the hammer. volley's `dress_check_update` sets `kind: 'execute'` only on the opening `tool_call`, so the close doesn't restore it.
+
+  There are two fixes, neither inside this step's seam. fascicle could keep the card's opened kind when it has no presenter, which also keeps the look while it asks. Or volley could re-send `kind: 'execute'` on the check's close, which restores the look only after the ask. I parked it for the harvest, as the harvest after step 11 said to.
+
+  **3.** Zed saves a picked mode as the entry's default, so the README now says so
+
+  In the first thread you picked Accept edits. Zed wrote `"default_config_options": { "mode": "accept_edits" }` into the Volley entry, so that run's writes didn't ask. I removed it and you reran in Manual. A rerun of the check after step 8 would hit the same thing. The README's "Modes and approvals" paragraph now says Zed saves the pick and starts later threads in it, and the check's intro says to confirm the picker shows Manual first.
+
+  **4.** What the run left on your machine
+
+  - `dist/` rebuilt from `3eca833`, since step 13's edit came after the last build.
+  - A **Volley** entry in Zed's `settings.json`, as the README shows it, with your OpenRouter key; the prior file is at `settings.json.bak-20261019-volley-step12`.
+  - The scratch repo at `~/Projects/volley/scratch/zed-check`, with the builder's `clamp` change uncommitted.
+  - Four runs under `~/.local/state/volley`, safe to delete.
