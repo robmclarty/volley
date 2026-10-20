@@ -95,7 +95,7 @@ Under the hood the loop is one [fascicle](https://www.npmjs.com/package/fascicle
 composition in [`src/flow.ts`](./src/flow.ts), and fascicle's `describe.diagram`
 draws it straight from the code. It shows what the sketch above leaves out: the
 branch that skips verification once the builder alone crosses the cost cap, the
-critic's retry-then-tool-less fallback for local models whose streams die, and
+critic's retry-then-tool-less fallback on every provider but `claude_cli`, and
 the guard that decides when the loop stops.
 
 <!-- flow diagram: pnpm diagram -->
@@ -109,7 +109,7 @@ volley                                loop: one round per iteration, up to max_i
 │  │  └─ else  sequence
 │  │     ├─ check                     the deterministic gate: checkride, a command, or none
 │  │     └─ critique                  the read-only critic's verdict and feedback
-│  │        └─ critic                 fallback: judge without tools if a local critic keeps dying or runs out of steps
+│  │        └─ critic                 fallback: judge without tools if a critic on any provider but claude_cli keeps dying or runs out of steps
 │  │           ├─ retry               one more try after a stream death, on any provider but claude_cli
 │  │           │  └─ critic_tools     model call with read-only workspace tools
 │  │           └─ pipe                mark the verdict degraded

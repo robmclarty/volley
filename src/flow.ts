@@ -18,7 +18,7 @@
  *   │  │  └─ else  sequence
  *   │  │     ├─ check                     the deterministic gate: checkride, a command, or none
  *   │  │     └─ critique                  the read-only critic's verdict and feedback
- *   │  │        └─ critic                 fallback: judge without tools if a local critic keeps dying or runs out of steps
+ *   │  │        └─ critic                 fallback: judge without tools if a critic on any provider but claude_cli keeps dying or runs out of steps
  *   │  │           ├─ retry               one more try after a stream death, on any provider but claude_cli
  *   │  │           │  └─ critic_tools     model call with read-only workspace tools
  *   │  │           └─ pipe                mark the verdict degraded
@@ -101,7 +101,7 @@ export function build_critic(deps: CriticDeps): CriticStep {
     }),
     {
       name: 'critic',
-      description: 'judge without tools if a local critic keeps dying or runs out of steps',
+      description: 'judge without tools if a critic on any provider but claude_cli keeps dying or runs out of steps',
       when: critic_degradable(deps.config),
       handoff: (prompt) => toolless_critic_prompt(deps.config, prompt),
       project: with_fallback_cause,

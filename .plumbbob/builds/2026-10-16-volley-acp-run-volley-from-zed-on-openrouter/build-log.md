@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 11 — chore(deps): move to fascicle 0.16.3 and its acp agent options
+**Current step:** 13 — docs(flow): name every provider but claude_cli on the critic's fallback row
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -33,8 +33,9 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 8. test(acp): drive a whole volley turn through an in-process ACP client
 - ☑ 9. docs(readme): document volley acp, OpenRouter, and the Zed setup
 - ☑ 10. test(acp): script and pass the live check in Zed
-- ☐ 11. chore(deps): move to fascicle 0.16.3 and its acp agent options
+- ☑ 11. chore(deps): move to fascicle 0.16.3 and its acp agent options
 - ☐ 12. test(acp): run the live check in Zed
+- ☐ 13. docs(flow): name every provider but claude_cli on the critic's fallback row
 
 ## Park list
 
@@ -44,11 +45,11 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 
 - [x] a --state-dir inside the workspace shows up in the builder's change list and --git checkpoints, since changes.ts excludes only .volley/ and .volley.bak.*
 - [x] acp_tools' cwd_only session copy hides fascicle's per-session preview store (a WeakMap keyed on the session object): an edit's card closes without its diff, and in a client that draws terminals (Zed) every run_command terminal closes empty with no exit code
-- [ ] the check's permission request carries kind 'other' (fascicle's approver defaults a tool it has no presenter for), so a client that applies the request's fields may redraw the check's execute card as a plain one while it asks; watch for it in the live check's step 4
+- [x] the check's permission request carries kind 'other' (fascicle's approver defaults a tool it has no presenter for), so a client that applies the request's fields may redraw the check's execute card as a plain one while it asks; watch for it in the live check's step 4
 - [x] src/flow.ts's critic retry step says 'local providers only', but is_retryable_critic_error retries every provider but claude_cli, openrouter included; the README's diagram copy repeats it (a test holds the two in step)
 - [x] upgrade to fascicle 0.16.3 (fascicle#15): additional_directories:false and modes ['manual','accept_edits'] when unguarded in acp_serve_config, drop cwd_only and the always-ask wrapper, rewrite the 5 tests of the old mechanism, tighten step 8's write-close diff, fix the README (Auto row, Zed check step 8, exact-line grants, OpenRouter cost/reasoning) and cost_source_of; resolves the session-copy park
-- [ ] src/flow.ts's critic fallback row still says 'if a local critic keeps dying', but is_degradable_critic_error degrades every provider but claude_cli, openrouter included; the README's diagram copy repeats it
-- [ ] fascicle 0.16.3 peers zod at ^4.2.0 (0.14.0 pinned exactly 4.4.3), so C2 (exact-pins)'s zod hold no longer comes from fascicle; zod can move once a newer one clears the 48-hour window
+- [x] src/flow.ts's critic fallback row still says 'if a local critic keeps dying', but is_degradable_critic_error degrades every provider but claude_cli, openrouter included; the README's diagram copy repeats it
+- [x] fascicle 0.16.3 peers zod at ^4.2.0 (0.14.0 pinned exactly 4.4.3), so C2 (exact-pins)'s zod hold no longer comes from fascicle; zod can move once a newer one clears the 48-hour window
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -70,6 +71,9 @@ Harvest results this boundary:
 - 2026-10-19, after step 10: "acp_tools' cwd_only session copy hides fascicle's per-session preview store" → **blocker**, folded into D28 (acp-agent-options) and step 11. Building the tools from the session itself fixes it once `additional_directories: false` takes the copy's place. In a trial on fascicle 0.16.3, the edit card kept its diff.
 - 2026-10-19, after step 10: "src/flow.ts's critic retry step says 'local providers only'" → **blocker**, folded into D29 (retry-label) and step 11, so the diagram stops misdescribing an `openrouter` critic.
 - 2026-10-19, after step 10: "upgrade to fascicle 0.16.3 (fascicle#15)" → **blocker**, folded into D28 (acp-agent-options) as step 11. Step 10 landed with its Zed run still owed, so the run is now step 12, on 0.16.3.
+- 2026-10-19, after step 11: "the check's permission request carries kind 'other'" → **tangent**, deferred to step 12, whose done-when already checks whether the check's card keeps its command look while it asks. Only a live run can show whether Zed redraws the card, and if it does, the fix comes back as a step of its own.
+- 2026-10-19, after step 11: "src/flow.ts's critic fallback row still says 'if a local critic keeps dying'" → **blocker**. D29 (retry-label) now covers this row too, as step 13, built before step 12 so that the live run in Zed stays the build's last step, on the final code.
+- 2026-10-19, after step 11: "fascicle 0.16.3 peers zod at ^4.2.0" → **tangent**, deferred. Nothing in this build needs a newer zod, and 4.4.3 satisfies the new peer. Moving zod (4.6.7 now clears the 48-hour window) and rewording C2 (exact-pins) belong to a later dependency change.
 
 ## Log
 
@@ -651,3 +655,61 @@ folder, so it rides the branch into the PR.)*
   **2.** The run waits on the fascicle upgrade
 
   On fascicle 0.14.0, volley's `cwd_only` session copy drops each edit's diff from its card and empties each command's terminal. fascicle#15 shipped `additional_directories` and `modes` in 0.16.2. On 0.16.3, with volley's copy and wrapper gone, the whole-turn test passes and the write card keeps its diff, as tried in a throwaway worktree. That upgrade is parked. It also changes this script's step 8: outside a container, Auto is no longer offered.
+
+- 2026-10-20 — step 11 checkpointed · 17ad5c7e9 — chore(deps): move to fascicle 0.16.3 and its acp agent options (1 drift, 7m)
+
+  **Summary**: volley now runs on fascicle 0.16.3. fascicle's own options keep Auto out of an uncontained session and refuse a session/new that sends other folders, so volley's session copy and always-ask wrapper are gone. The edit card keeps its diff, and a command prompt offers "Always allow" for its exact line. OpenRouter cost now counts against `--max-cost-usd`, and the README says so.
+
+  1. Two fascicle options replace volley's session copy and command wrapper
+  2. The five tests of the old mechanism are rewritten, and the turn test now fails on a session copy
+  3. OpenRouter cost is reported as `provider_reported`, and nothing claims the cap can't trip
+  4. One stray outside the seam: `test/helpers/acp_client.ts`
+  5. Two parks: the fallback row's matching mislabel, and zod's loosened peer
+
+  **Readout**:
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    honored
+               - D28 (acp-agent-options)
+               - D29 (retry-label)
+               - D25 (check-approval)
+  constraints  6 of 6 honored
+  seam         strayed: 1 path outside the seam
+               → test/helpers/acp_client.ts
+  diff         +231 -165 across 12 files
+  spent        7 min · 1 turn · 11s gate · green first run
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Approve and land step 11, then run step 12 in Zed. The gate is green, each done-when clause has a test, and the turn test fails on the old session copy. The stray is the helper's one new option, and both parks wait for the harvest.
+
+  **1.** Two fascicle options replace volley's session copy and command wrapper
+
+  `acp_serve_config` sets `additional_directories: false`. When `unguarded_builder` holds, it also sets `modes: ['manual', 'accept_edits']`. `acp_seat_tools` now builds both seats' tools from the session itself, so `cwd_only` and the `always_ask_commands` option are deleted. The check's gate is unchanged. It still asks through `session.approve` exactly when `run_command`'s own `needs_approval` would. That gate now asks in both modes an uncontained session offers, so the check asks in Accept edits with no wrapper. `pnpm add fascicle@0.16.3` pinned it exactly, and nothing else in the lockfile moved. The upgrade itself needed no other source change, and `pnpm build` is clean, so step 12's `dist/` is current.
+
+  **2.** The five tests of the old mechanism are rewritten, and the turn test now fails on a session copy
+
+  - **`acp_tools.test.ts`:** the always-ask test is gone, and so is the test that the copy refused a path into an extra folder, since that refusal now happens at `session/new`. The check test now walks the three modes against `run_command`'s own gate.
+  - **`acp_cli.test.ts`, the modes:** uncontained with no opt-out, a session lists Manual and Accept edits, starts in Manual, and refuses `session/set_mode` to Auto with -32602. Contained, or opted out, it offers all three.
+  - **`acp_cli.test.ts`, folders:** a `session/new` with `additionalDirectories` is refused with -32602, and the spawned `initialize` no longer advertises the capability.
+  - **`acp_cli.test.ts`, the check:** the two uncontained check tests move from Auto to Accept edits, and still see Allow and Reject alone.
+  - **`acp_turn.test.ts`:** the write card's close is now asserted exactly, with its `diff` content, and the command prompt must offer `Always allow \`touch ran.txt\` this session`.
+
+  To confirm the turn test catches the bug, I put a `{ ...session }` copy back for one run. The diff assertion failed, and I restored the file.
+
+  **3.** OpenRouter cost is reported as `provider_reported`, and nothing claims the cap can't trip
+
+  `cost_source_of` now reports `claude_cli` and `openrouter` as `provider_reported`, from one set, since fascicle 0.15 records OpenRouter's own charge as the call's cost. OpenRouter hasn't shipped in a release yet, so C5 (cli-unchanged) still holds. The README now says the cap trips on an OpenRouter seat, both under "Set a cost cap" and under the OpenRouter section. The OpenRouter section also says reasoning shows dimmed in the terminal (unless `--no-thinking`) and as a thought in Zed.
+
+  The default of three rounds stays, but D21 (acp-iterations-3) no longer has the reason it gave: "no cost cap can trip on an OpenRouter seat". I rewrote that reason in `ACP_MAX_ITERATIONS`'s comment and in the README's "Three rounds" bullet. `intent.md` still has the old wording, and correcting it is a `/plumbbob:refine` edit.
+
+  **4.** One stray outside the seam: `test/helpers/acp_client.ts`
+
+  The done-when asks for a test that sends additional directories with `session/new`, and only the helper builds that request. `open_session` gains an optional `additional_directories`, passed through as `additionalDirectories`. Step 7 extended the same helper for `mode` and `on_permission`.
+
+  **5.** Two parks: the fallback row's matching mislabel, and zod's loosened peer
+
+  The README now covers each item the done-when lists: the Auto row; Zed check step 8, where the picker shows no Auto and the test uses Accept edits; the additional-directories note; Zed falling back to Manual for an entry left on Auto; and "Always allow" for an exact command. D29 names only the retry row, so I parked the fallback row above it. That row still says "if a local critic keeps dying", though `is_degradable_critic_error` excludes only `claude_cli`. I also parked that fascicle 0.16.3 now peers zod at `^4.2.0` rather than exactly 4.4.3, so C2 (exact-pins)'s zod hold no longer comes from fascicle.
