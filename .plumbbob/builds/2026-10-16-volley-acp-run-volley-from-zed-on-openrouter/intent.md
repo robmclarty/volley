@@ -191,7 +191,7 @@ state: <root>/<run_id>/, root $XDG_STATE_HOME/volley under acp | <workspace>/.vo
    - model: sonnet (fascicle#15's reply prescribes the change, and the tests to rewrite are named)
 12. [ ] test(acp): run the live check in Zed, **done when:** a person runs the README's "Check it in Zed" against a scratch repo with a `node --test` suite, on fascicle 0.16.3, and every step holds, including whether the check's card keeps its command look while it asks (the open park on `kind: 'other'`); the results go in the build log
    - seam: `README.md`
-13. [ ] docs(flow): name every provider but claude_cli on the critic's fallback row, **done when:** the critic fallback's `description` in `src/flow.ts`, the header diagram there, and the README's diagram copy say it judges without tools when a critic on any provider but `claude_cli` keeps dying or runs out of steps, not "a local critic" ([D29 (retry-label)](#d29)); `test/unit/flow_diagram.test.ts` holds all three in step; `pnpm check` green
+13. [x] docs(flow): name every provider but claude_cli on the critic's fallback row, **done when:** the critic fallback's `description` in `src/flow.ts`, the header diagram there, and the README's diagram copy say it judges without tools when a critic on any provider but `claude_cli` keeps dying or runs out of steps, not "a local critic" ([D29 (retry-label)](#d29)); `test/unit/flow_diagram.test.ts` holds all three in step; `pnpm check` green
    - seam: `src/flow.ts`, `README.md`
    - model: haiku (one description string and the diagram pasted twice)
 

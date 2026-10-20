@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: volley acp: run volley from Zed on OpenRouter
 
-**Current step:** 13 — docs(flow): name every provider but claude_cli on the critic's fallback row
+**Current step:** 12 — test(acp): run the live check in Zed
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -35,7 +35,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 10. test(acp): script and pass the live check in Zed
 - ☑ 11. chore(deps): move to fascicle 0.16.3 and its acp agent options
 - ☐ 12. test(acp): run the live check in Zed
-- ☐ 13. docs(flow): name every provider but claude_cli on the critic's fallback row
+- ☑ 13. docs(flow): name every provider but claude_cli on the critic's fallback row
 
 ## Park list
 
@@ -50,6 +50,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - [x] upgrade to fascicle 0.16.3 (fascicle#15): additional_directories:false and modes ['manual','accept_edits'] when unguarded in acp_serve_config, drop cwd_only and the always-ask wrapper, rewrite the 5 tests of the old mechanism, tighten step 8's write-close diff, fix the README (Auto row, Zed check step 8, exact-line grants, OpenRouter cost/reasoning) and cost_source_of; resolves the session-copy park
 - [x] src/flow.ts's critic fallback row still says 'if a local critic keeps dying', but is_degradable_critic_error degrades every provider but claude_cli, openrouter included; the README's diagram copy repeats it
 - [x] fascicle 0.16.3 peers zod at ^4.2.0 (0.14.0 pinned exactly 4.4.3), so C2 (exact-pins)'s zod hold no longer comes from fascicle; zod can move once a newer one clears the 48-hour window
+- [ ] the check's card loses its command look in Zed: the permission request's kind 'other' (fascicle's permission_card, no presenter for the check's tool name) overwrites the card's 'execute', and volley's close never re-sends it, so the card ends with the hammer icon; fix in fascicle (keep the card's opened kind) or re-send kind on the check's updates
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -713,3 +714,39 @@ folder, so it rides the branch into the PR.)*
   **5.** Two parks: the fallback row's matching mislabel, and zod's loosened peer
 
   The README now covers each item the done-when lists: the Auto row; Zed check step 8, where the picker shows no Auto and the test uses Accept edits; the additional-directories note; Zed falling back to Manual for an entry left on Auto; and "Always allow" for an exact command. D29 names only the retry row, so I parked the fallback row above it. That row still says "if a local critic keeps dying", though `is_degradable_critic_error` excludes only `claude_cli`. I also parked that fascicle 0.16.3 now peers zod at `^4.2.0` rather than exactly 4.4.3, so C2 (exact-pins)'s zod hold no longer comes from fascicle.
+
+- 2026-10-20 — step 13 checkpointed · 3eca833f9 — docs(flow): name every provider but claude_cli on the critic's fallback row (4m)
+
+  **Summary**: The critic's fallback row now reads "judge without tools if a critic on any provider but claude_cli keeps dying or runs out of steps" in the `description` in `src/flow.ts`, the header diagram, and the README's diagram copy. That matches the retry row above it and `is_degradable_critic_error`, which excludes only `claude_cli`.
+
+  1. One description string changed, and both diagram copies were regenerated from it
+  2. The README sentence that introduces the diagram had the same stale claim, so I fixed it
+  3. The claim was checked against the code, not just the plan
+
+  **Readout**:
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    1 of 1 honored
+  constraints  6 of 6 honored
+  seam         held: 2 of 2 declared, no strays
+  diff         +4 -4 across 2 files
+  spent        4 min · 1 turn · 11s gate · green first run
+  ```
+
+  **Verdict**: ● Plumb
+
+  **Recommendation**: Land it. It's a four-line wording fix in the seam, the check is green, and the diagram test is what keeps the three copies in agreement.
+
+  **1.** One description string changed, and both diagram copies were regenerated from it
+
+  The new wording went into the `fallback`'s `description` in `build_critic`. Then `pnpm diagram` (with and without the ` *   ` prefix) regenerated the tree, and both pasted copies match its output line for line. `test/unit/flow_diagram.test.ts` passes unchanged, which is the check that all three agree. The test needed no edit, because it compares each copy to `describe.diagram(flow())` and does not hard-code the row's text.
+
+  **2.** The README sentence that introduces the diagram had the same stale claim, so I fixed it
+
+  The paragraph just above the diagram said the fallback was "for local models whose streams die". That contradicted the diagram right below it, and it left out step exhaustion. It now says "on every provider but `claude_cli`". The line is inside the seam but not named in the done-when, so I'm flagging it here. Line 545, where the OpenRouter critic gets "the same retry-and-degrade ladder as a local critic", is still accurate and stays as it was.
+
+  **3.** The claim was checked against the code, not just the plan
+
+  `is_degradable_critic_error` in `src/critic/run.ts` returns false only for `claude_cli`. Otherwise it degrades on a `provider_error` or on step exhaustion. So "any provider but claude_cli … keeps dying or runs out of steps" describes exactly what the predicate does.

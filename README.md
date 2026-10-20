@@ -626,7 +626,8 @@ than failing every prompt.
 ### Modes and approvals
 
 Each session starts in Manual. Zed's mode picker switches it, and a switch holds
-from the next call on, mid-turn included:
+from the next call on, mid-turn included. Zed also saves the mode you pick as the
+entry's `default_config_options`, and starts the entry's later threads in it.
 
 | Mode | Asks before an edit | Asks before a command |
 |---|---|---|
@@ -707,8 +708,10 @@ Put the directories that `dirname "$(command -v node)"` and
 
 Run this by hand against a scratch repository with a test command (a
 `package.json` whose `test` script runs `node --test` is enough), using the
-snippet above. Start a thread with "Volley", and stay in Manual unless a step
-says otherwise:
+snippet above. Start a thread with "Volley", and check that the mode picker
+shows Manual: Zed starts a thread in the last mode you picked, so an earlier run
+of step 8 leaves it on Accept edits. Stay in Manual unless a step says
+otherwise:
 
 1. Ask for a small change. The builder's work should stream in as the reply,
    under a **Round 1** line.
