@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.9.0 — 2026-10-20
+
+### Added
+- **`volley critique` checks and critiques a change already made, once, with no builder (#3).** The change is everything that differs from `--baseline` (default HEAD), committed or not, untracked files included, and the critic sees what a run's critic sees, so critics can be compared on fixed, known-good and known-bad changes without paying for builder turns. It exits 0 on approval over a green check and 2 when the critic asks for changes or the check is red (status `rejected`). Every builder or loop flag, and `--config`, is refused by name (exit 5), and a `--baseline` that isn't a commit fails before any state is written. `run_critique` is exported for harnesses.
+- **`--builder-max-tool-calls <n>` lets a tool-loop builder make several tool calls a turn (#4).** Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`; the default stays 1, since some model and runtime pairs return parallel calls badly. Above 1, the builder's prompt asks it to batch independent reads but make one change or command per turn. The cap is recorded with the run and kept on resume.
+- **Each run names its state directory.** `RunResult`, and so `--json` and `summary.json`, carry `run_state_dir`, and a run prints `state: <dir>` when it starts and in its final summary. `--dry-run` names the state root.
+- **`sandbox_run_args` mounts a contained run's own state directory.** Its `run_state` option binds the host's `<root>/<run id>/` at that run's directory under `SANDBOX_STATE_ROOT`, never the whole root, so the builder inside can't read or rewrite another run's state. `default_state_root` and `SANDBOX_STATE_ROOT` are exported.
+
+### Changed
+- **Run state leaves the workspace by default (#5).** Without `--state-dir`, a run's config, summary, trajectory, feedback, verdict, and iterations go to `<root>/<run id>/`, where the root is `$XDG_STATE_HOME/volley`, else `~/.local/state/volley`, as under `volley acp`. A check that reads every file, dot-directories included, no longer fails from the second iteration on over volley's own feedback. A harness that read `<workspace>/.volley/` reads `run_state_dir` instead. A run directory volley can't write is a configuration error (exit 5), and inside the sandbox the message names the mount. The critic's "prior iteration state" line now drops by default, since the iterations sit outside the tree it reads.
+- **`volley resume <id>` finds a run from any directory**, under `--state-dir` or the default root, and falls back to the workspace's `.volley/` for a run an older volley started. It refuses a run directory with a symbolic link in it, an id that isn't a run id, and a critique, which has nothing to resume.
+- **A resume on the host runs only a config this machine signed.** volley signs each run's `config.json` (as `config.sig`) under a key kept at `$XDG_CONFIG_HOME/volley/run-key`, else `~/.config/volley/run-key`, and signs nothing inside the sandbox, so a contained run's builder can't plant a check or seat for a host-side resume to run. A config without a valid signature (a contained run's, another machine's, an older volley's, or one edited by hand) resumes only with `--trust-config`, which first shows the check and seats it's about to run, escaped so a planted control sequence can't disguise them. Resume a contained run inside its container.
+- **`ResolvedConfig` has `mode` and `builder_max_tool_calls`, and `RunResult` has `mode` and `run_state_dir`.** All are required, so SDK code that builds either by hand needs them. `resolve_config` always sets `state_dir`, where null still means the workspace's `.volley/`. `RunStatus` gains `rejected`, and a critique's `comparison.builder_transport` is null.
+
+### Fixed
+- **`search_files` and `list_files` on a file path search or list that file.** They walked it as a directory and answered "no matches", which led a local critic to reject a sound change. A path that doesn't exist now says so.
+- **A critic verdict with null `feedback` or `unmet_criteria` reads as empty.** A critic that holds tools isn't constrain-decoded, and such an answer failed schema validation and exited 6.
+- **A `--state-dir` inside the workspace stays out of the builder's work.** Its files showed up in the change list the critic reads and were committed by `--git` checkpoints. A `--state-dir` that is the workspace itself is refused (exit 5).
+
+### Internal
+- **The tests keep run state and the signing key out of your home directory.** A setup file gives each test file its own `XDG_STATE_HOME` and `XDG_CONFIG_HOME`, and fails a file that leaves a test run in the real state root or makes the real key.
+
 ## v0.8.0 — 2026-10-19
 
 ### Added
