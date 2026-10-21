@@ -34,6 +34,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { capture_baseline } from './changes.js';
+import { detect_containment } from './containment.js';
 import { critic_canary } from './critic/run.js';
 import { create_volley_engine, seat_base_url, takes_seat_url } from './engine.js';
 import type { Engine } from './engine.js';
@@ -277,7 +278,7 @@ export async function preflight(
     renderer.info(`builder tool calls per turn: ${config.builder_max_tool_calls}`);
   }
   if (tool_loop_builder) {
-    const contained = env['VOLLEY_CONTAINED'] === '1' || env['VOLLEY_CONTAINED'] === 'true';
+    const contained = detect_containment(env);
     renderer.info(
       contained
         ? 'containment: inside the sandbox container (VOLLEY_CONTAINED)'

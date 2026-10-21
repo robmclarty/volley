@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_check_runner } from './check/detect.js';
+import { detect_containment } from './containment.js';
 import { openrouter_api_key, SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
 import { config_error } from './types.js';
 import { default_state_root, RUN_ID_PATTERN } from './workspace.js';
@@ -353,19 +354,6 @@ function validate_run_state_dir(dir: string, contained: boolean): void {
           'host first, and pass volley the same --run-id; or point --state-dir at a writable mount'
       : `run state directory not writable: ${dir}. Point --state-dir at a directory volley can write`,
   );
-}
-
-/** volley *detects* it is running inside its sandbox container rather than
- * starting the container itself. The signal is the `VOLLEY_CONTAINED=1` marker
- * volley's own image bakes in (`Dockerfile` `ENV`), so a `docker run <hardened
- * flags> <image> volley run …` is recognized as contained out of the box. Kept
- * env-only — no ambient `/.dockerenv` probe — so the safety gate is deterministic
- * and testable, and so a CI job that itself runs in an unrelated container does
- * not silently satisfy the gate; a hand-rolled sandbox must set the marker (or
- * the operator uses `--allow-unsandboxed-builder`). */
-export function detect_containment(env: Record<string, string | undefined>): boolean {
-  const value = env['VOLLEY_CONTAINED'];
-  return value === '1' || value === 'true';
 }
 
 /** Whether a tool-loop builder's commands would reach the host with nothing in

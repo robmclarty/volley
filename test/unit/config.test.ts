@@ -16,13 +16,13 @@ import {
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_SANDBOX_IMAGE,
-  detect_containment,
   expand_at_file,
   load_config_file,
   resolve_config,
   unguarded_builder,
 } from '../../src/config.js';
 import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
+import { detect_containment } from '../../src/containment.js';
 import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
@@ -435,7 +435,8 @@ describe('resolve_config', () => {
       delete record['builder_max_steps'];
       writeFileSync(config_path, `${JSON.stringify(record, null, 2)}\n`);
 
-      const resume = load_resume_state(workspace, 'old-run');
+      // An older volley's config carries no signature, so it resumes only trusted.
+      const resume = load_resume_state(workspace, 'old-run', null, { trust_config: true });
       expect(resume.raw_config.builder_max_steps).toBeUndefined();
       const restored = resolve_config(resume.raw_config, { run_id: resume.run_id, env: {} });
       expect(restored.builder_max_steps).toBe(DEFAULT_BUILDER_MAX_STEPS);
@@ -750,7 +751,7 @@ describe('resolve_config: per-seat model URLs', () => {
       delete record['critic_url'];
       writeFileSync(config_path, `${JSON.stringify(record, null, 2)}\n`);
 
-      const resume = load_resume_state(workspace, 'old-url');
+      const resume = load_resume_state(workspace, 'old-url', null, { trust_config: true });
       const restored = resolve_config(resume.raw_config, { ...CONTAINED, run_id: resume.run_id });
       expect(restored.builder_url).toBeNull();
       expect(restored.critic_url).toBeNull();

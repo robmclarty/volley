@@ -27,7 +27,16 @@ import type {
   Verdict,
   VolleyConfig,
 } from './types.js';
-import { iteration_dir, RUN_ID_PATTERN, run_state_dir, state_path } from './workspace.js';
+import { detect_containment } from './containment.js';
+import { config_signed } from './trust.js';
+import {
+  CONFIG_SIGNATURE,
+  iteration_dir,
+  RUN_ID_PATTERN,
+  run_state_dir,
+  state_path,
+} from './workspace.js';
+import type { StateLocation } from './workspace.js';
 
 function write_json(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -174,7 +183,49 @@ export type ResumeState = {
   started_at: string;
   state: LoopState;
   iterations_completed: number;
+  /** Whether this machine's signature held over the run's config: false only
+   * when `trust_config` let an unsigned one through, and null inside the
+   * sandbox, where nothing is checked. */
+  config_signed: boolean | null;
 };
+
+export type ResumeOptions = {
+  /** Resume a config this machine didn't sign (`--trust-config`): another
+   * machine's, an older volley's, one edited by hand, or a contained run's,
+   * whose builder could have rewritten it. */
+  trust_config?: boolean;
+  env?: Readonly<Record<string, string | undefined>>;
+};
+
+/** Why a host-side resume won't run a config this machine didn't sign. */
+function untrusted_config(run_id: string, config_path: string): Error {
+  return config_error(
+    `run ${run_id}'s config.json has no signature from volley on this machine, so a resume here ` +
+      "won't run it: inside the sandbox a run's builder can rewrite its config, and a resume runs " +
+      'the check and the seats it names. Resume a contained run inside its container, with the same ' +
+      `mount. If ${config_path} is another machine's, an older volley's, or one you edited, read it, ` +
+      'then pass --trust-config.',
+  );
+}
+
+/** Whether a host-side resume may run the config in `text`: signed by this
+ * machine, or trusted by the caller. Inside the sandbox nothing is checked: a
+ * resume there runs only within the container, as the builder already does. */
+function check_config_trust(
+  text: string,
+  run: StateLocation,
+  options: ResumeOptions,
+): boolean | null {
+  const env = options.env ?? process.env;
+  if (detect_containment(env)) return null;
+  const signature_path = state_path(run, CONFIG_SIGNATURE);
+  const signature = existsSync(signature_path) ? readFileSync(signature_path, 'utf8') : null;
+  const signed = config_signed(text, signature, env);
+  if (!signed && options.trust_config !== true) {
+    throw untrusted_config(run.run_id, state_path(run, 'config.json'));
+  }
+  return signed;
+}
 
 /** The run id an older volley's `.volley/config.json` records, or null when
  * there is none to read. */
@@ -234,6 +285,7 @@ export function load_resume_state(
   workspace: string,
   run_id: string,
   state_dir: string | null = null,
+  options: ResumeOptions = {},
 ): ResumeState {
   const run = { workspace, state_dir, run_id };
   const run_dir = run_state_dir(run);
@@ -247,7 +299,9 @@ export function load_resume_state(
   if (!existsSync(config_path)) {
     throw config_error(`no resumable run found: ${config_path} missing`);
   }
-  const recorded = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
+  const config_text = readFileSync(config_path, 'utf8');
+  const signed = check_config_trust(config_text, run, options);
+  const recorded = JSON.parse(config_text) as Record<string, unknown>;
   if (recorded['run_id'] !== run_id) {
     throw config_error(
       `run ${run_id} not found in ${run_state_dir(run)} (recorded run: ${String(recorded['run_id'])})`,
@@ -348,5 +402,6 @@ export function load_resume_state(
     started_at: String(recorded['started_at']),
     state,
     iterations_completed: completed,
+    config_signed: signed,
   };
 }

@@ -17,9 +17,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { aborted_error } from 'fascicle';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolve_config } from '../../src/config.js';
-import { EXIT_SUCCESS } from '../../src/exit_codes.js';
+import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
 import { run_volley } from '../../src/orchestrator.js';
 import type { ResolvedConfig, RunResult } from '../../src/types.js';
 import {
@@ -102,8 +102,11 @@ function read_json(path: string): Record<string, unknown> {
 
 /** The CLI with the test's key and the uncontained opt-out a resumed
  * tool-loop builder needs. */
-function run_cli(args: string[]): Promise<CliResult> {
-  return spawn_cli(args, cli_env({ OPENROUTER_API_KEY: KEY, VOLLEY_ALLOW_UNSANDBOXED_BUILDER: '1' }));
+function run_cli(args: string[], extra: Record<string, string> = {}): Promise<CliResult> {
+  return spawn_cli(
+    args,
+    cli_env({ OPENROUTER_API_KEY: KEY, VOLLEY_ALLOW_UNSANDBOXED_BUILDER: '1', ...extra }),
+  );
 }
 
 describe('a run under --state-dir', () => {
@@ -420,6 +423,68 @@ describe('volley resume <id>', () => {
       expect(status).toBe(EXIT_SUCCESS);
       expect_resumed(stdout, join(workspace, '.volley'));
       expect(existsSync(join(DEFAULT_ROOT, 'legacy-resume'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe("volley resume and a config this machine didn't sign", () => {
+  it('refuses it before running anything it names, and --trust-config runs it after saying what', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = temp_root();
+    try {
+      const seats = await interrupted_run(workspace, { run_id: 'tampered', state_dir: root });
+      const asked = seats.builder_server.seen.length + seats.critic_server.seen.length;
+      // What a contained run's builder can do to its own run's config.
+      const config_path = join(root, 'tampered', 'config.json');
+      const planted = join(workspace, 'pwned');
+      writeFileSync(
+        config_path,
+        `${JSON.stringify({ ...read_json(config_path), check: `touch ${planted}` }, null, 2)}\n`,
+      );
+
+      const refused = await run_cli(['resume', 'tampered', '--state-dir', root, '--json']);
+      expect(refused.status).toBe(EXIT_CONFIG_ERROR);
+      expect(refused.stderr).toContain(
+        "run tampered's config.json has no signature from volley on this machine, so a resume here won't run it",
+      );
+      expect(existsSync(planted)).toBe(false);
+      expect(seats.builder_server.seen.length + seats.critic_server.seen.length).toBe(asked);
+
+      const trusted = await run_cli(['resume', 'tampered', '--state-dir', root, '--trust-config']);
+      expect(trusted.status).toBe(EXIT_SUCCESS);
+      expect(trusted.stderr).toContain(
+        `resuming on a config volley on this machine didn't sign (--trust-config): check touch ${planted}`,
+      );
+      expect(existsSync(planted)).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('resumes a run written inside the sandbox only inside it', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = temp_root();
+    try {
+      vi.stubEnv('VOLLEY_CONTAINED', '1');
+      try {
+        await interrupted_run(workspace, { run_id: 'contained-run', state_dir: root });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(existsSync(join(root, 'contained-run', 'config.json'))).toBe(true);
+      expect(existsSync(join(root, 'contained-run', 'config.sig'))).toBe(false);
+
+      const host = await run_cli(['resume', 'contained-run', '--state-dir', root, '--json']);
+      expect(host.status).toBe(EXIT_CONFIG_ERROR);
+      expect(host.stderr).toContain('Resume a contained run inside its container, with the same mount');
+
+      const inside = await run_cli(['resume', 'contained-run', '--state-dir', root, '--json'], {
+        VOLLEY_CONTAINED: '1',
+      });
+      expect(inside.status).toBe(EXIT_SUCCESS);
+      expect_resumed(inside.stdout, join(root, 'contained-run'));
     } finally {
       cleanup();
     }

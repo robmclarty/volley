@@ -107,7 +107,8 @@ describe('resume', () => {
       delete recorded['worktree'];
       delete recorded['discard_worktree'];
       writeFileSync(config_path, `${JSON.stringify(recorded, null, 2)}\n`);
-      const legacy = load_resume_state(workspace, 'wt-run').raw_config;
+      // An older volley's config carries no signature, so it resumes only trusted.
+      const legacy = load_resume_state(workspace, 'wt-run', null, { trust_config: true }).raw_config;
       expect(legacy.worktree).toBe(false);
       expect(legacy.discard_worktree).toBe(false);
     } finally {

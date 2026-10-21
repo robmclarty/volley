@@ -2,10 +2,11 @@
  * Workspace lifecycle: run-state initialization, stale-run
  * backup rotation, path helpers, and optional git checkpoints.
  */
-import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { sign_config } from './trust.js';
 import { check_error, config_error } from './types.js';
 import type { ResolvedConfig } from './types.js';
 
@@ -88,7 +89,20 @@ export function initialize_run_state(
   mkdirSync(join(dir, 'iterations'), { recursive: true });
 }
 
-export function write_resolved_config(config: ResolvedConfig): void {
+/** Beside a run's `config.json`: this machine's signature over it
+ * (`./trust.ts`), which a host-side resume checks before it trusts the
+ * config. */
+export const CONFIG_SIGNATURE = 'config.sig';
+
+/** Record the run's config, signed when volley runs on the host. Returns
+ * whether it was signed: inside the sandbox it never is, and on the host only
+ * when the machine's key can't be read or created. A signature a reused run
+ * directory held from before is removed rather than left to vouch for this
+ * config. */
+export function write_resolved_config(
+  config: ResolvedConfig,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
   const record = {
     version: config.version,
     run_id: config.run_id,
@@ -120,10 +134,15 @@ export function write_resolved_config(config: ResolvedConfig): void {
     state_dir: config.state_dir,
     workspace: config.workspace,
   };
-  writeFileSync(
-    state_path(config, 'config.json'),
-    `${JSON.stringify(record, null, 2)}\n`,
-  );
+  const text = `${JSON.stringify(record, null, 2)}\n`;
+  writeFileSync(state_path(config, 'config.json'), text);
+  const signature = sign_config(text, env);
+  if (signature === null) {
+    rmSync(state_path(config, CONFIG_SIGNATURE), { force: true });
+    return false;
+  }
+  writeFileSync(state_path(config, CONFIG_SIGNATURE), `${signature}\n`);
+  return true;
 }
 
 /**

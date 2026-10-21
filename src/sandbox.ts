@@ -129,9 +129,10 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
  * is mounted, never the root: the builder inside runs arbitrary commands, so
  * it can rewrite its own run's state but can't read another run's trajectory
  * or plant a check in another run's config. Its own run's state is still the
- * builder's to rewrite, config.json included, so resume a contained run inside
- * the container, with the same mount, never on the host: a resume trusts that
- * config, though it refuses a directory holding a symlink. Create the
+ * builder's to rewrite, config.json included, so a host-side resume refuses
+ * that config, which volley signs only outside the sandbox (`./trust.ts`), and
+ * a directory holding a symlink: resume a contained run inside the container,
+ * with the same mount. Create the
  * directory on the host first, empty (Docker on Linux makes a missing bind
  * source owned by root, which the container's user can't write), and pass the
  * same id to volley as `--run-id`. Keep it outside `build_root`, so the check

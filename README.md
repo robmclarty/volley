@@ -243,6 +243,20 @@ workspace. A run an older volley started keeps its state in the workspace's
 inside it. A run directory with a symbolic link in it is refused, since volley
 never writes one.
 
+**A resume on the host runs only a config this machine signed.** A resume runs
+what the run's `config.json` says, its check command and its seats included.
+So volley on the host signs each config it writes, as `config.sig`, under a
+key that stays on the machine (`$XDG_CONFIG_HOME/volley/run-key`, else
+`~/.config/volley/run-key`), and a resume on the host refuses a config whose
+signature doesn't hold (exit 5). That covers:
+
+- **A contained run's config.** Nothing is signed inside the sandbox, and the
+  builder there can rewrite its own run's config, so resume it inside its
+  container, with the same mount. Inside the container, nothing is checked.
+- **Another machine's config, an older volley's, or one you edited.** Read it,
+  then pass `--trust-config`, and the resume says which check and seats it's
+  about to run before it runs them.
+
 Continues from the last completed iteration with the saved feedback and cost
 totals. An iteration interrupted mid-phase is discarded and re-run. A
 [critique](#critique-a-fixed-change) has one round and nothing to resume.
@@ -488,9 +502,11 @@ until you mount the run's own host directory where it looks:
 Without the mount, the run stops before any spend (exit 5) and says what to
 mount. Mount that one directory, never the whole root: the builder runs
 arbitrary commands, and with the root mounted it could read every other run's
-trajectory or plant a check in another run's config. For the same reason,
-resume a contained run inside the container, with the same mount, not on the
-host. Its config is the builder's to rewrite, and a resume trusts it.
+trajectory or plant a check in another run's config. Its own run's config is
+still the builder's to rewrite, so a resume on the host refuses it, since
+volley signs only the configs it writes outside the sandbox
+([Resume](#resume)). Resume a contained run inside the container, with the same
+mount.
 
 To run a local builder uncontained on the host anyway, opt out with
 `--allow-unsandboxed-builder` (or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`), which
@@ -861,6 +877,7 @@ the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
 ```
 <root>/<run id>/
   config.json          # resolved run config (immutable per run)
+  config.sig           # this machine's signature over config.json (none from inside the sandbox)
   summary.json         # run-level usage, cost, status
   trajectory.jsonl     # every fascicle trajectory event (replayable, below)
   feedback.md          # current critic feedback (harness-written)
@@ -884,7 +901,8 @@ the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
   rotates the earlier run aside to `<run id>.bak.<timestamp>/`.
 - **Older runs.** An older volley kept the same files in the workspace's
   `.volley/`. `volley resume` still finds such a run there, and resumes it in
-  place.
+  place once you pass `--trust-config`, since an older volley signed nothing
+  ([Resume](#resume)).
 
 `volley matrix` writes its sweep to `.volley-matrix/` in the workspace, and a
 base config's `state_dir` moves each seat's run state as it would any run's.
@@ -903,7 +921,8 @@ See [.env.example](./.env.example): `VOLLEY_CLAUDE_BIN`, `VOLLEY_AUTH_MODE`,
 `ANTHROPIC_API_KEY` billing-meter warning, each seat's base URL
 (`VOLLEY_OLLAMA_URL`, `VOLLEY_LMSTUDIO_URL`, `VOLLEY_OPENROUTER_URL`), and
 `OPENROUTER_API_KEY` for [OpenRouter](#openrouter) seats. Every run reads
-`XDG_STATE_HOME` for its default state root.
+`XDG_STATE_HOME` for its default state root, and `XDG_CONFIG_HOME` for where
+it keeps the key it signs run configs with.
 
 ## Development
 

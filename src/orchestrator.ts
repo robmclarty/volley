@@ -24,6 +24,7 @@ import { filesystem_logger, tee_logger } from 'fascicle/adapters';
 import type { Engine, RunOptions, Step, TrajectoryLogger } from 'fascicle';
 import type { BashExecutor } from './builder/tools.js';
 import { capture_baseline, resolve_baseline } from './changes.js';
+import { detect_containment } from './containment.js';
 import { create_seat_engines, create_volley_engine, dispose_seat_engines } from './engine.js';
 import type { SeatEngines } from './engine.js';
 import { build_critique_flow, build_flow } from './flow.js';
@@ -32,6 +33,7 @@ import type { CheckGate } from './phases.js';
 import { run_result_from_state } from './iteration.js';
 import { initial_state, status_of } from './loop_state.js';
 import { write_run_summary } from './summary.js';
+import { trust_key_path } from './trust.js';
 import type { Renderer } from './render/renderer.js';
 import { config_error, error_kind } from './types.js';
 import type { LoopState, ResolvedConfig, RunResult, RunStatus } from './types.js';
@@ -85,7 +87,13 @@ export async function run_volley(
 
   if (resume_from === null) {
     initialize_run_state(config);
-    write_resolved_config(config);
+    // Unsigned on the host only when the machine's key can't be read or made.
+    if (!write_resolved_config(config) && !detect_containment(process.env)) {
+      renderer.warn(
+        `could not sign this run's config with this machine's key (${trust_key_path(process.env)}), ` +
+          'so resuming it here will need --trust-config',
+      );
+    }
   } else {
     initialize_run_state(config, { preserve: true });
   }

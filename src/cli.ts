@@ -68,6 +68,7 @@ type CliFlags = {
   /** A number when cac coerced a numeric-looking value (`0042` arrives as 42). */
   runId?: string | number;
   dryRun?: boolean;
+  trustConfig?: boolean;
   config?: string;
   /** A number when cac coerced an all-digit revision, as it does `runId`. */
   baseline?: string | number;
@@ -264,6 +265,17 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
   };
 }
 
+/** What a resume is about to run on a config this machine didn't sign, said
+ * once before it runs, so `--trust-config` is never a blind yes. */
+function warn_trusted_config(config: ResolvedConfig, renderer: Renderer): void {
+  renderer.warn(
+    `resuming on a config volley on this machine didn't sign (--trust-config): check ` +
+      `${config.check} (resolved: ${config.check_resolved}), builder ${config.builder_provider} ` +
+      `${config.builder_model} (${config.builder_permission_mode}), critic ${config.critic_provider} ` +
+      `${config.critic_model}, workspace ${config.workspace}`,
+  );
+}
+
 /** A flag's value as typed. cac reads an all-digit value as a number, which
  * drops leading zeros, so a coerced id or revision would silently name another
  * run or commit: refused rather than guessed at. */
@@ -346,6 +358,7 @@ async function main(argv: string[]): Promise<number> {
       default: '.',
     })
     .option('--state-dir <path>', 'State root the run was started under (default: $XDG_STATE_HOME/volley, else ~/.local/state/volley)')
+    .option('--trust-config', "Resume a config volley on this machine didn't sign: another machine's, an older volley's, or one you edited. Read it first")
     .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')
     .option('--verbose', 'Show full tool inputs/outputs')
     .option('--quiet', 'Only phase transitions, cost updates, and the final summary')
@@ -353,13 +366,15 @@ async function main(argv: string[]): Promise<number> {
     .action(async (run_id: string, flags: CliFlags) => {
       // cac refuses any option this command doesn't declare, so what's left
       // once the lookup flags are taken out is the output flags alone.
-      const { workspace = '.', stateDir, ...output } = flags;
+      const { workspace = '.', stateDir, trustConfig, ...output } = flags;
       // The run is looked for under the root named here, else the default, and
       // where it's found wins over the recorded root, so a moved root resumes
       // where it now is. A run an older volley kept in .volley/ resumes there.
       const root = stateDir === undefined ? default_state_root(process.env) : resolve(stateDir);
       const state_dir = find_run_state(workspace, run_id, root);
-      const resume = load_resume_state(workspace, run_id, state_dir);
+      const resume = load_resume_state(workspace, run_id, state_dir, {
+        trust_config: trustConfig === true,
+      });
       const merged = merge_flags(resume.raw_config, output);
       const config = resolve_config(merged, {
         run_id: resume.run_id,
@@ -374,6 +389,7 @@ async function main(argv: string[]): Promise<number> {
       const renderer = make_renderer(config);
       warn_api_key_meter(renderer);
       warn_unsandboxed_builder(config, renderer);
+      if (resume.config_signed === false) warn_trusted_config(config, renderer);
       renderer.info(
         `resuming run ${run_id} at iteration ${String(resume.iterations_completed + 1)}`,
       );

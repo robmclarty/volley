@@ -104,9 +104,9 @@ docker run --rm \
 ```
 
 The run's state lands in `$STATE/$RUN_ID/` on the host. To resume it, run the
-same `docker run` line with `resume "$RUN_ID"` in place of the volley args, not
-`volley resume` on the host: the builder could rewrite that directory, its
-`config.json` included, and a resume trusts it.
+same `docker run` line with `resume "$RUN_ID"` in place of the volley args.
+`volley resume` on the host refuses it: the builder could have rewritten its
+`config.json`, which volley signs only outside the sandbox.
 
 Swap the model without editing the blessed config by appending
 `--builder-model <tag> --critic-model <tag>` (e.g. `qwen3.6:latest`).
