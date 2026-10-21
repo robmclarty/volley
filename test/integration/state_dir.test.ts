@@ -436,13 +436,13 @@ describe("volley resume and a config this machine didn't sign", () => {
     try {
       const seats = await interrupted_run(workspace, { run_id: 'tampered', state_dir: root });
       const asked = seats.builder_server.seen.length + seats.critic_server.seen.length;
-      // What a contained run's builder can do to its own run's config.
+      // What a contained run's builder can do to its own run's config: plant a
+      // check, with an erase-line and a carriage return after it that would
+      // redraw the warning's line as something harmless.
       const config_path = join(root, 'tampered', 'config.json');
       const planted = join(workspace, 'pwned');
-      writeFileSync(
-        config_path,
-        `${JSON.stringify({ ...read_json(config_path), check: `touch ${planted}` }, null, 2)}\n`,
-      );
+      const check = `touch ${planted}; true \u001b[2K\rcheck: pnpm test`;
+      writeFileSync(config_path, `${JSON.stringify({ ...read_json(config_path), check }, null, 2)}\n`);
 
       const refused = await run_cli(['resume', 'tampered', '--state-dir', root, '--json']);
       expect(refused.status).toBe(EXIT_CONFIG_ERROR);
@@ -454,9 +454,14 @@ describe("volley resume and a config this machine didn't sign", () => {
 
       const trusted = await run_cli(['resume', 'tampered', '--state-dir', root, '--trust-config']);
       expect(trusted.status).toBe(EXIT_SUCCESS);
+      // The check is shown quoted, its escape and return written out, and
+      // nothing on stderr can move the cursor.
       expect(trusted.stderr).toContain(
-        `resuming on a config volley on this machine didn't sign (--trust-config): check touch ${planted}`,
+        "resuming on a config volley on this machine didn't sign (--trust-config): check " +
+          `"touch ${planted}; true \\u001b[2K\\rcheck: pnpm test"`,
       );
+      expect(trusted.stderr).not.toContain('\u001b');
+      expect(trusted.stderr).not.toContain('\r');
       expect(existsSync(planted)).toBe(true);
     } finally {
       cleanup();

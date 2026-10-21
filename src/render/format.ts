@@ -51,6 +51,23 @@ export function truncate(text: string, max: number, pointer: string): string {
   return `${text.slice(0, max)}\n… [truncated at ${String(max)} chars; ${pointer}]`;
 }
 
+/** Controls, format characters (bidi overrides, zero-widths), and line and
+ * paragraph separators: what can move the cursor, hide text, or reorder a line
+ * in a terminal. */
+const UNSAFE_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+/** A value from a file volley can't vouch for, quoted for a person to judge,
+ * with every character that could redraw or reorder the line escaped, so a
+ * rewritten config can't make the warning about it say something else. JSON
+ * quoting escapes the C0 controls, the quote, and the backslash; the rest are
+ * written as `\u{…}`. */
+export function shown(value: string): string {
+  return JSON.stringify(value).replace(
+    UNSAFE_CHARACTERS,
+    (character) => `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`,
+  );
+}
+
 export function format_usd(value: number | null): string {
   return value === null ? '$?' : `$${value.toFixed(3)}`;
 }

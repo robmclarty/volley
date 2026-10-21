@@ -152,7 +152,7 @@ describe('resume', () => {
       expect(find_run_state(workspace, 'legacy-run', root)).toBeNull();
       expect(() => find_run_state(workspace, 'missing-run', root)).toThrow(
         `run missing-run not found in ${join(root, 'missing-run')} or in ` +
-          `${join(workspace, '.volley')} (it holds run legacy-run)`,
+          `${join(workspace, '.volley')} (it holds run "legacy-run")`,
       );
       expect(() => find_run_state(workspace, '../rooted-run', root)).toThrow('not a run id: ../rooted-run');
     } finally {

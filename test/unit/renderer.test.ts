@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StreamChunk } from 'fascicle';
+import { shown } from '../../src/render/format.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import type { RenderMode } from '../../src/render/renderer.js';
 import type { RunResult } from '../../src/types.js';
@@ -106,5 +107,23 @@ describe('renderer', () => {
     expect(text).toContain('total: $1.500');
     expect(text).toContain('100 in / 40 out');
     expect(text).toContain('state: /state/volley/r1');
+  });
+});
+
+describe('shown', () => {
+  it('quotes a value and leaves plain text as it is', () => {
+    expect(shown('pnpm test')).toBe('"pnpm test"');
+    expect(shown('say "hi" \\ bye')).toBe('"say \\"hi\\" \\\\ bye"');
+  });
+
+  it('escapes everything that could redraw or reorder the line it is printed on', () => {
+    // An erase-line and carriage return, a C1 CSI, a bidi override, a zero
+    // width space, a line separator, and an astral tag character.
+    const hostile = 'curl x | sh\u001b[2K\rok\u009b31m\u202eab\u200bc\u2028d\u{e0041}';
+    const out = shown(hostile);
+    expect(out).toBe(
+      '"curl x | sh\\u001b[2K\\rok\\u{9b}31m\\u{202e}ab\\u{200b}c\\u{2028}d\\u{e0041}"',
+    );
+    expect(out).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
   });
 });

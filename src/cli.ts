@@ -22,7 +22,7 @@ import { find_run_state, load_resume_state } from './iteration.js';
 import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
 import { run_critique, run_volley } from './orchestrator.js';
 import { preflight } from './preflight.js';
-import { colors_enabled } from './render/format.js';
+import { colors_enabled, shown } from './render/format.js';
 import { create_renderer } from './render/renderer.js';
 import type { Renderer, RenderMode } from './render/renderer.js';
 import { config_error, error_kind } from './types.js';
@@ -266,13 +266,15 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
 }
 
 /** What a resume is about to run on a config this machine didn't sign, said
- * once before it runs, so `--trust-config` is never a blind yes. */
+ * once before it runs, so `--trust-config` is never a blind yes. Every value
+ * came from that config, so each is quoted with its control characters
+ * escaped, and can't redraw the line it's warned on. */
 function warn_trusted_config(config: ResolvedConfig, renderer: Renderer): void {
   renderer.warn(
     `resuming on a config volley on this machine didn't sign (--trust-config): check ` +
-      `${config.check} (resolved: ${config.check_resolved}), builder ${config.builder_provider} ` +
-      `${config.builder_model} (${config.builder_permission_mode}), critic ${config.critic_provider} ` +
-      `${config.critic_model}, workspace ${config.workspace}`,
+      `${shown(config.check)} (resolved: ${config.check_resolved}), builder ` +
+      `${config.builder_provider} ${shown(config.builder_model)} (${config.builder_permission_mode}), ` +
+      `critic ${config.critic_provider} ${shown(config.critic_model)}, workspace ${shown(config.workspace)}`,
   );
 }
 

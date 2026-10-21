@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { EMPTY_USAGE } from './cost.js';
+import { shown } from './render/format.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
@@ -253,7 +254,8 @@ export function find_run_state(workspace: string, run_id: string, root: string):
   if (existsSync(join(root, run_id, 'config.json'))) return root;
   const legacy = legacy_run_id(workspace);
   if (legacy === run_id) return null;
-  const holds = legacy === null ? '' : ` (it holds run ${legacy})`;
+  // Read from a file nothing has vouched for, so quoted and escaped.
+  const holds = legacy === null ? '' : ` (it holds run ${shown(legacy)})`;
   throw config_error(
     `run ${run_id} not found in ${join(root, run_id)} or in ${join(resolve(workspace), '.volley')}${holds}; ` +
       'pass --state-dir for the root it ran under, or --workspace for a run kept in .volley/',
