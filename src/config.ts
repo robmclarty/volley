@@ -449,6 +449,11 @@ export function resolve_config(
 
   const sandbox_image = resolve_sandbox_image(raw, env);
   const state_dir = resolve_state_dir(raw.state_dir, cwd);
+  // Each run's folder would land among the workspace's own files, where no
+  // exclusion can tell earlier runs' state from the builder's work.
+  if (state_dir === workspace) {
+    throw config_error(`--state-dir (state_dir) can't be the workspace itself: ${workspace}`);
+  }
   const run_id = resolve_run_id(options.run_id);
   const check = raw.check ?? DEFAULT_CHECK;
 

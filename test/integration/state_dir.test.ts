@@ -4,7 +4,7 @@
  * CLI runs against stand-in OpenRouter servers show `volley resume` finding a
  * run under a root, and `volley matrix` reading a seat back from one.
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -165,6 +165,45 @@ describe('a run under --state-dir', () => {
       expect(entries[0]).toBe('reused');
       expect(entries[1]).toMatch(/^reused\.bak\./);
       expect(existsSync(join(workspace, '.volley'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('a --state-dir inside the workspace', () => {
+  it('stays out of the change list the critic reads and out of every --git checkpoint', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      const root = join(workspace, 'runs');
+      const result = await run_once(
+        checked_config(workspace, { run_id: 'in-tree', state_dir: root, git_checkpoints: true }),
+      );
+      expect(result.status).toBe('success');
+
+      const archived = read_json(join(root, 'in-tree', 'iterations', '001', 'summary.json'));
+      const changes = archived['changes'] as { files: { path: string }[] };
+      expect(changes.files.map((file) => file.path)).toEqual(['done.txt']);
+
+      const head = spawnSync('git', ['ls-tree', '-r', '--name-only', 'HEAD'], {
+        cwd: workspace,
+        encoding: 'utf8',
+      });
+      expect(head.stdout.split('\n').filter(Boolean)).toEqual(['done.txt']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('is refused when it is the workspace itself', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config(
+          { prompt: 'p', workspace, criteria: 'c', check: 'none', state_dir: '.' },
+          { cwd: workspace, env: {} },
+        ),
+      ).toThrow(`--state-dir (state_dir) can't be the workspace itself: ${workspace}`);
     } finally {
       cleanup();
     }

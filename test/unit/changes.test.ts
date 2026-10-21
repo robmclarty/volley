@@ -8,6 +8,7 @@ import {
   collect_changes,
   matches_any,
 } from '../../src/changes.js';
+import { state_root_within } from '../../src/workspace.js';
 import { temp_git_workspace, temp_workspace } from '../helpers/harness.js';
 
 function git(repo: string, args: string[]): void {
@@ -186,6 +187,24 @@ describe('collect_changes', () => {
     }
   });
 
+  it('excludes a state root inside the tree, but not a sibling that shares its prefix', () => {
+    const { workspace, baseline, cleanup } = seeded_repo();
+    try {
+      write(workspace, 'runs/run-1/summary.json', '{}\n');
+      write(workspace, 'runs2/kept.mjs', 'export const d = 4;\n');
+
+      const paths = collect_changes({
+        root: workspace,
+        baseline,
+        gate_patterns: DEFAULT_GATE_PATTERNS,
+        excluded_dir: 'runs',
+      })?.files.map((file) => file.path);
+      expect(paths).toEqual(['runs2/kept.mjs']);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('caps the file list but never the gate edits or the total', () => {
     const { workspace, baseline, cleanup } = seeded_repo();
     try {
@@ -236,5 +255,20 @@ describe('collect_changes', () => {
     } finally {
       cleanup();
     }
+  });
+});
+
+describe('state_root_within', () => {
+  it('names a state root inside the build root, relative to it', () => {
+    expect(state_root_within('/ws', '/ws/runs')).toBe('runs');
+    expect(state_root_within('/ws/', '/ws/.state/volley')).toBe('.state/volley');
+  });
+
+  it('is null for a root outside the tree, the tree itself, or the legacy .volley/', () => {
+    expect(state_root_within('/ws', '/home/me/.local/state/volley')).toBeNull();
+    expect(state_root_within('/ws', '/ws-runs')).toBeNull();
+    expect(state_root_within('/ws/app', '/ws')).toBeNull();
+    expect(state_root_within('/ws', '/ws')).toBeNull();
+    expect(state_root_within('/ws', null)).toBeNull();
   });
 });

@@ -3,7 +3,7 @@
  * backup rotation, path helpers, and optional git checkpoints.
  */
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check_error, config_error } from './types.js';
 import type { ResolvedConfig } from './types.js';
@@ -25,6 +25,18 @@ export function state_path(run: StateLocation, ...parts: string[]): string {
 
 export function iteration_dir(run: StateLocation, iteration: number): string {
   return state_path(run, 'iterations', String(iteration).padStart(3, '0'));
+}
+
+/** A state root that sits inside `root` (the build root), as the path from
+ * there in git's `/`-separated vocabulary, or null when it sits outside. A
+ * root inside the tree would otherwise pass for the builder's work: listed in
+ * the changes the critic reads, and committed by every `--git` checkpoint.
+ * The legacy `.volley/` (`state_dir` null) is excluded by name already. */
+export function state_root_within(root: string, state_dir: string | null): string | null {
+  if (state_dir === null) return null;
+  const path = relative(resolve(root), resolve(state_dir));
+  if (path === '' || path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) return null;
+  return path.split(sep).join('/');
 }
 
 /** Filesystem-safe timestamp for `.bak.<stamp>` rotation names. Shared by the
@@ -92,27 +104,33 @@ export function write_resolved_config(config: ResolvedConfig): void {
  * workspace on the default path, or the per-run worktree under `--worktree`, so
  * checkpoints land on the worktree branch rather than the workspace's.
  * A checkpoint with nothing to commit is fine; a missing git binary or repo is
- * not.
+ * not. `excluded_dir` (from `state_root_within`) keeps a state root inside the
+ * tree out of the commit; `:/` keeps the rest of the staging repo-wide, as a
+ * bare `git add -A` is, and `literal` reads the path as written, wildcards and
+ * all.
  */
-export function git_checkpoint(root: string, message: string): void {
+export function git_checkpoint(root: string, message: string, excluded_dir: string | null = null): void {
   if (!existsSync(join(root, '.git'))) {
     // `.git` is a directory in the workspace and a file in a linked worktree;
     // existsSync accepts both.
     throw config_error(`git checkpoints require a git repository: ${root}`);
   }
-  const add = spawnSync('git', ['add', '-A'], { cwd: root });
+  const pathspec = excluded_dir === null ? [] : ['--', ':/', `:(exclude,literal)${excluded_dir}`];
+  const add = spawnSync('git', ['add', '-A', ...pathspec], { cwd: root });
   if (add.error !== undefined || add.status !== 0) {
     throw check_error(`git add failed: ${add.stderr?.toString() ?? String(add.error)}`);
   }
   const commit = spawnSync('git', ['commit', '-m', message, '--no-verify'], {
     cwd: root,
   });
-  // Exit 1 with "nothing to commit" is a no-op iteration, not a failure.
+  // Exit 1 with "nothing to commit" is a no-op iteration, not a failure. So is
+  // "nothing added to commit", which git says instead when the only untracked
+  // files left are the state root `excluded_dir` kept out.
   if (commit.error !== undefined) {
     throw check_error(`git commit failed to start: ${String(commit.error)}`);
   }
   const out = `${commit.stdout?.toString() ?? ''}${commit.stderr?.toString() ?? ''}`;
-  if (commit.status !== 0 && !out.includes('nothing to commit')) {
+  if (commit.status !== 0 && !/nothing (?:added )?to commit/.test(out)) {
     throw check_error(`git commit failed: ${out.trim()}`);
   }
 }

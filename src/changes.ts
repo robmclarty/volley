@@ -138,7 +138,8 @@ function parse_paths(stdout: string): string[] {
   return stdout.split('\0').filter((path) => path.length > 0);
 }
 
-function excluded(path: string): boolean {
+function excluded(path: string, excluded_dir: string | null): boolean {
+  if (excluded_dir !== null && path.startsWith(`${excluded_dir}/`)) return true;
   return EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
@@ -192,6 +193,9 @@ export type CollectChangesOptions = {
   /** The run's baseline commit, from `capture_baseline`. */
   baseline: string | null;
   gate_patterns: string[];
+  /** A state root inside `root`, relative to it (`state_root_within`): the
+   * harness's files, never the builder's. */
+  excluded_dir?: string | null;
   limit?: number;
 };
 
@@ -227,10 +231,11 @@ export function collect_changes(options: CollectChangesOptions): ChangeSet | nul
     git(root, ['ls-files', '--others', '--exclude-standard', '-z']).stdout,
   ).map((path) => ({ path, status: 'added' }));
 
+  const excluded_dir = options.excluded_dir ?? null;
   const seen = new Set<string>();
   const files: ChangedFile[] = [];
   for (const change of [...tracked, ...untracked]) {
-    if (excluded(change.path) || seen.has(change.path)) continue;
+    if (excluded(change.path, excluded_dir) || seen.has(change.path)) continue;
     seen.add(change.path);
     files.push({ ...change, gate: matches_any(change.path, options.gate_patterns) });
   }

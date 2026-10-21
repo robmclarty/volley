@@ -20,7 +20,7 @@ import type { Renderer } from './render/renderer.js';
 import { write_run_summary } from './summary.js';
 import { error_kind, phase_error } from './types.js';
 import type { ChangeSet, CheckResult, LoopState, ResolvedConfig, Verdict } from './types.js';
-import { git_checkpoint } from './workspace.js';
+import { git_checkpoint, state_root_within } from './workspace.js';
 import { build_root } from './worktree.js';
 
 /** A round starting, emitted as the build opens it. */
@@ -221,17 +221,17 @@ export async function build_phase(
   // What the builder actually did, measured before the check runs — so the
   // check's verdict and the builder's reach are two independent facts about
   // the same iteration rather than one inferred from the other.
+  const root = build_root(config.workspace, config.worktree);
+  const excluded_dir = state_root_within(root, config.state_dir);
   const changes = collect_changes({
-    root: build_root(config.workspace, config.worktree),
+    root,
     baseline: deps.baseline,
     gate_patterns: config.gate_paths,
+    excluded_dir,
   });
   report_changes(config, renderer, changes);
   if (config.git_checkpoints) {
-    git_checkpoint(
-      build_root(config.workspace, config.worktree),
-      `volley iter ${String(built.iteration)}: build`,
-    );
+    git_checkpoint(root, `volley iter ${String(built.iteration)}: build`, excluded_dir);
   }
   return { ...built, changes };
 }
@@ -367,9 +367,11 @@ export function record_phase(deps: PhaseDeps, s: LoopState): LoopState {
   archive_iteration(config, s);
   write_run_summary(config, run_result_from_state(config, s, 'running', null));
   if (config.git_checkpoints) {
+    const root = build_root(config.workspace, config.worktree);
     git_checkpoint(
-      build_root(config.workspace, config.worktree),
+      root,
       `volley iter ${String(s.iteration)}: critique (${s.verdict ?? 'skipped'})`,
+      state_root_within(root, config.state_dir),
     );
   }
   return s;
