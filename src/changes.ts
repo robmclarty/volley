@@ -21,6 +21,7 @@
  * fetch — the critic learns *where* to look, then looks.
  */
 import { spawnSync } from 'node:child_process';
+import { config_error } from './types.js';
 import type { ChangeSet, ChangeStatus, ChangedFile } from './types.js';
 
 /**
@@ -98,6 +99,29 @@ export function capture_baseline(root: string): string | null {
   if (head.status !== 0) return null;
   const sha = head.stdout.trim();
   return sha.length > 0 ? sha : null;
+}
+
+/**
+ * The commit a critique's change is measured from: `rev` (`--baseline`)
+ * resolved in `root`, so the change is everything that differs from it,
+ * committed or not, untracked files included. With no revision named it's
+ * HEAD, so the uncommitted and untracked edits are the change, and, as for a
+ * run, null where there's no repository or no commit yet. A named revision
+ * that isn't a commit there, or one named where there's no repository, is a
+ * config error.
+ */
+export function resolve_baseline(root: string, rev: string | undefined): string | null {
+  if (rev === undefined) return capture_baseline(root);
+  if (!in_git_repo(root)) {
+    throw config_error(`--baseline needs the workspace to be a git repository: ${root}`);
+  }
+  // `--end-of-options` keeps a revision that starts with `-` from reading as a flag.
+  const resolved = git(root, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${rev}^{commit}`]);
+  const sha = resolved.stdout.trim();
+  if (resolved.status !== 0 || sha.length === 0) {
+    throw config_error(`--baseline names no commit in ${root}: ${rev}`);
+  }
+  return sha;
 }
 
 /** git's status letters, folded onto the four cases worth naming. Rename and

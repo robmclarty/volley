@@ -12,24 +12,29 @@
  *   │  ├─ run_loop                      run the flow (streamed when a sink is given), then the final summary
  *   │  └─ integrate                     a successful --worktree --git run only
  *   └─ report a kept checkout, or a salvaged branch (re-stamping the summary)
+ *
+ *   run_critique
+ *   ├─ resolve the baseline              --baseline, else HEAD; a bad revision exits 5
+ *   ├─ initialize the run's state
+ *   └─ run the critique flow             one round on the critic's engine alone, then the final summary
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { run } from 'fascicle';
 import { filesystem_logger, tee_logger } from 'fascicle/adapters';
 import type { Engine, RunOptions, Step, TrajectoryLogger } from 'fascicle';
 import type { BashExecutor } from './builder/tools.js';
-import { capture_baseline } from './changes.js';
-import { create_seat_engines, dispose_seat_engines } from './engine.js';
+import { capture_baseline, resolve_baseline } from './changes.js';
+import { create_seat_engines, create_volley_engine, dispose_seat_engines } from './engine.js';
 import type { SeatEngines } from './engine.js';
-import { build_flow } from './flow.js';
-import type { BuilderSeat, CriticSeat, LoopOutcome } from './flow.js';
+import { build_critique_flow, build_flow } from './flow.js';
+import type { BuilderSeat, CriticSeat } from './flow.js';
 import type { CheckGate } from './phases.js';
 import { run_result_from_state } from './iteration.js';
 import { initial_state, status_of } from './loop_state.js';
 import { write_run_summary } from './summary.js';
 import type { Renderer } from './render/renderer.js';
-import { error_kind } from './types.js';
-import type { LoopState, ResolvedConfig, RunInput, RunResult, RunStatus } from './types.js';
+import { config_error, error_kind } from './types.js';
+import type { LoopState, ResolvedConfig, RunResult, RunStatus } from './types.js';
 import {
   initialize_run_state,
   integrate_worktree,
@@ -222,12 +227,12 @@ async function run_loop(
  * ones the run hands out as parents, so the file's parent links stay whole.
  * The sink sees parent ids it never issued, which costs an ACP consumer
  * nothing: it counts a step's runs by the `id` on each `span_start`. */
-function execute_flow(
+function execute_flow<I, O>(
   config: ResolvedConfig,
-  deps: OrchestratorDeps,
-  flow: Step<RunInput, LoopOutcome>,
-  input: RunInput,
-): Promise<LoopOutcome> {
+  deps: Pick<OrchestratorDeps, 'trajectory' | 'abort' | 'install_signal_handlers'>,
+  flow: Step<I, O>,
+  input: I,
+): Promise<O> {
   const file = filesystem_logger({
     output_path: state_path(config, 'trajectory.jsonl'),
   });
@@ -279,5 +284,73 @@ function finalize_failed_run(config: ResolvedConfig, err: unknown): void {
     });
   } catch {
     // Never mask the original failure with a bookkeeping error.
+  }
+}
+
+/** What a critique runs with: what a run does, less the builder's seat, plus
+ * the revision its change is measured from. */
+export type CritiqueDeps = Omit<OrchestratorDeps, 'seats'> & {
+  /** The revision the change under review is measured from (`--baseline`):
+   * everything that differs from it, committed or not, untracked files
+   * included. HEAD when absent, so the uncommitted edits are the change. */
+  baseline?: string;
+  /** The critic's tools in place of volley's reads, as for a run's critic. */
+  critic?: Omit<CriticSeat, 'engine'>;
+};
+
+/**
+ * `volley critique`: the check and the critic, once, over a change already
+ * made. No builder is constructed, and the engine serves the critic's seat
+ * alone, so a critic can be measured on fixed, labeled changes without paying
+ * for builder turns. It writes the state a one-round run does, with the mode
+ * recorded, and ends `success` on approval over a green check, else
+ * `rejected`.
+ */
+export async function run_critique(config: ResolvedConfig, deps: CritiqueDeps): Promise<RunResult> {
+  if (config.mode !== 'critique') {
+    throw config_error("run_critique needs a config resolved with mode 'critique'");
+  }
+  const { renderer } = deps;
+  // First, so a revision that isn't a commit fails before any state is written.
+  const baseline = resolve_baseline(config.workspace, deps.baseline);
+  initialize_run_state(config);
+  write_resolved_config(config);
+  renderer.info(`state: ${run_state_dir(config)}`);
+  renderer.info(
+    baseline === null
+      ? 'baseline: none (not a git repository, or no commit yet); the critic reviews the tree'
+      : `baseline: ${baseline}`,
+  );
+
+  const engine =
+    deps.engine ??
+    create_volley_engine({
+      workspace: config.workspace,
+      critic_provider: config.critic_provider,
+      critic_url: config.critic_url,
+    });
+  const flow = build_critique_flow({
+    config,
+    renderer,
+    baseline,
+    critic: { ...deps.critic, engine },
+    ...(deps.check !== undefined ? { check: deps.check } : {}),
+  });
+  try {
+    const value = await execute_flow(config, deps, flow, initial_state());
+    const passed = value.check?.ok === true && value.verdict === 'approved';
+    const result = run_result_from_state(
+      config,
+      value,
+      passed ? 'success' : 'rejected',
+      new Date().toISOString(),
+    );
+    write_run_summary(config, result);
+    return result;
+  } catch (err) {
+    finalize_failed_run(config, err);
+    throw err;
+  } finally {
+    await engine.dispose();
   }
 }

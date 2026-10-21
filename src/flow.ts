@@ -5,6 +5,11 @@
  * around the flow (workspace setup, the worktree lifecycle, `run`, the final
  * summary) in `./orchestrator.ts`.
  *
+ * A critique (`build_critique_flow`) is one round over a change already made,
+ * so it has no builder, no loop, and no guard: `measure`, which opens the
+ * round and measures the change from its baseline, then the same `check`,
+ * `critique`, and `record` a run's round ends with.
+ *
  * fascicle's `describe.diagram` draws the tree below from the flow itself, and
  * `test/unit/flow_diagram.test.ts` holds it to the code: change a row by changing
  * its step's `description`, then paste `pnpm diagram --prefix ' *   '` over it.
@@ -49,6 +54,7 @@ import {
   build_phase,
   check_phase,
   critique_phase,
+  measure_phase,
   record_phase,
   skip_verify_phase,
 } from './phases.js';
@@ -109,6 +115,27 @@ export function build_critic(deps: CriticDeps): CriticStep {
   );
 }
 
+/** The steps a run and a critique share, built one way for both. */
+function check_step(deps: PhaseDeps): Step<LoopState, LoopState> {
+  return step('check', (s: LoopState, ctx) => check_phase(deps, s, ctx), {
+    description: 'the deterministic gate: checkride, a command, or none',
+  });
+}
+
+function critique_step(deps: PhaseDeps, seat: CriticSeat): Step<LoopState, LoopState> {
+  const critic = build_critic({ ...seat, config: deps.config, on_chunk: deps.renderer.critic_chunk });
+  return step('critique', (s: LoopState, ctx) => critique_phase(deps, critic, s, ctx), {
+    description: "the read-only critic's verdict and feedback",
+    arm: critic,
+  });
+}
+
+function record_step(deps: PhaseDeps): Step<LoopState, LoopState> {
+  return step('record', (s: LoopState) => record_phase(deps, s), {
+    description: 'archive the iteration and rewrite the run summary',
+  });
+}
+
 export function build_flow(
   deps: FlowDeps,
   resume_from: LoopState | null,
@@ -120,11 +147,6 @@ export function build_flow(
     config,
     on_chunk: renderer.builder_chunk,
     bash_executor: deps.bash_executor,
-  });
-  const critic = build_critic({
-    ...deps.seats.critic,
-    config,
-    on_chunk: renderer.critic_chunk,
   });
 
   // `build` and `critique` hand their model boundary to `ctx.call` from inside
@@ -138,17 +160,9 @@ export function build_flow(
   const skip_verify = step('skip_verify', (s: LoopState) => skip_verify_phase(deps, s), {
     description: 'record the check as skipped and call no critic',
   });
-  const check = step('check', (s: LoopState, ctx) => check_phase(deps, s, ctx), {
-    description: 'the deterministic gate: checkride, a command, or none',
-  });
-  const critique = step(
-    'critique',
-    (s: LoopState, ctx) => critique_phase(deps, critic, s, ctx),
-    { description: "the read-only critic's verdict and feedback", arm: critic },
-  );
-  const record = step('record', (s: LoopState) => record_phase(deps, s), {
-    description: 'archive the iteration and rewrite the run summary',
-  });
+  const check = check_step(deps);
+  const critique = critique_step(deps, deps.seats.critic);
+  const record = record_step(deps);
 
   const verify: Step<LoopState, LoopState> = branch({
     name: 'verify',
@@ -175,5 +189,22 @@ export function build_flow(
     }),
     finish: (s, { converged }) => ({ value: s, converged }),
     max_rounds: remaining_iterations(config, resume_from),
+  });
+}
+
+/** What a critique's flow is built from: the step bodies' dependencies and the
+ * critic seat. There's no builder seat, so no builder is ever constructed. */
+export type CritiqueFlowDeps = PhaseDeps & { critic: CriticSeat };
+
+/** A critique: one round over a change already made. `measure` opens it and
+ * measures the change from the baseline, then the check, the critic, and the
+ * record, as in a run's round. No loop and no guard: there is nothing to
+ * iterate on, and the caller reads the outcome off the final state. */
+export function build_critique_flow(deps: CritiqueFlowDeps): Step<LoopState, LoopState> {
+  const measure = step('measure', (s: LoopState, ctx) => measure_phase(deps, s, ctx), {
+    description: 'open the round and measure the change under review',
+  });
+  return sequence([measure, check_step(deps), critique_step(deps, deps.critic), record_step(deps)], {
+    name: 'critique_run',
   });
 }

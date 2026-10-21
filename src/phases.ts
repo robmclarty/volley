@@ -129,10 +129,15 @@ function report_changes(
   if (changes.gate_edits.length === 0) return;
   const hidden = changes.gate_edits.length - LISTED_GATE_EDITS;
   const listed = changes.gate_edits.slice(0, LISTED_GATE_EDITS).join(', ');
+  // A critique's change has no builder behind it, as far as volley knows.
+  const [who, whose, edits] =
+    config.mode === 'critique'
+      ? ['the change under review touches', 'whether it passes', 'the change edits']
+      : ['the builder changed', 'whether its work passes', 'the builder can edit'];
   renderer.warn(
-    `gate edit: the builder changed ${String(changes.gate_edits.length)} file(s) that decide ` +
-      `whether its work passes — ${listed}${hidden > 0 ? ` (+${String(hidden)} more)` : ''}. ` +
-      'A green check proves less when the builder can edit the gate; the critic is told about ' +
+    `gate edit: ${who} ${String(changes.gate_edits.length)} file(s) that decide ` +
+      `${whose} — ${listed}${hidden > 0 ? ` (+${String(hidden)} more)` : ''}. ` +
+      `A green check proves less when ${edits} the gate; the critic is told about ` +
       'this and the run summary records it.' +
       // The halt lands at the loop guard, after this iteration's check and
       // critic have had their say — so promise the outcome, not the timing.
@@ -248,6 +253,15 @@ export async function build_phase(
     );
   }
   return { ...built, changes };
+}
+
+/** `measure`: a critique's one round opens, and the change under review is
+ * measured from the baseline, as a run measures the builder's work. */
+export function measure_phase(deps: PhaseDeps, s: LoopState, ctx: RunContext): LoopState {
+  const next = next_iteration(s);
+  emit(ctx, { volley: 'round_start', round: next.iteration });
+  const root = build_root(deps.config.workspace, deps.config.worktree);
+  return { ...next, changes: measure_changes(deps, root) };
 }
 
 /** `skip_verify`: the build alone crossed the cost cap, so the check is recorded

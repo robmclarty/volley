@@ -3,7 +3,8 @@
  * plus the pieces a parent harness would embed.
  */
 export { resolve_config, load_config_file, expand_at_file } from './config.js';
-export { run_volley } from './orchestrator.js';
+export { run_critique, run_volley } from './orchestrator.js';
+export type { CritiqueDeps } from './orchestrator.js';
 export { gate, initial_state, status_of } from './loop_state.js';
 export { verdict_schema } from './critic/run.js';
 export type { VerdictOutput } from './critic/run.js';
@@ -47,6 +48,7 @@ export type {
   LoopState,
   PhaseRecord,
   ResolvedConfig,
+  RunMode,
   RunResult,
   RunStatus,
   Verdict,
