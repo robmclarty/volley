@@ -5,8 +5,8 @@ gated by checkride, running inside volley's **hardened Docker sandbox**
 over a **per-run git worktree**. The builder's `fetch` tool is
 enabled; the run targets **$0** and — once deps are warmed — **offline**. This is
 the local arm of the v3 comparison; its twin is `examples/all-claude`. Both run
-the **same task, criteria, checkride gate, and caps**, so diffing their
-`.volley/summary.json` `comparison` blocks isolates model-vs-transport.
+the **same task, criteria, checkride gate, and caps**, so diffing the
+`comparison` blocks of their runs' `summary.json` isolates model-vs-transport.
 
 ## Prerequisites
 
@@ -56,6 +56,19 @@ the **same task, criteria, checkride gate, and caps**, so diffing their
   The per-run worktree then inherits this install: volley links the workspace's
   `node_modules` into the fresh worktree at creation (`src/worktree.ts`), so the
   check gate and the builder's `bash` find the toolchain without a re-install.
+- **A state directory for each run**: volley inside keeps the run's state at
+  `/home/node/.local/state/volley/<run id>/`, which sits on the read-only rootfs
+  until you mount the run's own host directory there. Pick a fresh run id each
+  time and create its directory first, empty (on Linux, Docker would create a
+  missing one owned by root, which the container's user can't write):
+  ```
+  RUN_ID="all-local-$(date +%Y%m%d-%H%M%S)"
+  STATE="${XDG_STATE_HOME:-$HOME/.local/state}/volley"
+  mkdir -p "$STATE/$RUN_ID"
+  ```
+  Mount that one directory, never `$STATE` itself: the builder runs arbitrary
+  commands, and with the whole root mounted it could read or rewrite every other
+  run's state.
 
 ## Run: launch volley *inside* its container
 
@@ -82,11 +95,18 @@ docker run --rm \
   --read-only --tmpfs /tmp --tmpfs /run --tmpfs /home/node/.cache \
   -e HOME=/home/node -e VOLLEY_MODEL_HOST=host.docker.internal \
   -v "$PWD/examples/all-local:/workspace" \
+  -v "$STATE/$RUN_ID:/home/node/.local/state/volley/$RUN_ID" \
   -v volley-pnpm-store:/home/node/.local/share/pnpm/store \
   -w /workspace \
   volley-sandbox:latest \
-  --config /workspace/volley.config.ts --workspace /workspace/workspace
+  --config /workspace/volley.config.ts --workspace /workspace/workspace \
+  --run-id "$RUN_ID"
 ```
+
+The run's state lands in `$STATE/$RUN_ID/` on the host. To resume it, run the
+same `docker run` line with `resume "$RUN_ID"` in place of the volley args, not
+`volley resume` on the host: the builder could rewrite that directory, its
+`config.json` included, and a resume trusts it.
 
 Swap the model without editing the blessed config by appending
 `--builder-model <tag> --critic-model <tag>` (e.g. `qwen3.6:latest`).
@@ -117,7 +137,7 @@ on any failure) by appending `--dry-run` to the same `docker run` line:
 
 ```
 … volley-sandbox:latest --config /workspace/volley.config.ts \
-    --workspace /workspace/workspace --dry-run
+    --workspace /workspace/workspace --run-id "$RUN_ID" --dry-run
 ```
 
 ## Confounds this arm carries (disclosed, not narrowed)

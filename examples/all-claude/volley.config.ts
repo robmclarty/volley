@@ -4,7 +4,7 @@
 //
 // Paired with examples/all-local: identical task, criteria, checkride gate, and
 // caps — only the model + transport (and containment) differ. Running both and
-// diffing their `.volley/summary.json` `comparison` blocks isolates model-vs-
+// diffing their runs' `summary.json` `comparison` blocks isolates model-vs-
 // transport (verification §4).
 //
 // Run (host, no Docker):

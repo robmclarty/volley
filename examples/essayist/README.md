@@ -40,11 +40,14 @@ VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1 volley \
 
 A local builder is refused unless contained, so the real run launches
 volley inside its sandbox container exactly as `examples/all-local/README.md`
-documents — same hardened flags, this example dir as the mount. The config's
-repo-root-relative paths are re-pointed at the mount with flag overrides
-(`@` accepts absolute paths):
+documents — same hardened flags, this example dir as the mount, and the run's
+own state directory mounted beside it. The config's repo-root-relative paths
+are re-pointed at the mount with flag overrides (`@` accepts absolute paths):
 
 ```sh
+RUN_ID="essayist-$(date +%Y%m%d-%H%M%S)"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/volley"
+mkdir -p "$STATE/$RUN_ID"
 docker run --rm \
   --network volley-sandbox-net --add-host host.docker.internal:host-gateway \
   --user "$(id -u):$(id -g)" \
@@ -54,17 +57,19 @@ docker run --rm \
   --read-only --tmpfs /tmp --tmpfs /run --tmpfs /home/node/.cache \
   -e HOME=/home/node -e VOLLEY_MODEL_HOST=host.docker.internal \
   -v "$PWD/examples/essayist:/workspace" \
+  -v "$STATE/$RUN_ID:/home/node/.local/state/volley/$RUN_ID" \
   -w /workspace \
   volley-sandbox:latest \
   --config /workspace/volley.config.ts \
   --prompt @/workspace/brief.md \
   --criteria @/workspace/rubric.md \
   --critic /workspace/critic.md \
-  --workspace /workspace/workspace
+  --workspace /workspace/workspace \
+  --run-id "$RUN_ID"
 ```
 
 The run writes `essay.md` into `workspace/` — the essay is the artifact, read
-it. `.volley/` under the workspace carries the run state and
+it. `$STATE/$RUN_ID/` on the host carries the run state and its
 `summary.json`.
 
 ## Sweeping the critic seat

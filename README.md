@@ -54,8 +54,8 @@ volley \
 The cap is enforced in the loop guard after each phase. Sessions are never
 killed mid-flight for cost (a builder killed mid-edit leaves the workspace
 undefined), so set the cap below your true ceiling by roughly one iteration's
-expected cost. Per-run totals land in `.volley/summary.json` and the final
-terminal summary. An [OpenRouter](#openrouter) seat's cost is the charge
+expected cost. Per-run totals land in the run's `summary.json` (see
+[Run artifacts](#run-artifacts)) and the final terminal summary. An [OpenRouter](#openrouter) seat's cost is the charge
 OpenRouter reports for each call, so the cap trips on one as on any other.
 
 ## How it works
@@ -81,7 +81,7 @@ prompt ──> builder (full agentic session in your workspace)
 - **Critic** is read-only (`Read`, `Grep`, `Glob` — no write path at all) and
   returns a schema-validated `{ verdict, feedback, unmet_criteria }`. It is told
   which files the builder changed, so it reviews a change rather than a tree.
-  The harness writes `.volley/feedback.md` and `.volley/verdict`; the critic
+  The harness writes the run's `feedback.md` and `verdict`; the critic
   cannot get them wrong.
 
 Each iteration is a fresh session — no context carries over except through the
@@ -178,7 +178,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--gate-paths` | (built-in list) | Comma-separated globs naming the gate — tests, fixtures, check config. Replaces the defaults; see [What the builder changed](#what-the-builder-changed). |
 | `--fail-on-gate-edit` | off | Halt the run (exit 8) if the builder edits a gate path, instead of reporting it. |
 | `--sandbox-image` | `volley-sandbox:latest` | Container image for the local-builder sandbox. Or `VOLLEY_SANDBOX_IMAGE`. |
-| `--state-dir` | the workspace's `.volley/` | Keep each run's state under `<path>/<run id>/` instead, and none in the workspace (see [Run artifacts](#run-artifacts)). Or `state_dir` in a config file. |
+| `--state-dir` | `$XDG_STATE_HOME/volley`, else `~/.local/state/volley` | The root each run keeps its state under, at `<path>/<run id>/`, never in the workspace (see [Run artifacts](#run-artifacts)). Or `state_dir` in a config file. |
 | `--run-id` | a fresh UUID | The run's id, naming its run state and its `volley/<id>` branch, so a harness that owns the id finds it in both. Letters, digits, `-`, and `_`, starting with a letter or digit. |
 | `--dry-run` | off | Validate config, run `checkride doctor`, probe each tool-loop seat's model endpoint (local or OpenRouter), run the critic-seat canary (for a local critic), then exit. |
 | `--config` | — | TypeScript config file (`VolleyConfig` default export). CLI flags override. |
@@ -229,14 +229,17 @@ export default config;
 ### Resume
 
 ```sh
-volley resume <run-id>            # in the workspace directory
-volley resume <run-id> --workspace ./my-project
+volley resume <run-id>                             # from any directory
 volley resume <run-id> --state-dir ~/volley-runs   # a run started with --state-dir
+volley resume <run-id> --workspace ./my-project    # a run an older volley kept in .volley/
 ```
 
-Given the root a run was started under, `resume` finds it at
-`<root>/<run-id>/` from any directory, since the run's recorded config names its
-workspace.
+`resume` finds the run at `<root>/<run-id>/` under `--state-dir`, else the
+default root, from any directory, since the run's recorded config names its
+workspace. A run an older volley started keeps its state in the workspace's
+`.volley/`, and resumes there: point `--workspace` at it, or run `resume` from
+inside it. A run directory with a symbolic link in it is refused, since volley
+never writes one.
 
 Continues from the last completed iteration with the saved feedback and cost
 totals. An iteration interrupted mid-phase is discarded and re-run.
@@ -272,9 +275,10 @@ local providers share one GPU, so parallel combos would thrash the model loader.
 Each run forces `--worktree --discard-worktree` for a clean per-run reset — a
 sweep wants verdicts, so each seat's effects are isolated and then thrown away,
 leaving neither a branch nor a commit behind — so the **workspace must be a git
-repository**. Every attempt's run state is written to
-`.volley-matrix/<builder>__<critic>/run-NN/summary.json`, the whole sweep to
-`.volley-matrix/matrix.json`, and one aggregate table goes to stderr:
+repository**. Each attempt keeps its run state under the state root like any
+run, and its summary, which names that state as `run_state_dir`, is copied to
+`.volley-matrix/<builder>__<critic>/run-NN/summary.json`. The whole sweep goes
+to `.volley-matrix/matrix.json`, and one aggregate table goes to stderr:
 
 ```
 builder         critic         pass  iters  wall    cost   salvage  flags       why
@@ -416,6 +420,24 @@ container, `claude_cli`'s subscription/OAuth token does not survive — it is
 mangled crossing the boundary — so a *contained* Claude role must drive by API
 key (`VOLLEY_AUTH_MODE=api_key` with `ANTHROPIC_API_KEY`); the all-Claude
 subscription path stays on the host, Docker-free.
+
+**A contained run's state needs a mount of its own.** The container's root
+filesystem is read-only, so volley inside has nowhere to keep the run's state
+until you mount the run's own host directory where it looks:
+
+1. Create `<root>/<run id>/` on the host first, empty. On Linux, Docker creates
+   a missing one owned by root, and the container's user can't write it.
+2. Mount it at `/home/node/.local/state/volley/<run id>`. That's
+   `SANDBOX_STATE_ROOT`, and `run_state` on `sandbox_run_args` renders the
+   flag.
+3. Pass volley the same `--run-id`.
+
+Without the mount, the run stops before any spend (exit 5) and says what to
+mount. Mount that one directory, never the whole root: the builder runs
+arbitrary commands, and with the root mounted it could read every other run's
+trajectory or plant a check in another run's config. For the same reason,
+resume a contained run inside the container, with the same mount, not on the
+host. Its config is the builder's to rewrite, and a resume trusts it.
 
 To run a local builder uncontained on the host anyway, opt out with
 `--allow-unsandboxed-builder` (or `VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1`), which
@@ -665,12 +687,13 @@ another way.
 
 ### Where its state goes
 
-Nothing of volley's own lands in the repo. Each prompt's run state goes to
+Nothing of volley's own lands in the repo. Each prompt's run state goes under
+the same state root as any run's ([Run artifacts](#run-artifacts)):
 `<root>/<run id>/`, where the root is `--state-dir`, else
-`$XDG_STATE_HOME/volley`, else `~/.local/state/volley`. Nothing prunes old runs.
-The whole root is safe to delete whenever no prompt is running. A run's
-`trajectory.jsonl` there replays in `fascicle-viewer` like a CLI run's
-([Run artifacts](#run-artifacts)).
+`$XDG_STATE_HOME/volley`, else `~/.local/state/volley`. An unwritable root
+stops `volley acp` at startup, so it shows once in the agent log. The whole
+root is safe to delete whenever no prompt is running. A run's
+`trajectory.jsonl` there replays in `fascicle-viewer` like a CLI run's.
 
 ### Zed setup
 
@@ -748,7 +771,7 @@ iteration and reports what moved:
   which ones moved.
 - Changed paths matching the **gate** — the tests, fixtures, and check
   configuration that decide whether the work passes — are called out separately
-  in the prompt, listed in `.volley/summary.json` as `comparison.gate_edits`,
+  in the prompt, listed in the run's `summary.json` as `comparison.gate_edits`,
   and warned about on stderr as they happen.
 
 A gate edit is not misconduct: plenty of tasks are *about* the tests. It is the
@@ -777,10 +800,13 @@ that `--fail-on-gate-edit` cannot fire there.
 
 ## Run artifacts
 
-By default, everything volley knows lives in the workspace:
+Everything volley knows about a run lives in a directory of its own, outside
+the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
+`state_dir` in a config file), else `$XDG_STATE_HOME/volley`, else
+`~/.local/state/volley`.
 
 ```
-.volley/
+<root>/<run id>/
   config.json          # resolved run config (immutable per run)
   summary.json         # run-level usage, cost, status
   trajectory.jsonl     # every fascicle trajectory event (replayable, below)
@@ -789,22 +815,32 @@ By default, everything volley knows lives in the workspace:
   iterations/NNN/      # per-iteration archive: feedback, verdict, check artifacts, summary
 ```
 
-A stale `.volley/` from a previous run is rotated to `.volley.bak.<timestamp>/`.
+- **Why outside.** Some checks read every file in the tree, dot-directories
+  included, as markdownlint-cli2 and checkride's links walk do. Kept in the
+  workspace, the run's own `feedback.md` would fail them from the second
+  iteration on, a failure the builder can't fix. Kept out, the workspace holds
+  only the builder's work, and `--git` checkpoints never commit volley's files.
+- **Finding a run.** A run prints `state: <dir>` when it starts and again in its
+  final summary, and `--json` and `summary.json` carry it as `run_state_dir`.
+  `--dry-run` names the root, and `--run-id` names the directory.
+- **Unwritable.** A run directory volley can't write is a configuration error
+  (exit 5) before any spend. In the sandbox container, mount the run's own
+  directory ([Local builder](#local-builder)).
+- **Pruning.** Nothing prunes old runs. A root volley creates is yours alone
+  (0700), since trajectories hold prompts and tool output. A reused `--run-id`
+  rotates the earlier run aside to `<run id>.bak.<timestamp>/`.
+- **Older runs.** An older volley kept the same files in the workspace's
+  `.volley/`. `volley resume` still finds such a run there, and resumes it in
+  place.
 
-With `--state-dir <root>` (or `state_dir` in a config file), each run writes the
-same files to `<root>/<run id>/` instead, and nothing to the workspace. A
-directory per run never needs rotating, and `config.json` records the root.
-`volley acp` always works this way, under a root of its own
-([Where its state goes](#where-its-state-goes)). `volley matrix` still writes
-its sweep to `.volley-matrix/` in the workspace, and a base config's
-`state_dir` moves only each seat's run state.
+`volley matrix` writes its sweep to `.volley-matrix/` in the workspace, and a
+base config's `state_dir` moves each seat's run state as it would any run's.
 
 The trajectory replays in fascicle's bundled viewer — the `fascicle-viewer` bin
 ships inside the `fascicle` package; there is no separate viewer package:
 
 ```sh
-pnpm dlx --package=fascicle fascicle-viewer .volley/trajectory.jsonl
-pnpm dlx --package=fascicle fascicle-viewer <root>/<run id>/trajectory.jsonl   # under --state-dir
+pnpm dlx --package=fascicle fascicle-viewer ~/.local/state/volley/<run id>/trajectory.jsonl
 ```
 
 ## Environment variables
@@ -813,8 +849,8 @@ See [.env.example](./.env.example): `VOLLEY_CLAUDE_BIN`, `VOLLEY_AUTH_MODE`,
 `VOLLEY_LOG_LEVEL`, `VOLLEY_NO_COLOR`, `VOLLEY_PRICING_PATH`, the
 `ANTHROPIC_API_KEY` billing-meter warning, each seat's base URL
 (`VOLLEY_OLLAMA_URL`, `VOLLEY_LMSTUDIO_URL`, `VOLLEY_OPENROUTER_URL`), and
-`OPENROUTER_API_KEY` for [OpenRouter](#openrouter) seats. `volley acp` also
-reads `XDG_STATE_HOME` for its state root.
+`OPENROUTER_API_KEY` for [OpenRouter](#openrouter) seats. Every run reads
+`XDG_STATE_HOME` for its default state root.
 
 ## Development
 

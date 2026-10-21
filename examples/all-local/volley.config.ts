@@ -6,7 +6,7 @@
 //
 // Paired with examples/all-claude: identical task, criteria, checkride gate, and
 // caps — only the model + transport (and containment) differ. Diff the two
-// `.volley/summary.json` `comparison` blocks to isolate model-vs-transport.
+// runs' `summary.json` `comparison` blocks to isolate model-vs-transport.
 //
 // Run: launch volley INSIDE its sandbox container. A local builder is refused
 // unless volley detects containment, so the operator's `docker run` sets

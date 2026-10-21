@@ -4,8 +4,8 @@ Builder **and** critic on Claude via the `claude_cli` provider, on the host, wit
 **no Docker**. This is the reference arm of the v3 model-vs-transport comparison;
 its twin is `examples/all-local`. Both run the **same task, criteria, checkride
 gate, and caps** (`volley.config.ts` in each is identical but for provider, model,
-transport, and containment), so diffing their `.volley/summary.json` `comparison`
-blocks isolates what the model and transport actually changed.
+transport, and containment), so diffing the `comparison` blocks of their runs'
+`summary.json` isolates what the model and transport actually changed.
 
 ## Why no Docker here
 
@@ -28,8 +28,8 @@ the install.)
 
 The workspace ships a minimal `checkride.config.json` (types + test). `check:
 'auto'` detects it and gates each builder iteration on `tsc` + `vitest`; the
-critic (`reviewer` preset) then judges the criteria. On convergence,
-`.volley/summary.json` carries the `comparison` block (iterations-to-converge,
+critic (`reviewer` preset) then judges the criteria. On convergence, the run's
+`summary.json` (the run prints where) carries the `comparison` block (iterations-to-converge,
 wall-clock, cost, verdict, check trajectory, local salvage rate, transports).
 
 ## Confounds this arm holds constant (disclosed, not narrowed)
