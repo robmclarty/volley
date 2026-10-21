@@ -31,16 +31,26 @@ const CRITIC_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 
 const CRITIC_DISALLOWED_TOOLS = 'Write,Edit,MultiEdit,NotebookEdit,Bash';
 
+/** A critic that holds tools isn't constrain-decoded, so nothing stops it
+ * answering null for the feedback or the unmet list, as GLM did on approving.
+ * Both fields allow null and read it as empty, so that answer is a verdict
+ * rather than a schema failure that ends the run. fascicle sends the schema's
+ * input side, so the model sees each field as its type or null, still
+ * required; `.describe()` comes last so the description stays on the field. */
 export const verdict_schema = z.object({
   verdict: z.enum(['approved', 'changes_requested']),
   feedback: z
     .string()
+    .nullable()
+    .transform((feedback) => feedback ?? '')
     .describe(
       'Free-form markdown for the builder. Concrete and actionable. ' +
         'Will be passed verbatim into the next iteration.',
     ),
   unmet_criteria: z
     .array(z.string())
+    .nullable()
+    .transform((unmet) => unmet ?? [])
     .describe(
       'The specific acceptance criteria judged unmet, verbatim. Empty when approved.',
     ),

@@ -107,6 +107,39 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
     }
   });
 
+  it('reads a critic verdict with null feedback and unmet criteria as an empty one', async () => {
+    // A critic that holds tools isn't constrain-decoded, so the model can
+    // answer null where the schema asks for text and a list. fascicle's own
+    // parse used to refuse it, and the run exited 6.
+    const builder_server = await stub_openai('done');
+    const critic_server = await stub_openai(
+      JSON.stringify({ verdict: 'approved', feedback: null, unmet_criteria: null }),
+    );
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        openrouter_seats(workspace, {
+          builder_url: builder_server.url,
+          critic_url: critic_server.url,
+        }),
+        { env: { OPENROUTER_API_KEY: KEY } },
+      );
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        install_signal_handlers: false,
+      });
+
+      expect(result.status).toBe('success');
+      expect(result.final_verdict).toBe('approved');
+      const summary = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'summary.json'), 'utf8'),
+      ) as RunSummary;
+      expect(summary.comparison.unmet_criteria).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('sends both seats to VOLLEY_OPENROUTER_URL when neither names a URL', async () => {
     const shared_server = await stub_openai(APPROVED);
     const unused_server = await stub_openai(APPROVED);

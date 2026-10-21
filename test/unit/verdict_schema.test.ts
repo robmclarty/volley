@@ -47,4 +47,31 @@ describe('verdict_schema', () => {
     });
     expect(parsed.success).toBe(false);
   });
+
+  it('reads null feedback and unmet_criteria as empty', () => {
+    // A tool-using critic isn't constrain-decoded; GLM approved this way, and
+    // the run used to exit 6 on the schema failure.
+    const parsed = verdict_schema.safeParse({
+      verdict: 'approved',
+      feedback: null,
+      unmet_criteria: null,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual({ verdict: 'approved', feedback: '', unmet_criteria: [] });
+  });
+
+  it('shows the model each field as its type or null, still required and described', () => {
+    // What fascicle compiles: the schema's input side, at its default target.
+    const json = verdict_schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+    expect(json['required']).toEqual(['verdict', 'feedback', 'unmet_criteria']);
+    const properties = json['properties'] as Record<string, Record<string, unknown>>;
+    expect(properties['feedback']).toEqual({
+      description: expect.stringContaining('Free-form markdown for the builder.'),
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+    });
+    expect(properties['unmet_criteria']).toEqual({
+      description: expect.stringContaining('The specific acceptance criteria judged unmet'),
+      anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }],
+    });
+  });
 });
