@@ -48,6 +48,7 @@ function stub_summary(fields: {
     check_duration_ms: 0,
     final_verdict: converged ? 'approved' : null,
     salvaged_branch: null,
+    run_state_dir: '/state/volley/stub',
     comparison: {
       builder_transport: 'ai_sdk',
       critic_transport: 'ai_sdk',

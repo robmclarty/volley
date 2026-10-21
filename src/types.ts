@@ -307,7 +307,7 @@ export type RunInput = {
   resume_from: LoopState | null;
 };
 
-/** Projection of final loop state; `.volley/summary.json` mirrors this. */
+/** Projection of final loop state; the run's `summary.json` mirrors this. */
 export type RunResult = {
   run_id: string;
   status: RunStatus;
@@ -325,8 +325,13 @@ export type RunResult = {
    * other copy of its effects, so teardown commits them onto `volley/<run id>`
    * and keeps the branch instead of force-deleting it. Null whenever nothing
    * survived — every non-worktree run, every integrated run, every discarded
-   * one. `--json` consumers read it here; `.volley/summary.json` mirrors it. */
+   * one. `--json` consumers read it here; the run's `summary.json` mirrors it. */
   salvaged_branch: string | null;
+  /** Where this run keeps its config, summary, trajectory, feedback, verdict,
+   * and iterations: `<state_dir>/<run_id>/` under a state root, else the
+   * workspace's `.volley/`. Inside the sandbox container it is the container's
+   * path, which a harness maps back to the directory it mounted. */
+  run_state_dir: string;
 };
 
 export type VolleyPhase = 'builder' | 'critic' | 'check';

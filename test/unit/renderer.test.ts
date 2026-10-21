@@ -26,6 +26,7 @@ const RESULT: RunResult = {
   check_duration_ms: 500,
   final_verdict: 'approved',
   salvaged_branch: null,
+  run_state_dir: '/state/volley/r1',
 };
 
 function capture(mode: RenderMode, show_thinking = true) {
@@ -92,7 +93,7 @@ describe('renderer', () => {
     });
     const text = output();
     expect(text).toContain('truncated at 4000 chars');
-    expect(text).toContain('.volley/trajectory.jsonl');
+    expect(text).toContain("see the run's trajectory.jsonl");
   });
 
   it('final summary reports status, verdict, and costs', () => {
@@ -103,5 +104,6 @@ describe('renderer', () => {
     expect(text).toContain('verdict: approved');
     expect(text).toContain('total: $1.500');
     expect(text).toContain('100 in / 40 out');
+    expect(text).toContain('state: /state/volley/r1');
   });
 });

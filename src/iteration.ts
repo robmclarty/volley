@@ -162,6 +162,7 @@ export function run_result_from_state(
     // teardown when a converged `--worktree` run's work was kept on its branch,
     // which is the only moment the branch's survival is known.
     salvaged_branch: null,
+    run_state_dir: run_state_dir(config),
   };
 }
 

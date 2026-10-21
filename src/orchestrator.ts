@@ -33,6 +33,7 @@ import type { LoopState, ResolvedConfig, RunInput, RunResult, RunStatus } from '
 import {
   initialize_run_state,
   integrate_worktree,
+  run_state_dir,
   state_path,
   write_resolved_config,
 } from './workspace.js';
@@ -83,6 +84,7 @@ export async function run_volley(
   } else {
     initialize_run_state(config, { preserve: true });
   }
+  renderer.info(`state: ${run_state_dir(config)}`);
 
   // Say what this run will do with its effects before it spends anything — the
   // same notice `--dry-run` prints, repeated here so a run started without a dry
@@ -268,8 +270,10 @@ function finalize_failed_run(config: ResolvedConfig, err: unknown): void {
     const prior = existsSync(summary_path)
       ? (JSON.parse(readFileSync(summary_path, 'utf8')) as RunResult)
       : run_result_from_state(config, initial_state(), status, null);
+    // A summary an older volley wrote, resumed here, has no run_state_dir.
     write_run_summary(config, {
       ...prior,
+      run_state_dir: run_state_dir(config),
       status,
       completed_at: new Date().toISOString(),
     });

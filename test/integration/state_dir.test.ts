@@ -142,7 +142,11 @@ describe('a run under --state-dir', () => {
       for (const file of STATE_FILES) expect(existsSync(join(dir, file)), file).toBe(true);
       expect(readFileSync(join(dir, 'verdict'), 'utf8')).toBe('approved\n');
       expect(read_json(join(dir, 'config.json'))['state_dir']).toBe(root);
-      expect(read_json(join(dir, 'summary.json'))['status']).toBe('success');
+      expect(read_json(join(dir, 'summary.json'))).toMatchObject({
+        status: 'success',
+        run_state_dir: dir,
+      });
+      expect(result.run_state_dir).toBe(dir);
       expect(readdirSync(root)).toEqual(['rooted-run']);
 
       // Only the builder's own work is left in the workspace.
@@ -215,9 +219,10 @@ describe('a run without --state-dir', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       await run_once(checked_config(workspace, { run_id: 'first-run' }));
-      await run_once(checked_config(workspace, { run_id: 'second-run' }));
+      const second = await run_once(checked_config(workspace, { run_id: 'second-run' }));
 
       const dir = join(workspace, '.volley');
+      expect(second.run_state_dir).toBe(dir);
       for (const file of STATE_FILES) expect(existsSync(join(dir, file)), file).toBe(true);
       expect(read_json(join(dir, 'config.json'))).toMatchObject({
         run_id: 'second-run',

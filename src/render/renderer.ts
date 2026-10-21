@@ -31,7 +31,7 @@ export type RendererOptions = {
   color: boolean;
   max_cost_usd: number | null;
   /** Where the run's trajectory is written, named when verbose output is cut
-   * short (default: `.volley/trajectory.jsonl`). */
+   * short (default: "the run's trajectory.jsonl"). */
   trajectory_path?: string;
   write?: (text: string) => void;
 };
@@ -51,7 +51,7 @@ export type Renderer = {
 export function create_renderer(options: RendererOptions): Renderer {
   const write = options.write ?? ((text: string) => process.stderr.write(text));
   const { mode, color } = options;
-  const see_trajectory = `see ${options.trajectory_path ?? '.volley/trajectory.jsonl'}`;
+  const see_trajectory = `see ${options.trajectory_path ?? "the run's trajectory.jsonl"}`;
   const silent = mode === 'json';
   const streaming = mode === 'default' || mode === 'verbose';
 
@@ -165,6 +165,7 @@ export function create_renderer(options: RendererOptions): Renderer {
       line(
         `tokens: ${String(result.total_usage.input_tokens)} in / ${String(result.total_usage.output_tokens)} out`,
       );
+      line(`state: ${result.run_state_dir}`);
     },
   };
 }

@@ -107,7 +107,7 @@ export type ComparisonSummary = {
   critic_degrade_causes: DegradeCause[];
 };
 
-/** `RunResult` plus the comparison block; `.volley/summary.json` mirrors this. */
+/** `RunResult` plus the comparison block; the run's `summary.json` mirrors this. */
 export type RunSummary = RunResult & { comparison: ComparisonSummary };
 
 /** The subset of an archived per-iteration summary (written by

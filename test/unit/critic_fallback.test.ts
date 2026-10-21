@@ -282,6 +282,7 @@ function run_result(): RunResult {
     check_duration_ms: 5,
     final_verdict: 'approved',
     salvaged_branch: null,
+    run_state_dir: '/state/volley/test-run-id',
   };
 }
 

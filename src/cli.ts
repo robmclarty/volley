@@ -125,18 +125,15 @@ function render_mode(config: ResolvedConfig): RenderMode {
   return 'default';
 }
 
-/** `run_id` names the run whose trajectory the verbose hint points at under a
- * state root; a sweep passes a placeholder, since each seat has an id of its
- * own. */
+/** `run_id` names the run whose trajectory the verbose hint points at; a
+ * sweep passes a placeholder, since each seat has an id of its own. */
 function make_renderer(config: ResolvedConfig, run_id: string = config.run_id): Renderer {
   return create_renderer({
     mode: render_mode(config),
     show_thinking: config.show_thinking,
     color: colors_enabled(),
     max_cost_usd: config.max_cost_usd,
-    ...(config.state_dir === null
-      ? {}
-      : { trajectory_path: state_path({ ...config, run_id }, 'trajectory.jsonl') }),
+    trajectory_path: state_path({ ...config, run_id }, 'trajectory.jsonl'),
   });
 }
 
