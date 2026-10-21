@@ -83,6 +83,23 @@ function walk(root: string, start: string, limit: number): WalkEntry[] {
   return out;
 }
 
+/** The files a read tool's optional `path` covers: the whole tree, the tree
+ * under a directory, or the one file it names. A path that doesn't exist
+ * throws, so the seat reads why rather than an empty result that looks like
+ * "nothing matched". */
+function scoped_files(workspace: string, path: string | undefined, limit: number): WalkEntry[] {
+  const root = resolve(workspace);
+  if (path === undefined) return walk(root, root, limit);
+  const start = contain(workspace, path);
+  let is_dir: boolean;
+  try {
+    is_dir = statSync(start).isDirectory();
+  } catch {
+    throw new Error(`no such file or directory: ${path}`);
+  }
+  return is_dir ? walk(root, start, limit) : [{ rel: relative(root, start), abs: start }];
+}
+
 function build_regex(pattern: string, flags: string): RegExp {
   try {
     return new RegExp(pattern, flags);
@@ -101,7 +118,7 @@ const search_files_input = z.object({
   path: z
     .string()
     .optional()
-    .describe('Optional workspace-relative subdirectory to limit the search to.'),
+    .describe('Optional workspace-relative directory or file to limit the search to.'),
   ignore_case: z.boolean().optional().describe('Case-insensitive match. Default false.'),
 });
 
@@ -109,7 +126,7 @@ const list_files_input = z.object({
   path: z
     .string()
     .optional()
-    .describe('Optional workspace-relative subdirectory. Default: the workspace root.'),
+    .describe('Optional workspace-relative directory or file. Default: the workspace root.'),
   contains: z
     .string()
     .optional()
@@ -147,9 +164,8 @@ export function read_only_tools(workspace: string): Tool[] {
     input_schema: search_files_input,
     execute: (raw) => {
       const input = search_files_input.parse(raw);
-      const start = input.path !== undefined ? contain(workspace, input.path) : resolve(workspace);
       const regex = build_regex(input.pattern, input.ignore_case === true ? 'i' : '');
-      const files = walk(resolve(workspace), start, LIST_MAX_ENTRIES);
+      const files = scoped_files(workspace, input.path, LIST_MAX_ENTRIES);
       const hits: string[] = [];
       for (const file of files) {
         if (hits.length >= SEARCH_MAX_MATCHES) break;
@@ -181,8 +197,7 @@ export function read_only_tools(workspace: string): Tool[] {
     input_schema: list_files_input,
     execute: (raw) => {
       const input = list_files_input.parse(raw);
-      const start = input.path !== undefined ? contain(workspace, input.path) : resolve(workspace);
-      let files = walk(resolve(workspace), start, LIST_MAX_ENTRIES).map((f) => f.rel);
+      let files = scoped_files(workspace, input.path, LIST_MAX_ENTRIES).map((f) => f.rel);
       if (input.contains !== undefined) {
         const needle = input.contains;
         files = files.filter((f) => f.includes(needle));

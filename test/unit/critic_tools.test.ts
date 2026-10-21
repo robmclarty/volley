@@ -122,6 +122,33 @@ describe('search_files', () => {
     }
   });
 
+  it('searches inside the one file a path names', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      seed(workspace);
+      const tools = tool_map(workspace);
+      // A file path used to be walked as a directory, so this answered
+      // "no matches" while the line was right there.
+      const out = await call(tools.search_files!, { pattern: 'secret', path: 'src/a.ts' });
+      expect(out).toBe('src/a.ts:2: const secret = "x";');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('says so when the path does not exist', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      seed(workspace);
+      const tools = tool_map(workspace);
+      await expect(call(tools.search_files!, { pattern: 'answer', path: 'lib' })).rejects.toThrow(
+        'no such file or directory: lib',
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
   it('reports no matches cleanly and rejects bad regex', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -151,6 +178,20 @@ describe('list_files', () => {
       const filtered = await call(tools.list_files!, { contains: '.ts' });
       expect(filtered).toContain('src/a.ts');
       expect(filtered).not.toContain('README.md');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('lists the one file a path names, and says so when it does not exist', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      seed(workspace);
+      const tools = tool_map(workspace);
+      expect(await call(tools.list_files!, { path: 'src/b.ts' })).toBe('src/b.ts');
+      await expect(call(tools.list_files!, { path: 'src/c.ts' })).rejects.toThrow(
+        'no such file or directory: src/c.ts',
+      );
     } finally {
       cleanup();
     }

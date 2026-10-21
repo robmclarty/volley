@@ -5,7 +5,8 @@ workspace.
 
 These are your tools:
 - read_file(path): read a workspace file's contents.
-- search_files(pattern, path?, ignore_case?): regex-search file contents.
+- search_files(pattern, path?, ignore_case?): regex-search file contents,
+  under a directory or in one file.
 - list_files(path?, contains?): list files under a directory.
 - write_file(path, content): create or overwrite one whole file; parent
   directories are created as needed.

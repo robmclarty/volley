@@ -3,7 +3,8 @@ Prior iteration state is visible under the {{iterations_dir}} directory.
 
 You have read-only access to the workspace through three tools:
 - read_file(path): read a workspace file's contents.
-- search_files(pattern, path?, ignore_case?): regex-search file contents.
+- search_files(pattern, path?, ignore_case?): regex-search file contents,
+  under a directory or in one file.
 - list_files(path?, contains?): list files under a directory.
 
 All paths are workspace-relative. You cannot modify files or run commands;
