@@ -20,6 +20,10 @@ import type { StubOpenAi } from '../helpers/openai_stub.js';
 
 const KEY = 'sk-or-test';
 
+/** The test file's own state root (`test/setup.ts`), which an explicit env
+ * would otherwise hide, sending each run's state to the real home. */
+const ENV = { OPENROUTER_API_KEY: KEY, XDG_STATE_HOME: process.env['XDG_STATE_HOME'] };
+
 const APPROVED = JSON.stringify({
   verdict: 'approved',
   feedback: 'Looks good.',
@@ -74,7 +78,7 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
           builder_url: builder_server.url,
           critic_url: critic_server.url,
         }),
-        { env: { OPENROUTER_API_KEY: KEY } },
+        { env: ENV },
       );
       const result = await run_volley(config, {
         renderer: silent_renderer(),
@@ -98,7 +102,7 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
       }
 
       const summary = JSON.parse(
-        readFileSync(join(workspace, '.volley', 'summary.json'), 'utf8'),
+        readFileSync(join(result.run_state_dir, 'summary.json'), 'utf8'),
       ) as RunSummary;
       expect(summary.comparison.builder_transport).toBe('native');
       expect(summary.comparison.critic_transport).toBe('native');
@@ -122,7 +126,7 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
           builder_url: builder_server.url,
           critic_url: critic_server.url,
         }),
-        { env: { OPENROUTER_API_KEY: KEY } },
+        { env: ENV },
       );
       const result = await run_volley(config, {
         renderer: silent_renderer(),
@@ -132,7 +136,7 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
       expect(result.status).toBe('success');
       expect(result.final_verdict).toBe('approved');
       const summary = JSON.parse(
-        readFileSync(join(workspace, '.volley', 'summary.json'), 'utf8'),
+        readFileSync(join(result.run_state_dir, 'summary.json'), 'utf8'),
       ) as RunSummary;
       expect(summary.comparison.unmet_criteria).toEqual([]);
     } finally {
@@ -147,7 +151,7 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
     const { workspace, cleanup } = temp_workspace();
     try {
       const config = resolve_config(openrouter_seats(workspace), {
-        env: { OPENROUTER_API_KEY: KEY },
+        env: ENV,
       });
       const result = await run_volley(config, {
         renderer: silent_renderer(),
@@ -174,7 +178,7 @@ describe('both seats on openrouter, against stand-in OpenRouter servers', () => 
           builder_url: builder_server.url,
           critic_url: critic_server.url,
         }),
-        { env: { OPENROUTER_API_KEY: KEY } },
+        { env: ENV },
       );
       const code = await preflight(config, silent_renderer(), {}, {
         toolchain_missing: () => [],

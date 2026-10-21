@@ -5,7 +5,7 @@
  *
  *   serve_acp
  *   └─ per session/new: acp_turn        one step, whose id no model call shares
- *      └─ per prompt: run_volley        on session.cwd, its state under the acp root
+ *      └─ per prompt: run_volley        on session.cwd, its state under the state root
  *         ├─ builder                    fascicle's workspace tools + finish, asking through session.approve
  *         ├─ critic                     that set's three reads
  *         └─ trajectory                 the turn's own logger, so the builder's text,
@@ -47,7 +47,6 @@ import { create_renderer } from './render/renderer.js';
 import { build_run_summary } from './summary.js';
 import { config_error } from './types.js';
 import type { ResolvedConfig, RunResult, VolleyConfig } from './types.js';
-import { default_state_root } from './workspace.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -112,18 +111,18 @@ function refuse_unservable(raw: AcpFlags): void {
   }
 }
 
-/** The flags `volley acp` was started with, with acp's defaults filled in:
- * three rounds, and state outside the workspace. Each refusal, a missing seat
- * flag, and any other config error throws here, before serving: the whole
- * config resolves once against the system temp directory with a stand-in
- * task, since no session has named a workspace yet. */
+/** The flags `volley acp` was started with, with acp's default filled in:
+ * three rounds. Run state goes under the default root, outside the workspace,
+ * unless `--state-dir` names one, as it does for any run. Each refusal, a
+ * missing seat flag, and any other config error, an unwritable state root
+ * among them, throws here, before serving: the whole config resolves once
+ * against the system temp directory with a stand-in task, since no session has
+ * named a workspace yet. */
 export function acp_base_config(raw: AcpFlags, env: Env = process.env): AcpFlags {
   refuse_unservable(raw);
   const base: AcpFlags = {
     ...raw,
     max_iterations: raw.max_iterations ?? ACP_MAX_ITERATIONS,
-    state_dir:
-      raw.state_dir === undefined || is_blank(raw.state_dir) ? default_state_root(env) : raw.state_dir,
   };
   resolve_config(
     { ...base, workspace: tmpdir(), prompt: STAND_IN_TASK, criteria: STAND_IN_TASK },

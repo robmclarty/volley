@@ -33,8 +33,8 @@ export function default_state_root(
 export type StateLocation = Pick<ResolvedConfig, 'workspace' | 'state_dir' | 'run_id'>;
 
 /** Where a run keeps its config, summary, trajectory, feedback, verdict, and
- * iterations: `<state_dir>/<run_id>/` under a state root, else
- * `<workspace>/.volley/`. */
+ * iterations: `<state_dir>/<run_id>/` under its state root, or, in the layout
+ * older runs used (`state_dir` null), `<workspace>/.volley/`. */
 export function run_state_dir(run: StateLocation): string {
   return run.state_dir === null ? join(run.workspace, '.volley') : join(run.state_dir, run.run_id);
 }
@@ -79,6 +79,11 @@ export function initialize_run_state(
   const dir = run_state_dir(run);
   if (existsSync(dir) && options.preserve !== true && readdirSync(dir).length > 0) {
     renameSync(dir, `${dir}.bak.${backup_stamp()}`);
+  }
+  if (run.state_dir !== null && !existsSync(run.state_dir)) {
+    // Trajectories hold prompts and tool output, so a root volley creates is
+    // its user's alone, as the XDG spec asks of a state directory.
+    mkdirSync(run.state_dir, { recursive: true, mode: 0o700 });
   }
   mkdirSync(join(dir, 'iterations'), { recursive: true });
 }

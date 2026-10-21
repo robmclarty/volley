@@ -14,6 +14,10 @@ import type { VolleyConfig } from '../../src/types.js';
 import { silent_renderer, temp_workspace } from '../helpers/harness.js';
 import { close_servers, start_server } from '../helpers/http_server.js';
 
+/** The test file's own state root (`test/setup.ts`), which an explicit env
+ * would otherwise hide, sending each run's state to the real home. */
+const ENV = { XDG_STATE_HOME: process.env['XDG_STATE_HOME'] };
+
 type SeenRequest = { method: string; path: string; model: string | null };
 type StubOllama = { url: string; seen: SeenRequest[] };
 
@@ -125,7 +129,7 @@ describe('per-seat model URLs, against two stand-in Ollama servers', () => {
           builder_url: builder_server.url,
           critic_url: critic_server.url,
         }),
-        { env: {} },
+        { env: ENV },
       );
       const result = await run_volley(config, {
         renderer: silent_renderer(),
@@ -153,7 +157,7 @@ describe('per-seat model URLs, against two stand-in Ollama servers', () => {
     vi.stubEnv('VOLLEY_OLLAMA_URL', shared_server.url);
     const { workspace, cleanup } = temp_workspace();
     try {
-      const config = resolve_config(ollama_seats(workspace), { env: {} });
+      const config = resolve_config(ollama_seats(workspace), { env: ENV });
       const result = await run_volley(config, {
         renderer: silent_renderer(),
         install_signal_handlers: false,
@@ -177,7 +181,7 @@ describe('per-seat model URLs, against two stand-in Ollama servers', () => {
           builder_url: builder_server.url,
           critic_url: critic_server.url,
         }),
-        { env: {} },
+        { env: ENV },
       );
       const code = await preflight(config, silent_renderer(), {}, {
         toolchain_missing: () => [],

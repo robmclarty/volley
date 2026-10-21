@@ -334,10 +334,10 @@ function slug(model: string): string {
   return model.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
-/** One attempt's run summary, copied out of the run's own state before the
- * next attempt rotates a shared `.volley/` aside. Every attempt gets its own
- * `run-NN/` so a repeated seat keeps all of its evidence, not just the last
- * run's. */
+/** One attempt's run summary, copied out of the run's own state into the
+ * sweep, so the sweep keeps its evidence beside its table. Every attempt gets
+ * its own `run-NN/` so a repeated seat keeps all of its evidence, not just the
+ * last run's. */
 function persist_attempt(
   matrix_dir: string,
   combo: MatrixCombo,

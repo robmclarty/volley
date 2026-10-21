@@ -17,7 +17,7 @@ import {
   resolve_config,
 } from './config.js';
 import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
-import { load_resume_state } from './iteration.js';
+import { find_run_state, load_resume_state } from './iteration.js';
 import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
 import { run_volley } from './orchestrator.js';
 import { preflight } from './preflight.js';
@@ -33,7 +33,11 @@ import type {
   RunResult,
   VolleyConfig,
 } from './types.js';
-import { state_path } from './workspace.js';
+import { default_state_root, state_path } from './workspace.js';
+
+/** One help string for every command that takes a state root. */
+const STATE_DIR_HELP =
+  "Keep each run's state under <path>/<run id>/ (default: $XDG_STATE_HOME/volley, else ~/.local/state/volley)";
 
 type CliFlags = {
   prompt?: string;
@@ -262,7 +266,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--gate-paths <globs>', 'Comma-separated globs naming the gate (tests, fixtures, check config); replaces the defaults')
     .option('--fail-on-gate-edit', 'Halt the run if the builder edits a gate path (exit 8) instead of reporting it')
     .option('--sandbox-image <tag>', `Container image for the local-builder sandbox (default: ${DEFAULT_SANDBOX_IMAGE})`)
-    .option('--state-dir <path>', "Keep each run's state under <path>/<run id>/ instead of the workspace's .volley/")
+    .option('--state-dir <path>', STATE_DIR_HELP)
     .option('--run-id <id>', "The run's id, naming its volley/<id> branch (default: a fresh UUID)")
     .option('--dry-run', 'Validate config (and checkride doctor) without running')
     .option('--config <path>', 'TypeScript config file exporting a VolleyConfig')
@@ -295,10 +299,10 @@ async function main(argv: string[]): Promise<number> {
 
   cli
     .command('resume <run_id>', 'Resume a run from its last completed iteration')
-    .option('--workspace <path>', 'Workspace containing the .volley run state', {
+    .option('--workspace <path>', "Where a run an older volley started keeps its .volley/ state", {
       default: '.',
     })
-    .option('--state-dir <path>', 'State root the run was started under; finds it at <path>/<run_id>/ instead of in the workspace')
+    .option('--state-dir <path>', 'State root the run was started under (default: $XDG_STATE_HOME/volley, else ~/.local/state/volley)')
     .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')
     .option('--verbose', 'Show full tool inputs/outputs')
     .option('--quiet', 'Only phase transitions, cost updates, and the final summary')
@@ -307,17 +311,17 @@ async function main(argv: string[]): Promise<number> {
       // cac refuses any option this command doesn't declare, so what's left
       // once the lookup flags are taken out is the output flags alone.
       const { workspace = '.', stateDir, ...output } = flags;
-      // The root named here wins over the recorded one, so a moved root resumes
-      // where it now is.
-      const state_dir = stateDir === undefined ? null : resolve(stateDir);
+      // The run is looked for under the root named here, else the default, and
+      // where it's found wins over the recorded root, so a moved root resumes
+      // where it now is. A run an older volley kept in .volley/ resumes there.
+      const root = stateDir === undefined ? default_state_root(process.env) : resolve(stateDir);
+      const state_dir = find_run_state(workspace, run_id, root);
       const resume = load_resume_state(workspace, run_id, state_dir);
-      const merged = merge_flags(resume.raw_config, {
-        ...output,
-        ...(state_dir !== null ? { stateDir: state_dir } : {}),
-      });
+      const merged = merge_flags(resume.raw_config, output);
       const config = resolve_config(merged, {
         run_id: resume.run_id,
         started_at: resume.started_at,
+        state_dir,
       });
       if (resume.iterations_completed >= config.max_iterations) {
         throw config_error(
@@ -389,7 +393,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
     .option('--max-iterations <n>', `Iteration cap per prompt (default: ${String(ACP_MAX_ITERATIONS)})`)
     .option('--max-cost-usd <usd>', 'Hard USD ceiling per prompt, enforced in the loop guard')
-    .option('--state-dir <path>', "Keep each run's state under <path>/<run id>/ (default: $XDG_STATE_HOME/volley, else ~/.local/state/volley)")
+    .option('--state-dir <path>', STATE_DIR_HELP)
     .option('--worktree', 'Refused: a sibling worktree sits outside the project the editor has open')
     .option('--git', 'Refused: phase commits would bypass the permission prompts')
     .option('--json', 'Refused: stdout carries the protocol')

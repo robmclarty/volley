@@ -40,7 +40,7 @@ export type ToolSet = 'volley' | 'acp';
  * escape. Returns the absolute path; throws on containment violation. The
  * `workspace` root passed here is the build root, which is the per-run git
  * worktree under `--worktree` (`build_root`), not necessarily the
- * control-plane workspace that holds `.volley/`. */
+ * workspace the run was started on. */
 export function contain(workspace: string, rel: string): string {
   const root = resolve(workspace);
   const candidate = isAbsolute(rel) ? resolve(rel) : resolve(root, rel);

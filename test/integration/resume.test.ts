@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aborted_error } from 'fascicle';
-import { load_resume_state } from '../../src/iteration.js';
+import { find_run_state, load_resume_state } from '../../src/iteration.js';
 import { run_volley } from '../../src/orchestrator.js';
 import { exit_code_for_error } from '../../src/exit_codes.js';
 import { error_kind } from '../../src/types.js';
@@ -131,6 +131,56 @@ describe('resume', () => {
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
+      cleanup();
+    }
+  });
+
+  it('looks under the root, then in a .volley/ that names the run, and says where it looked', () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = mkdtempSync(join(tmpdir(), 'volley-state-'));
+    try {
+      const rooted = test_config({ workspace, run_id: 'rooted-run', state_dir: root });
+      initialize_run_state(rooted);
+      write_resolved_config(rooted);
+      // A run an older volley kept in the workspace.
+      const legacy = test_config({ workspace, run_id: 'legacy-run' });
+      initialize_run_state(legacy);
+      write_resolved_config(legacy);
+
+      expect(find_run_state(workspace, 'rooted-run', root)).toBe(root);
+      expect(find_run_state(workspace, 'legacy-run', root)).toBeNull();
+      expect(() => find_run_state(workspace, 'missing-run', root)).toThrow(
+        `run missing-run not found in ${join(root, 'missing-run')} or in ` +
+          `${join(workspace, '.volley')} (it holds run legacy-run)`,
+      );
+      expect(() => find_run_state(workspace, '../rooted-run', root)).toThrow('not a run id: ../rooted-run');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      cleanup();
+    }
+  });
+
+  it('refuses a run directory with a symlink in it, before reading or pruning anything', () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = mkdtempSync(join(tmpdir(), 'volley-state-'));
+    const host_dir = mkdtempSync(join(tmpdir(), 'volley-host-'));
+    try {
+      const config = test_config({ workspace, run_id: 'planted', state_dir: root });
+      initialize_run_state(config);
+      write_resolved_config(config);
+      // What a contained builder could leave in its own run's state: a
+      // half-finished iteration that is really a directory of the host's.
+      const planted = join(root, 'planted', 'iterations', '002');
+      symlinkSync(host_dir, planted);
+
+      expect(() => load_resume_state(workspace, 'planted', root)).toThrow(
+        `refusing to resume: ${planted} is a symbolic link, which volley never writes`,
+      );
+      // The prune of half-finished iterations never reached the host's directory.
+      expect(existsSync(host_dir)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(host_dir, { recursive: true, force: true });
       cleanup();
     }
   });

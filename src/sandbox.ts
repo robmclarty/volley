@@ -124,16 +124,21 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
  *
  * `run_state` binds the run's own state directory on the host,
  * `<root>/<run_id>/`, at `<SANDBOX_STATE_ROOT>/<run_id>/`, where volley inside
- * keeps that run's state when no `--state-dir` names a root. That lands it
- * where a host-side `volley resume <run_id>` looks. Only the one directory is
- * mounted, never the root: the builder inside runs arbitrary commands, so it
- * can rewrite its own run's state but can't read another run's trajectory or
- * plant a check in another run's config for a host-side resume to run. Create
- * the directory on the host first, empty (Docker on Linux makes a missing bind
+ * keeps that run's state when no `--state-dir` names a root, so it outlives the
+ * container at the path a run on the host would use. Only the one directory
+ * is mounted, never the root: the builder inside runs arbitrary commands, so
+ * it can rewrite its own run's state but can't read another run's trajectory
+ * or plant a check in another run's config. Its own run's state is still the
+ * builder's to rewrite, config.json included, so resume a contained run inside
+ * the container, with the same mount, never on the host: a resume trusts that
+ * config, though it refuses a directory holding a symlink. Create the
+ * directory on the host first, empty (Docker on Linux makes a missing bind
  * source owned by root, which the container's user can't write), and pass the
  * same id to volley as `--run-id`. Keep it outside `build_root`, so the check
  * never reads it, and pass no `XDG_STATE_HOME` in `env`, which would move the
- * root off the mount. Omit it and no state is mounted.
+ * root off the mount. Omit it and no state is mounted: a contained run keeping
+ * its state under the default root then stops before spending (exit 5),
+ * since the read-only root filesystem leaves it nowhere to write.
  *
  * `store_volume` mounts the named volume as the pnpm store; omit it and no store
  * is mounted. A store is shared by every run that mounts it, so a caller that
@@ -266,9 +271,8 @@ export function sandbox_invocation(options: {
   image: string;
   build_root: string;
   /** The run's host state directory, `<root>/<run_id>/` (`run_state` on
-   * `sandbox_run_args`): the root is the host's `default_state_root` for a run
-   * a host-side `volley resume` should find, and `command` must pass the same
-   * `--run-id`. */
+   * `sandbox_run_args`), usually under the host's `default_state_root`;
+   * `command` must pass the same `--run-id`. */
   run_state: { root: string; run_id: string };
   uid: number | null;
   gid: number | null;

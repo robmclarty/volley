@@ -1,4 +1,13 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -352,7 +361,7 @@ describe('resolve_config', () => {
     try {
       const original = resolve_config(
         { ...base(workspace), builder_max_steps: 7 },
-        { run_id: 'rt-run', env: {} },
+        { run_id: 'rt-run', env: {}, state_dir: null },
       );
       initialize_run_state(original);
       write_resolved_config(original);
@@ -372,7 +381,11 @@ describe('resolve_config', () => {
   it('defaults builder_max_steps when restoring a config that predates the field', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      const original = resolve_config(base(workspace), { run_id: 'old-run', env: {} });
+      const original = resolve_config(base(workspace), {
+        run_id: 'old-run',
+        env: {},
+        state_dir: null,
+      });
       initialize_run_state(original);
       write_resolved_config(original);
       const config_path = join(workspace, '.volley', 'config.json');
@@ -533,7 +546,7 @@ describe('resolve_config', () => {
     try {
       const original = resolve_config(
         { ...base(workspace), sandbox_image: 'pinned/img:3' },
-        { run_id: 'si-run', env: {} },
+        { run_id: 'si-run', env: {}, state_dir: null },
       );
       initialize_run_state(original);
       write_resolved_config(original);
@@ -664,7 +677,7 @@ describe('resolve_config: per-seat model URLs', () => {
           builder_url: 'http://localhost:11522',
           critic_url: 'http://localhost:11523',
         },
-        { ...CONTAINED, run_id: 'url-run' },
+        { ...CONTAINED, run_id: 'url-run', state_dir: null },
       );
       initialize_run_state(original);
       write_resolved_config(original);
@@ -682,7 +695,11 @@ describe('resolve_config: per-seat model URLs', () => {
   it('restores null seat URLs from a config that predates them', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      const original = resolve_config(local_seats(workspace), { ...CONTAINED, run_id: 'old-url' });
+      const original = resolve_config(local_seats(workspace), {
+        ...CONTAINED,
+        run_id: 'old-url',
+        state_dir: null,
+      });
       initialize_run_state(original);
       write_resolved_config(original);
       const config_path = join(workspace, '.volley', 'config.json');
@@ -923,13 +940,45 @@ describe('gate paths', () => {
       });
       initialize_run_state(config);
       write_resolved_config(config);
-      const resumed = load_resume_state(workspace, config.run_id);
+      const resumed = load_resume_state(workspace, config.run_id, config.state_dir);
       expect(resumed.raw_config.gate_paths).toEqual(['schema/**']);
       expect(resumed.raw_config.fail_on_gate_edit).toBe(true);
     } finally {
       cleanup();
     }
   });
+});
+
+describe('resolve_config: the run state directory', () => {
+  it.skipIf(process.getuid?.() === 0)(
+    'names the mount when a contained run has nowhere to write its state',
+    () => {
+      const { workspace, cleanup } = temp_workspace();
+      // Unwritable, as the sandbox's read-only root filesystem is.
+      const locked = mkdtempSync(join(tmpdir(), 'volley-locked-'));
+      chmodSync(locked, 0o500);
+      try {
+        const env = { VOLLEY_CONTAINED: '1', VOLLEY_AUTH_MODE: 'api_key', XDG_STATE_HOME: locked };
+        expect(() => resolve_config(base(workspace), { run_id: 'night-42', env })).toThrow(
+          `run state directory not writable: ${join(locked, 'volley', 'night-42')}. ` +
+            "Inside the sandbox, mount the run's own host directory there (sandbox_run_args run_state",
+        );
+        // A run directory that's already there and writable, as a mount is, passes.
+        chmodSync(locked, 0o700);
+        mkdirSync(join(locked, 'volley', 'night-42'), { recursive: true });
+        chmodSync(locked, 0o500);
+        chmodSync(join(locked, 'volley'), 0o500);
+        expect(resolve_config(base(workspace), { run_id: 'night-42', env }).state_dir).toBe(
+          join(locked, 'volley'),
+        );
+      } finally {
+        chmodSync(locked, 0o700);
+        if (existsSync(join(locked, 'volley'))) chmodSync(join(locked, 'volley'), 0o700);
+        rmSync(locked, { recursive: true, force: true });
+        cleanup();
+      }
+    },
+  );
 });
 
 describe('expand_at_file', () => {

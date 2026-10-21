@@ -32,6 +32,7 @@ import {
 import { close_servers, start_server } from '../helpers/http_server.js';
 import { approve_reply, mock_engine, reject_reply } from '../helpers/mock_engine.js';
 import { stub_openai } from '../helpers/openai_stub.js';
+import type { StubOpenAi } from '../helpers/openai_stub.js';
 
 const CLI = fileURLToPath(new URL('../../src/cli.ts', import.meta.url));
 
@@ -53,6 +54,11 @@ const STATE_FILES = [
   join('iterations', '001', 'summary.json'),
   join('iterations', '001', 'check', 'check.log'),
 ];
+
+/** The test file's own `XDG_STATE_HOME` (`test/setup.ts`), and the default
+ * root a run resolves under it. */
+const STATE_HOME = process.env['XDG_STATE_HOME'] ?? '';
+const DEFAULT_ROOT = join(STATE_HOME, 'volley');
 
 const roots: string[] = [];
 
@@ -183,6 +189,79 @@ describe('a run under --state-dir', () => {
   });
 });
 
+describe('a run with no --state-dir', () => {
+  it('keeps its state under the default root, and leaves only the builder\'s work in the workspace', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        { prompt: 'p', workspace, criteria: 'c', check: 'test -f done.txt' },
+        { cwd: workspace, run_id: 'default-run', env: { XDG_STATE_HOME: STATE_HOME } },
+      );
+      expect(config.state_dir).toBe(DEFAULT_ROOT);
+      const result = await run_once(config);
+      expect(result.status).toBe('success');
+
+      const dir = join(DEFAULT_ROOT, 'default-run');
+      expect(result.run_state_dir).toBe(dir);
+      for (const file of STATE_FILES) expect(existsSync(join(dir, file)), file).toBe(true);
+      expect(readdirSync(workspace)).toEqual(['done.txt']);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('a check that reads every file in the tree', () => {
+  // markdownlint-cli2, cspell, and checkride's links walk all read dot-dirs,
+  // so a check like theirs failed from round 2 on over the run's own
+  // feedback.md, which the builder can't fix, and the run never converged.
+  const EVERY_MD = `test -z "$(find . -name '*.md' -not -path './.git/*')"`;
+
+  /** Round 1 writes the file and is sent back; round 2 is approved. */
+  function two_rounds(config: ResolvedConfig): Promise<RunResult> {
+    let critiques = 0;
+    const engine = mock_engine((call) => {
+      if (call.role === 'builder') {
+        return {
+          content: 'wrote the file',
+          effect: () => writeFileSync(join(config.workspace, 'done.txt'), 'done\n'),
+        };
+      }
+      critiques += 1;
+      return critiques === 1 ? reject_reply('- say why in the commit') : approve_reply('All met.');
+    });
+    return run_volley(config, { renderer: silent_renderer(), engine, install_signal_handlers: false });
+  }
+
+  it('converges with the run state under the default root', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = checked_config(workspace, {
+        check: EVERY_MD,
+        max_iterations: 2,
+        state_dir: DEFAULT_ROOT,
+      });
+      const result = await two_rounds(config);
+      expect(result).toMatchObject({ status: 'success', iterations_completed: 2 });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("never converges with it in the workspace's .volley/, the old default", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = checked_config(workspace, { check: EVERY_MD, max_iterations: 2 });
+      const result = await two_rounds(config);
+      expect(result).toMatchObject({ status: 'budget_exhausted', iterations_completed: 2 });
+      const archived = read_json(join(workspace, '.volley', 'iterations', '002', 'summary.json'));
+      expect(archived['check']).toMatchObject({ ok: false });
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('a run handed an empty run directory', () => {
   it('uses it as it is, as a contained run uses the directory mounted for it', async () => {
     const { workspace, cleanup } = temp_workspace();
@@ -239,7 +318,7 @@ describe('a --state-dir inside the workspace', () => {
   });
 });
 
-describe('a run without --state-dir', () => {
+describe('a run in the layout older runs used (state_dir null)', () => {
   it("keeps every file in the workspace's .volley/, and rotates a prior run aside", async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -274,13 +353,13 @@ describe('resolving state_dir', () => {
     state_dir: state_dir as string,
   });
 
-  it('resolves a relative root against the cwd, and counts an empty one as unset', () => {
+  it('resolves a relative root against the cwd, and an unset or empty one to the default root', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      const options = { cwd: workspace, env: {} };
+      const options = { cwd: workspace, env: { XDG_STATE_HOME: STATE_HOME } };
       expect(resolve_config(raw(workspace, 'runs'), options).state_dir).toBe(join(workspace, 'runs'));
-      expect(resolve_config(raw(workspace, '  '), options).state_dir).toBeNull();
-      expect(resolve_config(raw(workspace, undefined), options).state_dir).toBeNull();
+      expect(resolve_config(raw(workspace, '  '), options).state_dir).toBe(DEFAULT_ROOT);
+      expect(resolve_config(raw(workspace, undefined), options).state_dir).toBe(DEFAULT_ROOT);
       expect(() => resolve_config(raw(workspace, 7), options)).toThrow(
         '--state-dir (state_dir) must be a path string; got a number',
       );
@@ -290,54 +369,94 @@ describe('resolving state_dir', () => {
   });
 });
 
-describe('volley resume <id> --state-dir <root>', () => {
-  it('resumes a run kept under the root, though --workspace defaults elsewhere', async () => {
-    const builder_server = await stub_openai('done');
-    const critic_server = await stub_openai(APPROVED);
+/** Stand-in seats, and a run on them whose round 1 is sent back and whose
+ * round 2 builder is stopped mid-phase, which leaves it to resume. The seats
+ * are recorded in its config, so the resumed run reaches the stand-ins. */
+async function interrupted_run(
+  workspace: string,
+  overrides: Partial<ResolvedConfig>,
+): Promise<{ builder_server: StubOpenAi; critic_server: StubOpenAi }> {
+  const builder_server = await stub_openai('done');
+  const critic_server = await stub_openai(APPROVED);
+  const config = test_config({
+    workspace,
+    max_iterations: 2,
+    builder_provider: 'openrouter',
+    builder_model: 'vendor/builder-model',
+    builder_url: builder_server.url,
+    critic_provider: 'openrouter',
+    critic_model: 'vendor/critic-model',
+    critic_url: critic_server.url,
+    ...overrides,
+  });
+  const engine = mock_engine((call, index) => {
+    if (call.role === 'critic') return reject_reply('not yet');
+    return index === 0 ? { content: 'first pass' } : { content: '', error: new aborted_error('sigint') };
+  });
+  await expect(
+    run_volley(config, { renderer: silent_renderer(), engine, install_signal_handlers: false }),
+  ).rejects.toThrow();
+  return { builder_server, critic_server };
+}
+
+/** The resumed run's round 2 was approved, its state in `dir`. */
+function expect_resumed(stdout: string, dir: string): void {
+  expect(JSON.parse(stdout)).toMatchObject({
+    status: 'success',
+    iterations_completed: 2,
+    run_state_dir: dir,
+  });
+  expect(read_json(join(dir, 'iterations', '002', 'summary.json'))['verdict']).toBe('approved');
+  expect(read_json(join(dir, 'summary.json'))['status']).toBe('success');
+}
+
+describe('volley resume <id>', () => {
+  it('resumes a run kept under --state-dir, though --workspace defaults elsewhere', async () => {
     const { workspace, cleanup } = temp_workspace();
     const root = temp_root();
     try {
-      // Iteration 1 is sent back; iteration 2's builder is stopped mid-phase,
-      // which leaves a run to resume. Its seats are recorded on the stand-ins.
-      const config = test_config({
-        workspace,
-        run_id: 'resume-me',
-        state_dir: root,
-        max_iterations: 2,
-        builder_provider: 'openrouter',
-        builder_model: 'vendor/builder-model',
-        builder_url: builder_server.url,
-        critic_provider: 'openrouter',
-        critic_model: 'vendor/critic-model',
-        critic_url: critic_server.url,
-      });
-      const engine = mock_engine((call, index) => {
-        if (call.role === 'critic') return reject_reply('not yet');
-        return index === 0
-          ? { content: 'first pass' }
-          : { content: '', error: new aborted_error('sigint') };
-      });
-      await expect(
-        run_volley(config, { renderer: silent_renderer(), engine, install_signal_handlers: false }),
-      ).rejects.toThrow();
+      const seats = await interrupted_run(workspace, { run_id: 'resume-me', state_dir: root });
 
       // `--workspace` is left at its default, the repo this test runs from.
+      const { status, stdout } = await run_cli(['resume', 'resume-me', '--state-dir', root, '--json']);
+      expect(status).toBe(EXIT_SUCCESS);
+      expect_resumed(stdout, join(root, 'resume-me'));
+      expect(seats.builder_server.seen.map((r) => r.model)).toEqual(['vendor/builder-model']);
+      expect(seats.critic_server.seen.map((r) => r.model)).toEqual(['vendor/critic-model']);
+      expect(existsSync(join(workspace, '.volley'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('finds a run under the default root with no --state-dir, from any directory', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      await interrupted_run(workspace, { run_id: 'default-resume', state_dir: DEFAULT_ROOT });
+
+      const { status, stdout } = await run_cli(['resume', 'default-resume', '--json']);
+      expect(status).toBe(EXIT_SUCCESS);
+      expect_resumed(stdout, join(DEFAULT_ROOT, 'default-resume'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("resumes a run an older volley kept in .volley/ there, and leaves the root alone", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      await interrupted_run(workspace, { run_id: 'legacy-resume' });
+
       const { status, stdout } = await run_cli([
         'resume',
-        'resume-me',
-        '--state-dir',
-        root,
+        'legacy-resume',
+        '--workspace',
+        workspace,
         '--json',
       ]);
       expect(status).toBe(EXIT_SUCCESS);
-      expect(JSON.parse(stdout)).toMatchObject({ status: 'success', iterations_completed: 2 });
-      expect(builder_server.seen.map((r) => r.model)).toEqual(['vendor/builder-model']);
-      expect(critic_server.seen.map((r) => r.model)).toEqual(['vendor/critic-model']);
-
-      const dir = join(root, 'resume-me');
-      expect(read_json(join(dir, 'iterations', '002', 'summary.json'))['verdict']).toBe('approved');
-      expect(read_json(join(dir, 'summary.json'))['status']).toBe('success');
-      expect(existsSync(join(workspace, '.volley'))).toBe(false);
+      expect_resumed(stdout, join(workspace, '.volley'));
+      expect(existsSync(join(DEFAULT_ROOT, 'legacy-resume'))).toBe(false);
     } finally {
       cleanup();
     }

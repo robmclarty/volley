@@ -4,14 +4,14 @@
  * immutable `ResolvedConfig` that the run's `config.json` records.
  */
 import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_check_runner } from './check/detect.js';
 import { openrouter_api_key, SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
 import { config_error } from './types.js';
-import { RUN_ID_PATTERN } from './workspace.js';
+import { default_state_root, RUN_ID_PATTERN } from './workspace.js';
 import type {
   BuilderPermissionMode,
   BuilderProvider,
@@ -148,6 +148,10 @@ export type ResolveOptions = {
    * while under `volley acp` each of its commands `ask`s a person first, which
    * takes the container's place. */
   uncontained_builder?: 'refuse' | 'ask';
+  /** Where the run's state goes, in place of what the config says: `volley
+   * resume` passes the root it found the run under, or null for a run an older
+   * volley kept in the workspace's `.volley/`, which resumes there. */
+  state_dir?: string | null;
 };
 
 /** `--builder-max-steps` (a merged flag/config value) wins over the
@@ -257,15 +261,50 @@ function resolve_seat_url(
 
 /** `--state-dir` (`state_dir`): the root each run's state sits under at
  * `<root>/<run_id>/`, resolved against `cwd` so a resumed run finds the same
- * place, or null to keep `<workspace>/.volley/`. An empty value counts as unset,
- * as it does for a seat URL. */
-function resolve_state_dir(value: unknown, cwd: string): string | null {
-  if (value === undefined || value === null) return null;
+ * place. Unset, or empty as a seat URL may be, it's the default root,
+ * `$XDG_STATE_HOME/volley`, else `~/.local/state/volley`: outside the
+ * workspace, where no check that reads every file can trip over the run's own
+ * feedback. */
+function resolve_state_dir(
+  value: unknown,
+  cwd: string,
+  env: Record<string, string | undefined>,
+): string {
+  if (value === undefined || value === null) return default_state_root(env);
   if (typeof value !== 'string') {
     throw config_error(`--state-dir (state_dir) must be a path string; got a ${typeof value}`);
   }
   const path = value.trim();
-  return path === '' ? null : resolve(cwd, path);
+  return path === '' ? default_state_root(env) : resolve(cwd, path);
+}
+
+function is_writable_dir(path: string): boolean {
+  try {
+    if (!statSync(path).isDirectory()) return false;
+    accessSync(path, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The run's state directory must be one volley can write: the directory
+ * itself when it's there, as a contained run's mount is, else the nearest
+ * directory above it, where volley creates it. Checked before any spend,
+ * because otherwise the run dies as it starts on a raw EROFS or EACCES. Inside
+ * the sandbox the root filesystem is read-only, so that is what an unmounted
+ * run directory looks like, and the message says what to mount. */
+function validate_run_state_dir(dir: string, contained: boolean): void {
+  let existing = dir;
+  while (!existsSync(existing) && dirname(existing) !== existing) existing = dirname(existing);
+  if (is_writable_dir(existing)) return;
+  throw config_error(
+    contained
+      ? `run state directory not writable: ${dir}. Inside the sandbox, mount the run's own host ` +
+          `directory there (sandbox_run_args run_state, or -v <root>/<run id>:${dir}), created on the ` +
+          'host first, and pass volley the same --run-id; or point --state-dir at a writable mount'
+      : `run state directory not writable: ${dir}. Point --state-dir at a directory volley can write`,
+  );
 }
 
 /** volley *detects* it is running inside its sandbox container rather than
@@ -445,13 +484,16 @@ export function resolve_config(
   }
 
   const sandbox_image = resolve_sandbox_image(raw, env);
-  const state_dir = resolve_state_dir(raw.state_dir, cwd);
+  const state_dir =
+    options.state_dir !== undefined ? options.state_dir : resolve_state_dir(raw.state_dir, cwd, env);
   // Each run's folder would land among the workspace's own files, where no
   // exclusion can tell earlier runs' state from the builder's work.
   if (state_dir === workspace) {
     throw config_error(`--state-dir (state_dir) can't be the workspace itself: ${workspace}`);
   }
   const run_id = resolve_run_id(options.run_id);
+  // A legacy `.volley/` lives in the workspace, already checked writable.
+  if (state_dir !== null) validate_run_state_dir(join(state_dir, run_id), contained);
   const check = raw.check ?? DEFAULT_CHECK;
 
   return {

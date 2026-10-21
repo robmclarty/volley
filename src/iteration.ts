@@ -5,13 +5,14 @@
  */
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { EMPTY_USAGE } from './cost.js';
 import { config_error } from './types.js';
 import type {
@@ -26,7 +27,7 @@ import type {
   Verdict,
   VolleyConfig,
 } from './types.js';
-import { iteration_dir, run_state_dir, state_path } from './workspace.js';
+import { iteration_dir, RUN_ID_PATTERN, run_state_dir, state_path } from './workspace.js';
 
 function write_json(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -174,16 +175,73 @@ export type ResumeState = {
   iterations_completed: number;
 };
 
+/** The run id an older volley's `.volley/config.json` records, or null when
+ * there is none to read. */
+function legacy_run_id(workspace: string): string | null {
+  try {
+    const recorded = JSON.parse(readFileSync(join(workspace, '.volley', 'config.json'), 'utf8')) as {
+      run_id?: unknown;
+    };
+    return typeof recorded.run_id === 'string' ? recorded.run_id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where `volley resume <run_id>` finds a run: under `root` (`--state-dir`,
+ * else the default root) at `<root>/<run_id>/`, returned as that root, or, for
+ * a run an older volley kept in the workspace, `.volley/`, returned as null so
+ * the resumed run stays there. Finding neither is a config error naming both
+ * places it looked. The id becomes a path, so it must be one a run could have
+ * had. */
+export function find_run_state(workspace: string, run_id: string, root: string): string | null {
+  if (!RUN_ID_PATTERN.test(run_id)) {
+    throw config_error(`not a run id: ${run_id} (letters, digits, '-', and '_', starting with a letter or digit)`);
+  }
+  if (existsSync(join(root, run_id, 'config.json'))) return root;
+  const legacy = legacy_run_id(workspace);
+  if (legacy === run_id) return null;
+  const holds = legacy === null ? '' : ` (it holds run ${legacy})`;
+  throw config_error(
+    `run ${run_id} not found in ${join(root, run_id)} or in ${join(resolve(workspace), '.volley')}${holds}; ` +
+      'pass --state-dir for the root it ran under, or --workspace for a run kept in .volley/',
+  );
+}
+
+/** A resumed run writes into its state directory, and a contained run's
+ * builder could have written there first, so a symlink anywhere in it would
+ * aim the resume's writes, or its pruning of a half-finished iteration, at a
+ * file of the host's. volley never makes one, so any is refused. The walk
+ * reads each entry's own type and never descends a link, which Node's
+ * recursive `readdirSync` would. */
+function refuse_symlinks(dir: string): void {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw config_error(`refusing to resume: ${path} is a symbolic link, which volley never writes`);
+    }
+    if (entry.isDirectory()) refuse_symlinks(path);
+  }
+}
+
 /** Recover a resumable run from its state directory (`.volley/`, or
  * `<state_dir>/<run_id>/` under a state root): settings from config.json,
  * totals from summary.json, feedback from feedback.md. An iteration directory
- * without a summary.json was interrupted mid-phase and is discarded. */
+ * without a summary.json was interrupted mid-phase and is discarded. A
+ * directory with a symlink in it is refused before anything is read. */
 export function load_resume_state(
   workspace: string,
   run_id: string,
   state_dir: string | null = null,
 ): ResumeState {
   const run = { workspace, state_dir, run_id };
+  const dir = run_state_dir(run);
+  if (existsSync(dir)) {
+    if (lstatSync(dir).isSymbolicLink()) {
+      throw config_error(`refusing to resume: ${dir} is a symbolic link, which volley never writes`);
+    }
+    refuse_symlinks(dir);
+  }
   const config_path = state_path(run, 'config.json');
   if (!existsSync(config_path)) {
     throw config_error(`no resumable run found: ${config_path} missing`);

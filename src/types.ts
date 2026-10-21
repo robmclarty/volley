@@ -151,9 +151,12 @@ export type ResolvedConfig = {
    * `VOLLEY_SANDBOX_IMAGE` override it. Meaningful only for a local builder —
    * the `claude_cli` path never uses Docker. */
   sandbox_image: string;
-  /** The root that holds each run's state at `<state_dir>/<run_id>/`
-   * (`--state-dir`), resolved to an absolute path. Null keeps it at
-   * `<workspace>/.volley/`, rotated aside by the next fresh run. */
+  /** The root that holds each run's state at `<state_dir>/<run_id>/`, as an
+   * absolute path: `--state-dir`, else the default root,
+   * `$XDG_STATE_HOME/volley` or `~/.local/state/volley`. `resolve_config`
+   * always sets one. Null is the layout older runs used, `<workspace>/.volley/`,
+   * rotated aside by the next fresh run: a run an older volley started
+   * resumes in it, and a hand-built config can still ask for it. */
   state_dir: string | null;
   workspace: string;
   verbose: boolean;

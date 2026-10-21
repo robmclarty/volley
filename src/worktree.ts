@@ -43,9 +43,8 @@ export function worktree_branch(run_id: string): string {
  * when `--worktree` is on, else the workspace itself. This is the containment
  * root the builder/critic file tools resolve through `contain()` and the
  * `bash` tool's cwd — re-pointing it moves writes into the worktree without
- * disturbing the workspace. `.volley/` state, the resolved config, and the
- * deterministic check stay under the workspace (the control plane), so only the
- * model-driven effect surface moves.
+ * disturbing the workspace. The check, the change report, and the checkpoints
+ * follow it there; the run's state stays wherever `state_dir` puts it.
  */
 export function build_root(workspace: string, worktree: boolean): string {
   return worktree ? worktree_path(workspace) : workspace;

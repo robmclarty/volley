@@ -3,6 +3,9 @@
  * with `--dry-run` so nothing past config resolution and preflight runs.
  */
 import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
@@ -78,6 +81,30 @@ describe('volley --builder-url / --critic-url', () => {
     expect(status).toBe(EXIT_CONFIG_ERROR);
     expect(stderr).toContain('builder model: opus (provider: lmstudio, endpoint: http://127.0.0.1:1/v1)');
     expect(stderr).toContain('builder model endpoint unreachable: http://127.0.0.1:1/v1');
+  });
+});
+
+describe('the run state root, in a dry run', () => {
+  it('names the default root, under the XDG_STATE_HOME the run inherits', () => {
+    const { status, stderr } = dry_run([]);
+    expect(status).toBe(EXIT_SUCCESS);
+    expect(stderr).toContain(`state root: ${join(process.env['XDG_STATE_HOME'] ?? '', 'volley')}`);
+  });
+
+  it.skipIf(process.getuid?.() === 0)('refuses a root it cannot write, before any spend', () => {
+    const locked = mkdtempSync(join(tmpdir(), 'volley-cli-locked-'));
+    chmodSync(locked, 0o500);
+    try {
+      const { status, stderr } = dry_run(['--state-dir', join(locked, 'runs'), '--run-id', 'r1']);
+      expect(status).toBe(EXIT_CONFIG_ERROR);
+      expect(stderr).toContain(
+        `run state directory not writable: ${join(locked, 'runs', 'r1')}. ` +
+          'Point --state-dir at a directory volley can write',
+      );
+    } finally {
+      chmodSync(locked, 0o700);
+      rmSync(locked, { recursive: true, force: true });
+    }
   });
 });
 

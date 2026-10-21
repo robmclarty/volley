@@ -2,7 +2,7 @@
  * Critic invocation: a read-only session (`claude_cli`, or a local or
  * `openrouter` model with volley's read tools) returning a schema-validated
  * structured verdict. The
- * harness — not the critic — writes `.volley/feedback.md` and `.volley/verdict`.
+ * harness — not the critic — writes the run's `feedback.md` and `verdict`.
  */
 import { z } from 'zod';
 import { model_call } from 'fascicle';

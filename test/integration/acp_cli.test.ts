@@ -8,7 +8,7 @@
  * on its card first whenever a builder command would.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -196,7 +196,9 @@ describe('acp_base_config', () => {
     critic_model: 'vendor/critic-model',
     allow_unsandboxed_builder: true,
   } as const;
-  const env = { OPENROUTER_API_KEY: KEY, XDG_STATE_HOME: '/state' };
+  // The test file's own state root (`test/setup.ts`): startup checks it's writable.
+  const state_home = process.env['XDG_STATE_HOME'] ?? '';
+  const env = { OPENROUTER_API_KEY: KEY, XDG_STATE_HOME: state_home };
 
   it('caps a prompt at 3 rounds unless --max-iterations says otherwise', () => {
     expect(acp_base_config(seats, env).max_iterations).toBe(3);
@@ -209,14 +211,33 @@ describe('acp_base_config', () => {
     );
   });
 
-  it('keeps state under XDG_STATE_HOME, else ~/.local/state, unless --state-dir names a root', () => {
-    expect(acp_base_config(seats, env).state_dir).toBe('/state/volley');
-    expect(acp_base_config({ ...seats, state_dir: '/elsewhere' }, env).state_dir).toBe('/elsewhere');
+  it('leaves the state root to resolve_config, which every run shares, unless --state-dir names one', () => {
+    // Under XDG_STATE_HOME, else ~/.local/state: the default every run gets.
+    expect(acp_base_config(seats, env).state_dir).toBeUndefined();
+    const elsewhere = mkdtempSync(join(tmpdir(), 'volley-acp-elsewhere-'));
+    try {
+      expect(acp_base_config({ ...seats, state_dir: elsewhere }, env).state_dir).toBe(elsewhere);
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
     expect(default_state_root({})).toBe(join(homedir(), '.local', 'state', 'volley'));
     expect(default_state_root({ XDG_STATE_HOME: '/xdg' })).toBe('/xdg/volley');
     expect(default_state_root({ XDG_STATE_HOME: 'relative' })).toBe(
       join(homedir(), '.local', 'state', 'volley'),
     );
+  });
+
+  it.skipIf(process.getuid?.() === 0)('refuses at startup a state root it cannot write', () => {
+    const locked = mkdtempSync(join(tmpdir(), 'volley-acp-locked-'));
+    chmodSync(locked, 0o500);
+    try {
+      expect(() => acp_base_config(seats, { ...env, XDG_STATE_HOME: locked })).toThrow(
+        `run state directory not writable: ${join(locked, 'volley')}`,
+      );
+    } finally {
+      chmodSync(locked, 0o700);
+      rmSync(locked, { recursive: true, force: true });
+    }
   });
 });
 

@@ -40,6 +40,7 @@ import type { Engine } from './engine.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
 import type { Renderer } from './render/renderer.js';
 import type { BuilderProvider, CriticProvider, ResolvedConfig } from './types.js';
+import { run_state_dir } from './workspace.js';
 import { build_root, report_worktree_fate } from './worktree.js';
 
 /** Executables the in-container builder shells out to (checkride/pnpm invoke
@@ -260,6 +261,10 @@ export async function preflight(
 
   renderer.info(`dry run: config valid (run ${config.run_id})`);
   renderer.info(`workspace: ${config.workspace}`);
+  // Each run gets its own directory under the root; a dry run creates none.
+  renderer.info(
+    config.state_dir === null ? `state: ${run_state_dir(config)}` : `state root: ${config.state_dir}`,
+  );
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
   renderer.info(
     seat_line('builder', config.builder_model, config.builder_provider, config.builder_url, env),
