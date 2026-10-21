@@ -2,11 +2,31 @@
  * Workspace lifecycle: run-state initialization, stale-run
  * backup rotation, path helpers, and optional git checkpoints.
  */
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check_error, config_error } from './types.js';
 import type { ResolvedConfig } from './types.js';
+
+/** A run id names the run's `volley/<run id>` branch and its state directory,
+ * so it is held to what both take without quoting: letters, digits, `-`, and
+ * `_`, starting with a letter or digit, so it never reads as an option and
+ * never climbs out of the directory it names. */
+export const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** The root each run's state sits under when `--state-dir` names none:
+ * `$XDG_STATE_HOME/volley`, else `<home>/.local/state/volley`. A relative
+ * `XDG_STATE_HOME` is ignored, as the XDG spec says. `home` is the host's by
+ * default; the sandbox passes its container's to spell the same root inside. */
+export function default_state_root(
+  env: Readonly<Record<string, string | undefined>>,
+  home: string = homedir(),
+): string {
+  const xdg = env['XDG_STATE_HOME'];
+  const base = xdg !== undefined && isAbsolute(xdg) ? xdg : join(home, '.local', 'state');
+  return join(base, 'volley');
+}
 
 /** What locates a run's state, as a structural subset of `ResolvedConfig` so a
  * resume can find a run before it has a whole config. */
@@ -49,14 +69,15 @@ export function backup_stamp(date: Date = new Date()): string {
 /** Fresh-run initialization: rotate a stale state directory aside (a prior
  * `.volley/` becomes `.volley.bak.<stamp>`), then create the directory tree.
  * Under a state root each run has a directory of its own, so only a reused
- * `--run-id` ever finds one to rotate. Resume runs skip rotation
- * (`preserve: true`). */
+ * `--run-id` ever finds one to rotate. An empty one is used as it is: that is
+ * what a contained run is handed when its run directory is the mount, which
+ * can't be renamed. Resume runs skip rotation (`preserve: true`). */
 export function initialize_run_state(
   run: StateLocation,
   options: { preserve?: boolean } = {},
 ): void {
   const dir = run_state_dir(run);
-  if (existsSync(dir) && options.preserve !== true) {
+  if (existsSync(dir) && options.preserve !== true && readdirSync(dir).length > 0) {
     renameSync(dir, `${dir}.bak.${backup_stamp()}`);
   }
   mkdirSync(join(dir, 'iterations'), { recursive: true });

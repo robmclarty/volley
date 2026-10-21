@@ -6,7 +6,7 @@
  * volley detects it is already contained. The create/`exec`/reap/teardown
  * lifecycle and the `docker exec` bash executor were retired; what
  * remains here is the *spec* — pure, daemon-free flag-builders the blessed
- * examples and the `--dry-run` preflight render into the `docker run` line,
+ * examples and a parent harness render into the `docker run` line,
  * unit-testable without a daemon.
  *
  * Inside that container volley's `bash` is the local `host_bash_executor`
@@ -22,8 +22,9 @@
  * never `--user 0`. volley's Node process reaps its own bash children
  * in-container, so the old reap-between-`exec` rider falls away.
  */
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { config_error } from './types.js';
+import { default_state_root, RUN_ID_PATTERN } from './workspace.js';
 
 /** The in-container mount point for the bind-mounted worktree; matches the
  * `Dockerfile`'s `WORKDIR`, so a workspace-relative path resolves against the
@@ -35,6 +36,14 @@ const SANDBOX_WORKDIR = '/workspace';
  * otherwise unset) and its `.cache` is a tmpfs so the read-only rootfs does not
  * brick tools that scribble there. */
 const SANDBOX_HOME = '/home/node';
+
+/** Where volley inside the container keeps each run's state when no
+ * `--state-dir` names a root: the default root under the pinned `HOME`, since
+ * the image sets no `XDG_STATE_HOME`. `sandbox_run_args`'s `run_state` binds one
+ * run's host directory at that run's directory under it, so the state outlives
+ * the `--rm` container. Exported so a harness can map a contained run's
+ * `run_state_dir` back to the directory it mounted. */
+export const SANDBOX_STATE_ROOT = default_state_root({}, SANDBOX_HOME);
 
 /** Named volume for the pnpm store: survives the read-only rootfs and
  * persists the content-addressed store across runs. (Making a `--user`-mapped,
@@ -101,7 +110,7 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
 /**
  * The hardened `docker run` argv that launches volley inside its container.
  * Pure and exported so the flag set is unit-testable without a
- * daemon and the blessed examples / `--dry-run` preflight can render it.
+ * daemon and the blessed examples and a parent harness can render it.
  *
  * A one-shot, foreground `--rm` container — the whole run *is* this
  * container (an earlier design ran a detached `-d … sleep infinity` daemon volley
@@ -113,6 +122,19 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
  * the image entrypoint (the opt-in real-docker isolation test runs a raw `sh`
  * this way).
  *
+ * `run_state` binds the run's own state directory on the host,
+ * `<root>/<run_id>/`, at `<SANDBOX_STATE_ROOT>/<run_id>/`, where volley inside
+ * keeps that run's state when no `--state-dir` names a root. That lands it
+ * where a host-side `volley resume <run_id>` looks. Only the one directory is
+ * mounted, never the root: the builder inside runs arbitrary commands, so it
+ * can rewrite its own run's state but can't read another run's trajectory or
+ * plant a check in another run's config for a host-side resume to run. Create
+ * the directory on the host first, empty (Docker on Linux makes a missing bind
+ * source owned by root, which the container's user can't write), and pass the
+ * same id to volley as `--run-id`. Keep it outside `build_root`, so the check
+ * never reads it, and pass no `XDG_STATE_HOME` in `env`, which would move the
+ * root off the mount. Omit it and no state is mounted.
+ *
  * `store_volume` mounts the named volume as the pnpm store; omit it and no store
  * is mounted. A store is shared by every run that mounts it, so a caller that
  * installs dependencies in a separate container first can keep the builder's
@@ -122,13 +144,14 @@ export function network_run_args(network: SandboxNetwork, network_name: string):
  * Never emits `--privileged` and refuses `--user 0`: volley must not hand
  * the sandbox root or full capabilities. Everything writable under the
  * `--read-only` rootfs is an explicit tmpfs or volume; the bind-mounted worktree
- * is the one host-visible write path.
+ * and, when one is named, the state root are the host-visible write paths.
  */
 export function sandbox_run_args(options: {
   image: string;
   build_root: string;
   uid: number | null;
   gid: number | null;
+  run_state?: { root: string; run_id: string } | null;
   store_volume?: string | null;
   network: SandboxNetwork;
   network_name: string;
@@ -153,6 +176,10 @@ export function sandbox_run_args(options: {
       : [];
   const env = (options.env ?? []).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
   const labels = (options.labels ?? []).flatMap(([key, value]) => ['--label', `${key}=${value}`]);
+  const state =
+    options.run_state !== undefined && options.run_state !== null
+      ? ['-v', run_state_mount(options.run_state)]
+      : [];
   const store =
     options.store_volume !== undefined && options.store_volume !== null
       ? ['-v', `${options.store_volume}:${SANDBOX_HOME}/.local/share/pnpm/store`]
@@ -200,9 +227,11 @@ export function sandbox_run_args(options: {
     `HOME=${SANDBOX_HOME}`,
     ...env,
     // The bind-mounted worktree (writable — a bind mount is exempt from
-    // `--read-only`) and, when one is named, the persistent pnpm store.
+    // `--read-only`) and, when one is named, the state root and the
+    // persistent pnpm store.
     '-v',
     `${resolve(options.build_root)}:${SANDBOX_WORKDIR}`,
+    ...state,
     ...store,
     '-w',
     SANDBOX_WORKDIR,
@@ -212,9 +241,22 @@ export function sandbox_run_args(options: {
   ];
 }
 
+/** The `-v` value for one run's state directory. The run id becomes a path on
+ * both sides, so it is held to volley's own `--run-id` rule, which keeps it to
+ * one directory name. */
+function run_state_mount(run_state: { root: string; run_id: string }): string {
+  if (!RUN_ID_PATTERN.test(run_state.run_id)) {
+    throw config_error(
+      `run_state.run_id must be letters, digits, '-', and '_', starting with a letter or digit; got: ${run_state.run_id}`,
+    );
+  }
+  return `${join(resolve(run_state.root), run_state.run_id)}:${SANDBOX_STATE_ROOT}/${run_state.run_id}`;
+}
+
 /**
  * The small helper that surfaces the full invocation spec: compose the
- * hardened `docker run` argv with the canonical bridge + pnpm store and, when
+ * hardened `docker run` argv with the canonical bridge + pnpm store, the run's
+ * own host state directory mounted where volley inside keeps it, and, when
  * crossing to a host-run model (the `'allowlist'` posture), the
  * `VOLLEY_MODEL_HOST` env the base-url normalizer consumes (engine.ts). The
  * operator/example runs this (`format_docker_run` renders it as a copy-paste
@@ -223,6 +265,11 @@ export function sandbox_run_args(options: {
 export function sandbox_invocation(options: {
   image: string;
   build_root: string;
+  /** The run's host state directory, `<root>/<run_id>/` (`run_state` on
+   * `sandbox_run_args`): the root is the host's `default_state_root` for a run
+   * a host-side `volley resume` should find, and `command` must pass the same
+   * `--run-id`. */
+  run_state: { root: string; run_id: string };
   uid: number | null;
   gid: number | null;
   network: SandboxNetwork;
@@ -239,6 +286,7 @@ export function sandbox_invocation(options: {
   return sandbox_run_args({
     image: options.image,
     build_root: options.build_root,
+    run_state: options.run_state,
     name: options.name ?? null,
     uid: options.uid,
     gid: options.gid,
@@ -250,9 +298,9 @@ export function sandbox_invocation(options: {
   });
 }
 
-/** Render a docker argv as a copy-pasteable shell line for the examples /
- * `--dry-run` preflight. Minimal POSIX quoting: single-quote any token with
- * whitespace or shell-special characters. */
+/** Render a docker argv as a copy-pasteable shell line for the examples.
+ * Minimal POSIX quoting: single-quote any token with whitespace or
+ * shell-special characters. */
 export function format_docker_run(run_args: ReadonlyArray<string>): string {
   return ['docker', ...run_args].map(quote_shell_token).join(' ');
 }

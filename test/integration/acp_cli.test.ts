@@ -20,11 +20,12 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { acp_agent } from 'fascicle/acp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acp_base_config, acp_serve_config, acp_state_root } from '../../src/acp.js';
+import { acp_base_config, acp_serve_config } from '../../src/acp.js';
 import { CHECK_REJECTED } from '../../src/check/command.js';
 import { package_version } from '../../src/cli.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from '../../src/exit_codes.js';
 import type { ResolvedConfig } from '../../src/types.js';
+import { default_state_root } from '../../src/workspace.js';
 import { open_session, read_turn } from '../helpers/acp_client.js';
 import { temp_workspace } from '../helpers/harness.js';
 import { close_servers } from '../helpers/http_server.js';
@@ -211,8 +212,11 @@ describe('acp_base_config', () => {
   it('keeps state under XDG_STATE_HOME, else ~/.local/state, unless --state-dir names a root', () => {
     expect(acp_base_config(seats, env).state_dir).toBe('/state/volley');
     expect(acp_base_config({ ...seats, state_dir: '/elsewhere' }, env).state_dir).toBe('/elsewhere');
-    expect(acp_state_root({})).toBe(join(homedir(), '.local', 'state', 'volley'));
-    expect(acp_state_root({ XDG_STATE_HOME: 'relative' })).toBe(join(homedir(), '.local', 'state', 'volley'));
+    expect(default_state_root({})).toBe(join(homedir(), '.local', 'state', 'volley'));
+    expect(default_state_root({ XDG_STATE_HOME: '/xdg' })).toBe('/xdg/volley');
+    expect(default_state_root({ XDG_STATE_HOME: 'relative' })).toBe(
+      join(homedir(), '.local', 'state', 'volley'),
+    );
   });
 });
 

@@ -5,17 +5,19 @@
  * `sandbox_run_args` argv run as a one-shot `docker run --rm`. It
  * proves the isolation contract still holds under whole-process containment: a
  * command inside sees the *container's* root filesystem (not the host's), writes
- * land host-side in the bind-mounted worktree, and `--network none` leaves no
+ * land host-side in the bind-mounted worktree and the run's mounted state
+ * directory, no other run's state is in reach, and `--network none` leaves no
  * route off the box. Skipped by default: it needs a running daemon and a present
  * image, so it never gates `pnpm check`. Point it at any Linux image with `sh`
  * via VOLLEY_SANDBOX_TEST_IMAGE (default the volley image); `--entrypoint sh`
  * overrides the image's `volley` entrypoint so a raw shell script can run.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sandbox_run_args } from '../../src/sandbox.js';
+import { SANDBOX_STATE_ROOT, sandbox_run_args } from '../../src/sandbox.js';
 import { temp_workspace } from '../helpers/harness.js';
 
 const IMAGE = process.env['VOLLEY_SANDBOX_TEST_IMAGE'] ?? 'volley-sandbox:latest';
@@ -35,10 +37,12 @@ function run_in_sandbox(
   build_root: string,
   script: string,
   network: 'none' | 'allowlist',
+  run_state: { root: string; run_id: string } | null = null,
 ): { status: number | null; stdout: string; stderr: string } {
   const args = sandbox_run_args({
     image: IMAGE,
     build_root,
+    run_state,
     uid: HOST_UID,
     gid: HOST_GID,
     store_volume: 'volley-pnpm-store',
@@ -82,6 +86,43 @@ describe.runIf(RUN)('builder sandbox (real docker run)', () => {
           'container-wrote',
         );
       } finally {
+        cleanup();
+      }
+    },
+    120_000,
+  );
+
+  it(
+    "a run's state lands in its host directory, and no other run's state is in reach",
+    () => {
+      const { workspace, cleanup } = temp_workspace();
+      // The host's root, holding another run's state the container must not see.
+      const state_root = mkdtempSync(join(tmpdir(), 'volley-sandbox-state-'));
+      mkdirSync(join(state_root, 'other-run'));
+      writeFileSync(join(state_root, 'other-run', 'config.json'), '{"check":"true"}\n');
+      // The run's own directory, created first and empty, as the host's own.
+      mkdirSync(join(state_root, 'run-1'));
+      try {
+        const script = [
+          'set -e',
+          `echo probe > "${SANDBOX_STATE_ROOT}/run-1/summary.json"`,
+          `ls -A "${SANDBOX_STATE_ROOT}" | tr '\\n' ' ' | sed 's/^/ROOT:/'`,
+          'echo',
+          `[ -e "${SANDBOX_STATE_ROOT}/other-run" ] && echo "OTHER:visible" || echo "OTHER:invisible"`,
+          `mkdir "${SANDBOX_STATE_ROOT}/planted" 2>/dev/null && echo "PLANT:written" || echo "PLANT:refused"`,
+        ].join('\n');
+        const out = run_in_sandbox(workspace, script, 'none', { root: state_root, run_id: 'run-1' });
+        expect(out.status, out.stderr).toBe(0);
+        expect(readFileSync(join(state_root, 'run-1', 'summary.json'), 'utf8')).toBe('probe\n');
+        expect(out.stdout).toContain('ROOT:run-1 ');
+        expect(out.stdout).toContain('OTHER:invisible');
+        expect(out.stdout).toContain('PLANT:refused');
+        // The host's other run is untouched.
+        expect(readFileSync(join(state_root, 'other-run', 'config.json'), 'utf8')).toBe(
+          '{"check":"true"}\n',
+        );
+      } finally {
+        rmSync(state_root, { recursive: true, force: true });
         cleanup();
       }
     },

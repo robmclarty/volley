@@ -5,7 +5,15 @@
  * run under a root, and `volley matrix` reading a seat back from one.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,6 +177,23 @@ describe('a run under --state-dir', () => {
       expect(entries[0]).toBe('reused');
       expect(entries[1]).toMatch(/^reused\.bak\./);
       expect(existsSync(join(workspace, '.volley'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('a run handed an empty run directory', () => {
+  it('uses it as it is, as a contained run uses the directory mounted for it', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = temp_root();
+    try {
+      // A mount point can't be renamed aside, and an empty one holds no run.
+      mkdirSync(join(root, 'mounted'));
+      const result = await run_once(checked_config(workspace, { run_id: 'mounted', state_dir: root }));
+      expect(result.status).toBe('success');
+      expect(readdirSync(root)).toEqual(['mounted']);
+      expect(existsSync(join(root, 'mounted', 'summary.json'))).toBe(true);
     } finally {
       cleanup();
     }

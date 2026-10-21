@@ -11,6 +11,7 @@ import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_check_runner } from './check/detect.js';
 import { openrouter_api_key, SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
 import { config_error } from './types.js';
+import { RUN_ID_PATTERN } from './workspace.js';
 import type {
   BuilderPermissionMode,
   BuilderProvider,
@@ -290,11 +291,7 @@ export function unguarded_builder(
   return !detect_containment(env) && !resolve_allow_unsandboxed_builder(raw, env);
 }
 
-/** A caller's run id names the run's `volley/<run id>` branch, so it is held to
- * what a branch name accepts without quoting: letters, digits, `-`, and `_`,
- * starting with a letter or digit so it never reads as an option. */
-const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
+/** A caller's run id, held to `RUN_ID_PATTERN`; none gets a fresh UUID. */
 function resolve_run_id(run_id: string | undefined): string {
   if (run_id === undefined) return randomUUID();
   if (!RUN_ID_PATTERN.test(run_id)) {

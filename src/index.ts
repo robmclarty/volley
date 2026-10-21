@@ -16,8 +16,12 @@ export {
   sandbox_run_args,
   SANDBOX_NETWORK_NAME,
   SANDBOX_NETWORK_SUBNET,
+  SANDBOX_STATE_ROOT,
 } from './sandbox.js';
 export type { SandboxNetwork } from './sandbox.js';
+// The root a run keeps its state under by default, so a harness mounts the
+// one volley uses on the host.
+export { default_state_root } from './workspace.js';
 export {
   exit_code_for_error,
   exit_code_for_status,

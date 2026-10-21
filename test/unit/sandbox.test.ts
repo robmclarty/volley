@@ -7,7 +7,9 @@ import {
   SANDBOX_NETWORK_NAME,
   SANDBOX_NETWORK_SUBNET,
   sandbox_run_args,
+  SANDBOX_STATE_ROOT,
 } from '../../src/sandbox.js';
+import { default_state_root } from '../../src/workspace.js';
 import * as root from '../../src/index.js';
 import { error_kind } from '../../src/types.js';
 
@@ -123,6 +125,39 @@ describe('sandbox_run_args (the invocation spec; hardening flag set)', () => {
     }
   });
 
+  it("binds the run's own state directory, never the root, before the image", () => {
+    const run_state = { root: '/home/me/.local/state/volley', run_id: 'night-42' };
+    const args = run_args({ run_state });
+    const mounts = args.filter((_, index) => args[index - 1] === '-v');
+    const mount = '/home/me/.local/state/volley/night-42:/home/node/.local/state/volley/night-42';
+    expect(mounts).toContain(mount);
+    // No mount reaches the root itself, where every other run's state sits.
+    expect(mounts.some((m) => m.endsWith(`:${SANDBOX_STATE_ROOT}`))).toBe(false);
+    expect(args.indexOf(mount)).toBeLessThan(args.lastIndexOf('volley-sandbox:latest'));
+    // A relative root is resolved on the host, as the worktree's is.
+    expect(run_args({ run_state: { root: 'runs', run_id: 'r1' } })).toContain(
+      `${process.cwd()}/runs/r1:${SANDBOX_STATE_ROOT}/r1`,
+    );
+  });
+
+  it('refuses a run id that would name a path outside the run directory', () => {
+    for (const run_id of ['../other', 'a/b', '', '-r', '.']) {
+      let caught: unknown;
+      try {
+        run_args({ run_state: { root: '/state', run_id } });
+      } catch (err) {
+        caught = err;
+      }
+      expect(error_kind(caught), run_id).toBe('config_error');
+    }
+  });
+
+  it("names the in-container root after the container's pinned HOME", () => {
+    expect(SANDBOX_STATE_ROOT).toBe('/home/node/.local/state/volley');
+    expect(SANDBOX_STATE_ROOT).toBe(default_state_root({}, '/home/node'));
+    expect(run_args().join(' ')).toContain('-e HOME=/home/node');
+  });
+
   it('carries the network posture into the run argv', () => {
     // Default-deny: no interface at all.
     expect(run_args({ network: 'none' }).join(' ')).toContain('--network none');
@@ -155,6 +190,7 @@ describe('sandbox_invocation (the invocation-spec helper)', () => {
     const args = sandbox_invocation({
       image: 'volley-sandbox:latest',
       build_root: '/tmp/ws.worktree',
+      run_state: { root: '/home/me/.local/state/volley', run_id: 'r1' },
       uid: 501,
       gid: 20,
       network: 'none',
@@ -162,6 +198,7 @@ describe('sandbox_invocation (the invocation-spec helper)', () => {
     });
     expect(args.slice(0, 2)).toEqual(['run', '--rm']);
     expect(args).toContain('/tmp/ws.worktree:/workspace');
+    expect(args).toContain(`/home/me/.local/state/volley/r1:${SANDBOX_STATE_ROOT}/r1`);
     expect(args.join(' ')).toContain('volley-pnpm-store:/home/node/.local/share/pnpm/store');
     expect(args.slice(-4)).toEqual(['--prompt', 'p', '--workspace', '/workspace']);
     // No crossing env when no host model is targeted (fully-offline shape).
@@ -172,6 +209,7 @@ describe('sandbox_invocation (the invocation-spec helper)', () => {
     const args = sandbox_invocation({
       image: 'volley-sandbox:latest',
       build_root: '/tmp/ws.worktree',
+      run_state: { root: '/home/me/.local/state/volley', run_id: 'r1' },
       uid: 501,
       gid: 20,
       network: 'allowlist',
@@ -198,10 +236,12 @@ describe('the package root (the spec a parent harness renders)', () => {
     expect(root.network_run_args).toBe(network_run_args);
     expect(root.SANDBOX_NETWORK_NAME).toBe(SANDBOX_NETWORK_NAME);
     expect(root.SANDBOX_NETWORK_SUBNET).toBe(SANDBOX_NETWORK_SUBNET);
+    expect(root.SANDBOX_STATE_ROOT).toBe(SANDBOX_STATE_ROOT);
+    expect(root.default_state_root).toBe(default_state_root);
   });
 });
 
-describe('format_docker_run (copy-paste shell line for examples / --dry-run)', () => {
+describe('format_docker_run (copy-paste shell line for the examples)', () => {
   it('prefixes docker and single-quotes only tokens with whitespace/specials', () => {
     const line = format_docker_run(run_args({ command: ['--prompt', 'build a thing'] }));
     expect(line.startsWith('docker run --rm')).toBe(true);

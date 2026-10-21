@@ -27,8 +27,7 @@
  * failing every prompt. Stdout carries the protocol alone: the run's renderer
  * writes to stderr, and `--json` is refused.
  */
-import { homedir, tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { step } from 'fascicle';
 import type { RunContext, Step } from 'fascicle';
 import type { AcpMode, AcpSession, AcpStreamRoute, AcpTurn, ServeAcpConfig } from 'fascicle/acp';
@@ -48,6 +47,7 @@ import { create_renderer } from './render/renderer.js';
 import { build_run_summary } from './summary.js';
 import { config_error } from './types.js';
 import type { ResolvedConfig, RunResult, VolleyConfig } from './types.js';
+import { default_state_root } from './workspace.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -87,15 +87,6 @@ const REFUSED_FLAGS: ReadonlyArray<readonly [keyof AcpFlags, string, string]> = 
  * sent yet. */
 const STAND_IN_TASK = 'volley acp: startup check';
 
-/** The root each run's state sits under when `--state-dir` names none:
- * `$XDG_STATE_HOME/volley`, else `~/.local/state/volley`. A relative
- * `XDG_STATE_HOME` is ignored, as the XDG spec says. */
-export function acp_state_root(env: Env): string {
-  const xdg = env['XDG_STATE_HOME'];
-  const base = xdg !== undefined && isAbsolute(xdg) ? xdg : join(homedir(), '.local', 'state');
-  return join(base, 'volley');
-}
-
 /** Unset, or set to nothing but whitespace. Any other value goes on to
  * `resolve_config`, which says what's wrong with it. */
 function is_blank(value: unknown): boolean {
@@ -132,7 +123,7 @@ export function acp_base_config(raw: AcpFlags, env: Env = process.env): AcpFlags
     ...raw,
     max_iterations: raw.max_iterations ?? ACP_MAX_ITERATIONS,
     state_dir:
-      raw.state_dir === undefined || is_blank(raw.state_dir) ? acp_state_root(env) : raw.state_dir,
+      raw.state_dir === undefined || is_blank(raw.state_dir) ? default_state_root(env) : raw.state_dir,
   };
   resolve_config(
     { ...base, workspace: tmpdir(), prompt: STAND_IN_TASK, criteria: STAND_IN_TASK },
