@@ -150,6 +150,7 @@ volley [options]
 volley --config <path>
 volley resume <run-id>
 volley matrix --builders <models> --critics <models> --config <path>
+volley critique --criteria <criteria> [--baseline <rev>] [options]
 volley acp --builder-provider <name> --builder-model <model> \
   --critic-provider <name> --critic-model <model> [options]
 ```
@@ -196,7 +197,7 @@ checkride.
 | Code | Meaning |
 |---|---|
 | 0 | Check passed and verdict approved. |
-| 2 | Max iterations reached without success. |
+| 2 | Max iterations reached without success; for `volley critique`, the critic asked for changes or the check failed. |
 | 3 | Builder/provider error. |
 | 4 | Check pipeline error (broken pipeline, not failing checks). |
 | 5 | Configuration error. |
@@ -242,7 +243,8 @@ inside it. A run directory with a symbolic link in it is refused, since volley
 never writes one.
 
 Continues from the last completed iteration with the saved feedback and cost
-totals. An iteration interrupted mid-phase is discarded and re-run.
+totals. An iteration interrupted mid-phase is discarded and re-run. A
+[critique](#critique-a-fixed-change) has one round and nothing to resume.
 
 ### Matrix sweep
 
@@ -312,6 +314,48 @@ statuses, verdicts, failing slots, unmet criteria, gate edits — is in the
 A run that does not converge is a *result*, shown in the table; the sweep exits
 0 as long as every attempt produced a summary, and nonzero only when one
 produced none at all (`status: broke`).
+
+### Critique a fixed change
+
+`volley critique` runs the check and the critic once over a change already
+made, with no builder. It's how you choose a critic: replay the same
+known-good and known-bad changes through the critic seat, across models and
+prompts, and count how many of the bad ones each critic rejects. A matrix sweep
+can't tell a critic that reads from one that approves everything, since both
+pass whenever the builder happens to be right.
+
+```sh
+volley critique --workspace ./repo --baseline <rev> \
+  --criteria "@criteria.md" \
+  --critic-provider ollama --critic-model qwen3:8b --critic reviewer
+```
+
+- **The change** is everything that differs from `--baseline`, committed or
+  not, untracked files included: the set a run reports for its builder. Without
+  `--baseline` it's HEAD, so the uncommitted and untracked edits are the
+  change. A revision that isn't a commit is a configuration error (exit 5).
+- **The critic** sees what it sees in a run: the changed paths and gate edits,
+  the check's section, and the same preset or prompt file. `--prompt` is
+  optional and only recorded, since a critic judges against `--criteria`.
+- **The state** is a one-round run's, under the state root
+  ([Run artifacts](#run-artifacts)). The summary records `mode: "critique"`
+  and no builder: `builder` is null in the iteration's archive, and so is the
+  comparison block's `builder_transport`. The archived `critic.tool_calls` says
+  how much the critic read before it judged.
+- **Exit codes**: 0 when the critic approves over a green check, 2 when it asks
+  for changes or the check is red (`status: "rejected"`), and the usual codes
+  for provider, check-pipeline, configuration, and critic errors.
+- **Flags**: the critic's seat flags, `--check`, `--critic`, `--gate-paths`,
+  `--state-dir`, `--run-id`, `--dry-run` (with the critic-seat canary),
+  `--json`, and the output flags work as they do for a run. Every flag only a
+  builder or its loop uses, from `--builder-model` and `--max-iterations` to
+  `--worktree`, `--git`, and `--fail-on-gate-edit`, is refused by name (exit
+  5), and so is `--config`, since a run's config file sets a builder.
+
+With no builder, a local critic needs no sandbox opt-in. The check still runs
+whatever the repository's check runs, though, so review an untrusted change
+with `volley critique` inside the container, its run directory mounted as a
+run's would be ([Local builder](#local-builder)).
 
 ## Local critic
 
