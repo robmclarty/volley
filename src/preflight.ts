@@ -227,7 +227,8 @@ function report_gate_posture(config: ResolvedConfig, renderer: Renderer): void {
     return;
   }
   if (config.gate_paths.length === 0) {
-    renderer.info('gate: no gate paths configured; builder edits to tests and check config are not flagged.');
+    const edits = config.mode === 'critique' ? 'changes' : 'builder edits';
+    renderer.info(`gate: no gate paths configured; ${edits} to tests and check config are not flagged.`);
     return;
   }
   renderer.info(
@@ -266,10 +267,14 @@ export async function preflight(
     config.state_dir === null ? `state: ${run_state_dir(config)}` : `state root: ${config.state_dir}`,
   );
   renderer.info(`check: ${config.check} (resolved: ${config.check_resolved})`);
-  renderer.info(
-    seat_line('builder', config.builder_model, config.builder_provider, config.builder_url, env),
-  );
-  renderer.info(`builder max steps: ${config.builder_max_steps}`);
+  if (config.mode === 'critique') {
+    renderer.info('builder: none (a critique checks and critiques the change once)');
+  } else {
+    renderer.info(
+      seat_line('builder', config.builder_model, config.builder_provider, config.builder_url, env),
+    );
+    renderer.info(`builder max steps: ${config.builder_max_steps}`);
+  }
   if (tool_loop_builder) {
     const contained = env['VOLLEY_CONTAINED'] === '1' || env['VOLLEY_CONTAINED'] === 'true';
     renderer.info(

@@ -16,10 +16,11 @@ import {
   load_config_file,
   resolve_config,
 } from './config.js';
+import { resolve_baseline } from './changes.js';
 import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
 import { find_run_state, load_resume_state } from './iteration.js';
 import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
-import { run_volley } from './orchestrator.js';
+import { run_critique, run_volley } from './orchestrator.js';
 import { preflight } from './preflight.js';
 import { colors_enabled } from './render/format.js';
 import { create_renderer } from './render/renderer.js';
@@ -67,6 +68,8 @@ type CliFlags = {
   runId?: string | number;
   dryRun?: boolean;
   config?: string;
+  /** A number when cac coerced an all-digit revision, as it does `runId`. */
+  baseline?: string | number;
   json?: boolean;
   verbose?: boolean;
   quiet?: boolean;
@@ -164,6 +167,17 @@ export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Rende
   }
 }
 
+/** The critic seat's options: its model, provider, and URL. `required` marks
+ * the model and provider as having no default, as under `acp`. */
+function with_critic_options(command: Command, required = false): Command {
+  const model_note = required ? ' (required)' : '';
+  const provider_note = required ? 'required' : 'default: claude_cli';
+  return command
+    .option('--critic-model <model>', `Critic model${model_note}`)
+    .option('--critic-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
+    .option('--critic-url <url>', "Critic's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)");
+}
+
 /** The seat options, declared once for every command that runs seats: each
  * seat's model, provider, and URL, the tool-loop builder's step cap, and the
  * unsandboxed opt-out. `required` marks each seat's model and provider as
@@ -171,16 +185,36 @@ export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Rende
 function with_seat_options(command: Command, required = false): Command {
   const model_note = required ? ' (required)' : '';
   const provider_note = required ? 'required' : 'default: claude_cli';
-  return command
-    .option('--builder-model <model>', `Builder model${model_note}`)
-    .option('--builder-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
-    .option('--builder-url <url>', "Builder's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)")
-    .option('--builder-max-steps <n>', 'Tool-loop builder step cap per iteration, any provider but claude_cli (default: 50)')
-    .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)')
-    .option('--critic-model <model>', `Critic model${model_note}`)
-    .option('--critic-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
-    .option('--critic-url <url>', "Critic's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)");
+  return with_critic_options(
+    command
+      .option('--builder-model <model>', `Builder model${model_note}`)
+      .option('--builder-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
+      .option('--builder-url <url>', "Builder's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)")
+      .option('--builder-max-steps <n>', 'Tool-loop builder step cap per iteration, any provider but claude_cli (default: 50)')
+      .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)'),
+    required,
+  );
 }
+
+/** What a critique declares only so that it can refuse each by name, with
+ * exit 5: cac would answer an undeclared one with a bare "Unknown option".
+ * `resolve_config` refuses all but `--config`, which the command does. */
+const CRITIQUE_REFUSED_OPTIONS = [
+  '--builder-model <model>',
+  '--builder-provider <name>',
+  '--builder-url <url>',
+  '--builder-max-steps <n>',
+  '--builder-permission-mode <mode>',
+  '--allow-unsandboxed-builder',
+  '--sandbox-image <tag>',
+  '--max-iterations <n>',
+  '--max-cost-usd <usd>',
+  '--git',
+  '--worktree',
+  '--discard-worktree',
+  '--fail-on-gate-edit',
+  '--config <path>',
+];
 
 function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
   return {
@@ -222,6 +256,16 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.quiet === true ? { quiet: true } : {}),
     ...(flags.thinking === false ? { show_thinking: false } : {}),
   };
+}
+
+/** A flag's value as typed. cac reads an all-digit value as a number, which
+ * drops leading zeros, so a coerced id or revision would silently name another
+ * run or commit: refused rather than guessed at. */
+function not_a_bare_number(name: string, value: string | number | undefined): string | undefined {
+  if (typeof value === 'number') {
+    throw config_error(`${name} must not be a bare number (read as ${String(value)})`);
+  }
+  return value;
 }
 
 function emit_result(config: ResolvedConfig, result: RunResult, renderer: Renderer): number {
@@ -277,15 +321,8 @@ async function main(argv: string[]): Promise<number> {
     .action(async (flags: CliFlags) => {
       const base = flags.config !== undefined ? await load_config_file(flags.config) : ({} as VolleyConfig);
       const merged = merge_flags(base, flags);
-      if (typeof flags.runId === 'number') {
-        // A coerced id would silently rename the run's branch, so refuse it
-        // rather than guess what the caller typed.
-        throw config_error(`--run-id must not be a bare number (read as ${String(flags.runId)})`);
-      }
-      const config = resolve_config(
-        merged,
-        flags.runId !== undefined ? { run_id: flags.runId } : {},
-      );
+      const run_id = not_a_bare_number('--run-id', flags.runId);
+      const config = resolve_config(merged, run_id !== undefined ? { run_id } : {});
       const renderer = make_renderer(config);
       warn_api_key_meter(renderer);
       warn_unsandboxed_builder(config, renderer);
@@ -337,6 +374,55 @@ async function main(argv: string[]): Promise<number> {
       const result = await run_volley(config, { renderer }, resume.state);
       exit_code = emit_result(config, result, renderer);
     });
+
+  const critique_command = cli
+    .command('critique', 'Check and critique a change already made, once, with no builder')
+    .option('--workspace <path>', 'The repository whose change is reviewed', { default: '.' })
+    .option('--baseline <rev>', 'Review everything that differs from this revision, committed or not (default: HEAD)')
+    .option('--criteria <criteria>', 'Acceptance criteria (string or @file)')
+    .option('--prompt <prompt>', 'The task the change answers, recorded with the run; the critic judges against --criteria')
+    .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`);
+  with_critic_options(critique_command)
+    .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
+    .option('--gate-paths <globs>', 'Comma-separated globs naming the gate (tests, fixtures, check config); replaces the defaults')
+    .option('--state-dir <path>', STATE_DIR_HELP)
+    .option('--run-id <id>', "The run's id, naming its state directory (default: a fresh UUID)")
+    .option('--dry-run', 'Validate config and the baseline, run checkride doctor, and probe the critic seat, then exit')
+    .option('--json', 'Machine mode: final summary JSON on stdout, no streaming')
+    .option('--verbose', 'Show full tool inputs/outputs (truncated at 4000 chars)')
+    .option('--quiet', 'Only phase transitions, cost updates, and the final summary')
+    .option('--no-thinking', 'Hide reasoning chunks (still recorded in the trajectory)');
+  for (const refused of CRITIQUE_REFUSED_OPTIONS) {
+    critique_command.option(refused, 'Refused: a critique runs no builder and no loop');
+  }
+  critique_command.action(async (flags: CliFlags) => {
+    if (flags.config !== undefined) {
+      throw config_error(
+        "volley critique refuses --config: a run's config file sets a builder; pass the critique's settings as flags",
+      );
+    }
+    const run_id = not_a_bare_number('--run-id', flags.runId);
+    const baseline = not_a_bare_number('--baseline', flags.baseline);
+    const merged = merge_flags({} as VolleyConfig, flags);
+    const config = resolve_config(merged, {
+      mode: 'critique',
+      ...(run_id !== undefined ? { run_id } : {}),
+    });
+    const renderer = make_renderer(config);
+    warn_api_key_meter(renderer);
+    if (merged.dry_run === true) {
+      // A revision that isn't a commit fails the dry run as it would the critique.
+      const sha = resolve_baseline(config.workspace, baseline);
+      renderer.info(`baseline: ${sha ?? 'none (not a git repository, or no commit yet)'}`);
+      exit_code = await preflight(config, renderer, process.env);
+      return;
+    }
+    const result = await run_critique(config, {
+      renderer,
+      ...(baseline !== undefined ? { baseline } : {}),
+    });
+    exit_code = emit_result(config, result, renderer);
+  });
 
   cli
     .command('matrix', 'Sweep builder×critic model combos serially over one config')

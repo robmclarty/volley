@@ -4,7 +4,7 @@
  * CLI runs against stand-in OpenRouter servers show `volley resume` finding a
  * run under a root, and `volley matrix` reading a seat back from one.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -16,7 +16,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { aborted_error } from 'fascicle';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolve_config } from '../../src/config.js';
@@ -29,12 +28,12 @@ import {
   temp_workspace,
   test_config,
 } from '../helpers/harness.js';
+import { cli_env, spawn_cli } from '../helpers/cli.js';
+import type { CliResult } from '../helpers/cli.js';
 import { close_servers, start_server } from '../helpers/http_server.js';
 import { approve_reply, mock_engine, reject_reply } from '../helpers/mock_engine.js';
 import { stub_openai } from '../helpers/openai_stub.js';
 import type { StubOpenAi } from '../helpers/openai_stub.js';
-
-const CLI = fileURLToPath(new URL('../../src/cli.ts', import.meta.url));
 
 const KEY = 'sk-or-test';
 
@@ -101,46 +100,10 @@ function read_json(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 }
 
-/** The developer's shell, minus anything that would re-point, reprice,
- * re-key, or contain an openrouter seat, plus the test's key and the
- * uncontained opt-out a resumed tool-loop builder needs. */
-function child_env(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of [
-    'VOLLEY_OPENROUTER_URL',
-    'VOLLEY_CONTAINED',
-    'VOLLEY_MODEL_HOST',
-    'VOLLEY_PRICING_PATH',
-  ]) {
-    delete env[name];
-  }
-  return {
-    ...env,
-    OPENROUTER_API_KEY: KEY,
-    VOLLEY_ALLOW_UNSANDBOXED_BUILDER: '1',
-    VOLLEY_AUTH_MODE: 'auto',
-  };
-}
-
-/** Spawn the CLI from the repo, where `tsx` resolves, without blocking this
- * process, whose stand-in servers have to answer the child's requests. */
-function run_cli(args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', CLI, ...args], {
-      env: child_env(),
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('close', (status) => {
-      resolve({ status, stdout, stderr });
-    });
-  });
+/** The CLI with the test's key and the uncontained opt-out a resumed
+ * tool-loop builder needs. */
+function run_cli(args: string[]): Promise<CliResult> {
+  return spawn_cli(args, cli_env({ OPENROUTER_API_KEY: KEY, VOLLEY_ALLOW_UNSANDBOXED_BUILDER: '1' }));
 }
 
 describe('a run under --state-dir', () => {
