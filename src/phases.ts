@@ -195,6 +195,23 @@ function next_iteration(s: LoopState): LoopState {
   };
 }
 
+/** What changed in the build root since the baseline, reported as it's
+ * measured: the count, and a warning for any gate edit. A run measures the
+ * builder's work this way after every build, and a critique measures the
+ * change under review the same way, so the critic is shown one shape either
+ * way. */
+function measure_changes(deps: PhaseDeps, root: string): ChangeSet | null {
+  const { config, renderer } = deps;
+  const changes = collect_changes({
+    root,
+    baseline: deps.baseline,
+    gate_patterns: config.gate_paths,
+    excluded_dir: state_root_within(root, config.state_dir),
+  });
+  report_changes(config, renderer, changes);
+  return changes;
+}
+
 /** `build`: one builder session edits the build root, then volley measures what
  * it changed and, under `--git`, checkpoints it. */
 export async function build_phase(
@@ -222,16 +239,13 @@ export async function build_phase(
   // check's verdict and the builder's reach are two independent facts about
   // the same iteration rather than one inferred from the other.
   const root = build_root(config.workspace, config.worktree);
-  const excluded_dir = state_root_within(root, config.state_dir);
-  const changes = collect_changes({
-    root,
-    baseline: deps.baseline,
-    gate_patterns: config.gate_paths,
-    excluded_dir,
-  });
-  report_changes(config, renderer, changes);
+  const changes = measure_changes(deps, root);
   if (config.git_checkpoints) {
-    git_checkpoint(root, `volley iter ${String(built.iteration)}: build`, excluded_dir);
+    git_checkpoint(
+      root,
+      `volley iter ${String(built.iteration)}: build`,
+      state_root_within(root, config.state_dir),
+    );
   }
   return { ...built, changes };
 }
