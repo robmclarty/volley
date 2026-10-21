@@ -49,6 +49,7 @@ type CliFlags = {
   builderProvider?: string;
   builderUrl?: string;
   builderMaxSteps?: number;
+  builderMaxToolCalls?: number;
   allowUnsandboxedBuilder?: boolean;
   criticModel?: string;
   criticProvider?: string;
@@ -191,6 +192,7 @@ function with_seat_options(command: Command, required = false): Command {
       .option('--builder-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
       .option('--builder-url <url>', "Builder's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)")
       .option('--builder-max-steps <n>', 'Tool-loop builder step cap per iteration, any provider but claude_cli (default: 50)')
+      .option('--builder-max-tool-calls <n>', 'Tool calls a tool-loop builder may make per turn, any provider but claude_cli (default: 1)')
       .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)'),
     required,
   );
@@ -204,6 +206,7 @@ const CRITIQUE_REFUSED_OPTIONS = [
   '--builder-provider <name>',
   '--builder-url <url>',
   '--builder-max-steps <n>',
+  '--builder-max-tool-calls <n>',
   '--builder-permission-mode <mode>',
   '--allow-unsandboxed-builder',
   '--sandbox-image <tag>',
@@ -230,6 +233,9 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.builderUrl !== undefined ? { builder_url: flags.builderUrl } : {}),
     ...(flags.builderMaxSteps !== undefined
       ? { builder_max_steps: Number(flags.builderMaxSteps) }
+      : {}),
+    ...(flags.builderMaxToolCalls !== undefined
+      ? { builder_max_tool_calls: Number(flags.builderMaxToolCalls) }
       : {}),
     ...(flags.allowUnsandboxedBuilder === true ? { allow_unsandboxed_builder: true } : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),

@@ -164,7 +164,8 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-model` | `opus` | `opus`/`sonnet`/`haiku` or a full model id. |
 | `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local builder](#local-builder) and [OpenRouter](#openrouter)). |
 | `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
-| `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Ignored for `claude_cli`. |
+| `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. |
+| `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn; past it, fascicle runs the first ones and drops the rest. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
@@ -439,6 +440,14 @@ tool loop per iteration (capped by `--builder-max-steps`, default 50; hitting
 the cap is treated as partial work, not an error). The produced workspace goes
 to check + critic exactly like a `claude_cli` build.
 
+A local builder makes one tool call per turn by default, since some model and
+runtime pairs return parallel calls badly. For a pair that handles them, such
+as qwen3.8 on Ollama's MLX runner, which returns several reads at once,
+`--builder-max-tool-calls <n>` lets each turn carry up to `n`. fascicle runs a
+turn's calls in order, so a read can't race an edit, and the builder's prompt
+then asks it to batch independent reads but make one change or command per
+turn.
+
 ```sh
 volley \
   --prompt "@task.md" --workspace ./my-project --criteria "@criteria.md" \
@@ -672,7 +681,7 @@ for you ([below](#zed-setup)).
 `--builder-provider`, `--builder-model`, `--critic-provider`, and
 `--critic-model`. A missing one is refused with every missing flag named. The
 rest are optional: `--builder-url`, `--critic-url`, `--builder-max-steps`,
-`--allow-unsandboxed-builder`, `--critic`, `--check`, `--max-iterations`,
+`--builder-max-tool-calls`, `--allow-unsandboxed-builder`, `--critic`, `--check`, `--max-iterations`,
 `--max-cost-usd`, and `--state-dir`.
 
 It refuses these before serving, each with exit 5:

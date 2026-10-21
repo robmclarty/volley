@@ -68,17 +68,37 @@ const HARNESS_APPENDS: Record<ToolSet, string> = {
   acp: 'harness_append_acp.md',
 };
 
+/** Step 2 of "Work this way", as both harness appends word it for a builder
+ * held to one tool call a turn. */
+const ONE_CALL_A_TURN = '2. Call one tool at a time and read its result before deciding the next\n   call.';
+
+/** Step 2 for a builder that may make several calls a turn: fascicle runs a
+ * turn's calls in order, so a read can't race an edit, but each change or
+ * command is still worth reading before the next. */
+function batched_calls(max_tool_calls: number): string {
+  return [
+    `2. Batch independent reads into one turn, up to ${String(max_tool_calls)} calls, but`,
+    '   make one change or command per turn, and read its result before',
+    '   deciding the next call.',
+  ].join('\n');
+}
+
 // The CLI system prompt assumes CLI semantics (built-in tools, implicit
 // cwd), so the local builder gets its own — its tool set, the
 // workspace-is-cwd convention, and the harness-enforced `finish` stop.
-export function compose_builder_system_local(tool_set: ToolSet = 'volley'): string {
+export function compose_builder_system_local(
+  tool_set: ToolSet = 'volley',
+  max_tool_calls = 1,
+): string {
   const identity = [
     'You are the builder inside the volley harness: an autonomous agent',
     'iterating on a workspace until it satisfies a task and its acceptance',
     'criteria.',
   ].join('\n');
   const append = readFileSync(join(builder_presets_dir(), HARNESS_APPENDS[tool_set]), 'utf8');
-  return `${identity}\n\n${append.trimEnd()}`;
+  const worded =
+    max_tool_calls > 1 ? append.replace(ONE_CALL_A_TURN, batched_calls(max_tool_calls)) : append;
+  return `${identity}\n\n${worded.trimEnd()}`;
 }
 
 /** The builder system prompt for the active provider: the `claude_cli`
@@ -89,7 +109,7 @@ export function compose_builder_system_local(tool_set: ToolSet = 'volley'): stri
 function resolve_builder_system(config: ResolvedConfig, tool_set?: ToolSet): string {
   return config.builder_provider === 'claude_cli'
     ? compose_builder_system()
-    : compose_builder_system_local(tool_set);
+    : compose_builder_system_local(tool_set, config.builder_max_tool_calls);
 }
 
 // Salvage budget for a tool call a local model emits as assistant text instead
@@ -149,7 +169,7 @@ function builder_tool_options(
     max_steps: config.builder_max_steps,
     tool_error_policy: 'feed_back',
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
-    max_tool_calls_per_step: 1,
+    max_tool_calls_per_step: config.builder_max_tool_calls,
   };
 }
 

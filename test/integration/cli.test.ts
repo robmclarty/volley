@@ -201,6 +201,7 @@ describe('volley --help', () => {
       '--builder-provider',
       '--builder-url',
       '--builder-max-steps',
+      '--builder-max-tool-calls',
       '--allow-unsandboxed-builder',
       '--critic-model',
       '--critic-provider',

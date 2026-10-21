@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
+  DEFAULT_BUILDER_MAX_TOOL_CALLS,
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_SANDBOX_IMAGE,
@@ -352,6 +353,46 @@ describe('resolve_config', () => {
           resolve_config(base(workspace), { env: { VOLLEY_BUILDER_MAX_STEPS: bad } }),
         ).toThrow(/builder-max-steps/i);
       }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('resolves builder_max_tool_calls from the flag, then VOLLEY_BUILDER_MAX_TOOL_CALLS, then 1', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(DEFAULT_BUILDER_MAX_TOOL_CALLS).toBe(1);
+      expect(resolve_config(base(workspace), { env: {} }).builder_max_tool_calls).toBe(1);
+      const env = { VOLLEY_BUILDER_MAX_TOOL_CALLS: '3' };
+      expect(resolve_config(base(workspace), { env }).builder_max_tool_calls).toBe(3);
+      expect(
+        resolve_config({ ...base(workspace), builder_max_tool_calls: 5 }, { env }).builder_max_tool_calls,
+      ).toBe(5);
+      for (const bad of [0, -1, 2.5]) {
+        expect(() =>
+          resolve_config({ ...base(workspace), builder_max_tool_calls: bad }, { env: {} }),
+        ).toThrow('--builder-max-tool-calls / VOLLEY_BUILDER_MAX_TOOL_CALLS must be a positive integer');
+      }
+      expect(() =>
+        resolve_config(base(workspace), { env: { VOLLEY_BUILDER_MAX_TOOL_CALLS: 'many' } }),
+      ).toThrow('got: many');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('preserves builder_max_tool_calls across a persist→restore round-trip', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const original = resolve_config(
+        { ...base(workspace), builder_max_tool_calls: 4 },
+        { run_id: 'tc-run', env: {}, state_dir: null },
+      );
+      initialize_run_state(original);
+      write_resolved_config(original);
+      const resume = load_resume_state(workspace, 'tc-run');
+      expect(resume.raw_config.builder_max_tool_calls).toBe(4);
+      expect(resolve_config(resume.raw_config, { run_id: 'tc-run', env: {} }).builder_max_tool_calls).toBe(4);
     } finally {
       cleanup();
     }
@@ -987,6 +1028,7 @@ describe('resolve_config: a critique', () => {
         [{ builder_provider: 'ollama' }, '--builder-provider (builder_provider)'],
         [{ builder_url: 'http://localhost:1' }, '--builder-url (builder_url)'],
         [{ builder_max_steps: 5 }, '--builder-max-steps (builder_max_steps)'],
+        [{ builder_max_tool_calls: 2 }, '--builder-max-tool-calls (builder_max_tool_calls)'],
         [{ builder_permission_mode: 'acceptEdits' }, '--builder-permission-mode (builder_permission_mode)'],
         [{ allow_unsandboxed_builder: true }, '--allow-unsandboxed-builder (allow_unsandboxed_builder)'],
         [{ sandbox_image: 'img:1' }, '--sandbox-image (sandbox_image)'],

@@ -274,6 +274,7 @@ export async function preflight(
       seat_line('builder', config.builder_model, config.builder_provider, config.builder_url, env),
     );
     renderer.info(`builder max steps: ${config.builder_max_steps}`);
+    renderer.info(`builder tool calls per turn: ${config.builder_max_tool_calls}`);
   }
   if (tool_loop_builder) {
     const contained = env['VOLLEY_CONTAINED'] === '1' || env['VOLLEY_CONTAINED'] === 'true';

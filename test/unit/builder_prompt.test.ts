@@ -109,6 +109,25 @@ describe('compose_builder_system_local', () => {
   });
 });
 
+describe('compose_builder_system_local: tool calls per turn', () => {
+  const flat = (tool_set: 'volley' | 'acp', calls?: number) =>
+    compose_builder_system_local(tool_set, calls).replace(/\s+/g, ' ');
+
+  it('asks for one call at a time at the default cap, and for batched reads above it', () => {
+    for (const tool_set of ['volley', 'acp'] as const) {
+      expect(flat(tool_set)).toContain('2. Call one tool at a time and read its result');
+      const batched = flat(tool_set, 4);
+      // Both presets word step 2 the same, so a rewording of either that the
+      // replacement no longer matches shows up here.
+      expect(batched, tool_set).not.toContain('Call one tool at a time');
+      expect(batched).toContain(
+        '2. Batch independent reads into one turn, up to 4 calls, but make one change or command per turn',
+      );
+      expect(batched).toContain('3. Read before you edit');
+    }
+  });
+});
+
 describe('compose_builder_system_local: the acp set', () => {
   const flat = compose_builder_system_local('acp').replace(/\s+/g, ' ');
 

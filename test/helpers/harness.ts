@@ -73,6 +73,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     builder_provider: 'claude_cli',
     builder_url: null,
     builder_max_steps: 50,
+    builder_max_tool_calls: 1,
     allow_unsandboxed_builder: false,
     critic_model: 'opus',
     critic_provider: 'claude_cli',

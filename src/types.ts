@@ -73,6 +73,7 @@ export type VolleyConfig = {
   builder_provider?: BuilderProvider;
   builder_url?: string;
   builder_max_steps?: number;
+  builder_max_tool_calls?: number;
   allow_unsandboxed_builder?: boolean;
   critic_model?: string;
   critic_provider?: CriticProvider;
@@ -122,6 +123,11 @@ export type ResolvedConfig = {
    * lmstudio, openrouter) takes one. */
   builder_url: string | null;
   builder_max_steps: number;
+  /** How many tool calls a tool-loop builder may make in one turn; fascicle
+   * runs the first that many, in order, and drops the rest. 1 by default,
+   * since some model and runtime pairs return parallel calls badly; raise it
+   * for a pair that handles them. Ignored by the `claude_cli` builder. */
+  builder_max_tool_calls: number;
   /** Operator opt-out permitting a non-`claude_cli` builder to run without a
    * sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;

@@ -26,6 +26,7 @@ export const DEFAULT_BUILDER_MODEL = 'opus';
 const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_BUILDER_MAX_STEPS = 50;
+export const DEFAULT_BUILDER_MAX_TOOL_CALLS = 1;
 export const DEFAULT_CHECK = 'auto';
 const DEFAULT_CRITIC = 'reviewer';
 const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
@@ -165,6 +166,7 @@ const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
   ['builder_provider', '--builder-provider'],
   ['builder_url', '--builder-url'],
   ['builder_max_steps', '--builder-max-steps'],
+  ['builder_max_tool_calls', '--builder-max-tool-calls'],
   ['builder_permission_mode', '--builder-permission-mode'],
   ['allow_unsandboxed_builder', '--allow-unsandboxed-builder'],
   ['sandbox_image', '--sandbox-image'],
@@ -186,27 +188,41 @@ function refuse_builder_settings(raw: VolleyConfig): void {
   }
 }
 
-/** `--builder-max-steps` (a merged flag/config value) wins over the
- * `VOLLEY_BUILDER_MAX_STEPS` env var, which wins over the default. Local
- * builder only; ignored by the `claude_cli` arm. */
-function resolve_builder_max_steps(
-  raw: VolleyConfig,
+/** A tool-loop builder's count: its step cap, or its tool calls per turn. */
+type BuilderCount = { flag: string; env_var: string; fallback: number };
+
+const BUILDER_MAX_STEPS: BuilderCount = {
+  flag: '--builder-max-steps',
+  env_var: 'VOLLEY_BUILDER_MAX_STEPS',
+  fallback: DEFAULT_BUILDER_MAX_STEPS,
+};
+
+const BUILDER_MAX_TOOL_CALLS: BuilderCount = {
+  flag: '--builder-max-tool-calls',
+  env_var: 'VOLLEY_BUILDER_MAX_TOOL_CALLS',
+  fallback: DEFAULT_BUILDER_MAX_TOOL_CALLS,
+};
+
+/** A builder count's flag or config value wins over its env var, which wins
+ * over the default, and either must be a positive integer. Local builder
+ * only; ignored by the `claude_cli` arm. */
+function resolve_builder_count(
+  value: number | undefined,
   env: Record<string, string | undefined>,
+  count: BuilderCount,
 ): number {
-  if (raw.builder_max_steps !== undefined) {
-    return validate_builder_max_steps(raw.builder_max_steps, raw.builder_max_steps);
-  }
-  const env_value = env['VOLLEY_BUILDER_MAX_STEPS'];
+  if (value !== undefined) return positive_count(value, value, count);
+  const env_value = env[count.env_var];
   if (env_value !== undefined && env_value !== '') {
-    return validate_builder_max_steps(Number(env_value), env_value);
+    return positive_count(Number(env_value), env_value, count);
   }
-  return DEFAULT_BUILDER_MAX_STEPS;
+  return count.fallback;
 }
 
-function validate_builder_max_steps(value: number, original: unknown): number {
+function positive_count(value: number, original: unknown, count: BuilderCount): number {
   if (!Number.isInteger(value) || value < 1) {
     throw config_error(
-      `--builder-max-steps / VOLLEY_BUILDER_MAX_STEPS must be a positive integer; got: ${String(original)}`,
+      `${count.flag} / ${count.env_var} must be a positive integer; got: ${String(original)}`,
     );
   }
   return value;
@@ -453,7 +469,12 @@ export function resolve_config(
     );
   }
 
-  const builder_max_steps = resolve_builder_max_steps(raw, builder_env);
+  const builder_max_steps = resolve_builder_count(raw.builder_max_steps, builder_env, BUILDER_MAX_STEPS);
+  const builder_max_tool_calls = resolve_builder_count(
+    raw.builder_max_tool_calls,
+    builder_env,
+    BUILDER_MAX_TOOL_CALLS,
+  );
 
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
   if (!CRITIC_PROVIDERS.includes(critic_provider)) {
@@ -548,6 +569,7 @@ export function resolve_config(
     builder_provider,
     builder_url,
     builder_max_steps,
+    builder_max_tool_calls,
     allow_unsandboxed_builder,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,

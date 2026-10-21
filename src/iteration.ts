@@ -294,6 +294,9 @@ export function load_resume_state(
     ...(recorded['builder_max_steps'] === undefined
       ? {}
       : { builder_max_steps: Number(recorded['builder_max_steps']) }),
+    ...(recorded['builder_max_tool_calls'] === undefined
+      ? {}
+      : { builder_max_tool_calls: Number(recorded['builder_max_tool_calls']) }),
     critic_model: String(recorded['critic_model']),
     critic_provider: (recorded['critic_provider'] ?? 'claude_cli') as CriticProvider,
     ...(typeof recorded['critic_url'] === 'string' ? { critic_url: recorded['critic_url'] } : {}),

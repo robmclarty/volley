@@ -114,6 +114,34 @@ describe('local builder (ollama provider)', () => {
     }
   });
 
+  it('hands a raised tool-call cap to the call, and words the prompt for batched reads', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        builder_provider: 'ollama',
+        builder_model: 'qwen3.8:27b',
+        builder_max_tool_calls: 4,
+        allow_unsandboxed_builder: true,
+        max_iterations: 1,
+      });
+      const engine = mock_engine((call) =>
+        call.role === 'builder'
+          ? { content: 'built', cost_usd: 0 }
+          : { content: { verdict: 'approved', feedback: 'ok', unmet_criteria: [] }, cost_usd: 0 },
+      );
+      await run_volley(config, { renderer: silent_renderer(), engine, install_signal_handlers: false });
+
+      const builder = engine.calls.find((c) => c.role === 'builder');
+      expect(builder?.opts.max_tool_calls_per_step).toBe(4);
+      expect(String(builder?.opts.system).replace(/\s+/g, ' ')).toContain(
+        'Batch independent reads into one turn, up to 4 calls',
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
   it('treats a max_steps cutoff as data, not an error: warns, records finish_reason + salvage rate, and still runs check + critic', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
