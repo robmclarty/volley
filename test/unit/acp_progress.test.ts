@@ -312,6 +312,7 @@ function run_summary(
     final_verdict: 'approved',
     salvaged_branch: null,
     run_state_dir: '/state/volley/r',
+    mode: 'run',
     ...overrides,
     comparison: {
       builder_transport: 'native',

@@ -71,7 +71,8 @@ export type SalvageStats = {
  * purpose — this block is the single object the write-up diffs, so it carries
  * every comparison metric rather than pointing back out for some of them. */
 export type ComparisonSummary = {
-  builder_transport: Transport;
+  /** Null for a critique, which has no builder. */
+  builder_transport: Transport | null;
   critic_transport: Transport;
   /** The iteration the run converged on (check green + critic approved); null
    * when it never converged (budget/cap/interrupt/error). */
@@ -208,7 +209,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
   return {
     ...result,
     comparison: {
-      builder_transport: transport_of(config.builder_provider),
+      builder_transport: config.mode === 'critique' ? null : transport_of(config.builder_provider),
       critic_transport: transport_of(config.critic_provider),
       iterations_to_converge:
         result.status === 'success' ? result.iterations_completed : null,

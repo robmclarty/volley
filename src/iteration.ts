@@ -164,6 +164,7 @@ export function run_result_from_state(
     // which is the only moment the branch's survival is known.
     salvaged_branch: null,
     run_state_dir: run_state_dir(config),
+    mode: config.mode,
   };
 }
 
@@ -250,6 +251,11 @@ export function load_resume_state(
   if (recorded['run_id'] !== run_id) {
     throw config_error(
       `run ${run_id} not found in ${run_state_dir(run)} (recorded run: ${String(recorded['run_id'])})`,
+    );
+  }
+  if (recorded['mode'] === 'critique') {
+    throw config_error(
+      `run ${run_id} is a critique, which has one round and nothing to resume; run volley critique again`,
     );
   }
 

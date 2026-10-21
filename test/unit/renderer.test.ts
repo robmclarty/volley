@@ -27,6 +27,7 @@ const RESULT: RunResult = {
   final_verdict: 'approved',
   salvaged_branch: null,
   run_state_dir: '/state/volley/r1',
+  mode: 'run',
 };
 
 function capture(mode: RenderMode, show_thinking = true) {

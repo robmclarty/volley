@@ -61,6 +61,7 @@ function run_result(overrides: Partial<RunResult> = {}): RunResult {
     final_verdict: 'approved',
     salvaged_branch: null,
     run_state_dir: '/state/volley/test-run-id',
+    mode: 'run',
     ...overrides,
   };
 }

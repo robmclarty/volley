@@ -23,6 +23,8 @@ export function exit_code_for_status(status: RunStatus): number {
     case 'success':
       return EXIT_SUCCESS;
     case 'budget_exhausted':
+    // A critique that didn't pass exits as a run that didn't converge does.
+    case 'rejected':
       return EXIT_BUDGET_EXHAUSTED;
     case 'cost_cap_reached':
       return EXIT_COST_CAP;

@@ -25,6 +25,7 @@ import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
+import type { VolleyConfig } from '../../src/types.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import { initialize_run_state, write_resolved_config } from '../../src/workspace.js';
 import { temp_workspace } from '../helpers/harness.js';
@@ -943,6 +944,88 @@ describe('gate paths', () => {
       const resumed = load_resume_state(workspace, config.run_id, config.state_dir);
       expect(resumed.raw_config.gate_paths).toEqual(['schema/**']);
       expect(resumed.raw_config.fail_on_gate_edit).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('resolve_config: a critique', () => {
+  const CRITIQUE = { mode: 'critique' as const, env: {} };
+
+  it('needs no prompt, keeps the builder at its defaults, and runs one round', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config({ workspace, criteria: 'it is done' } as VolleyConfig, CRITIQUE);
+      expect(config).toMatchObject({
+        mode: 'critique',
+        prompt: '',
+        builder_provider: 'claude_cli',
+        builder_model: DEFAULT_BUILDER_MODEL,
+        builder_max_steps: DEFAULT_BUILDER_MAX_STEPS,
+        allow_unsandboxed_builder: false,
+        max_iterations: 1,
+        max_cost_usd: null,
+        git_checkpoints: false,
+        worktree: false,
+        fail_on_gate_edit: false,
+      });
+      // A run of the same config is a run.
+      expect(resolve_config(base(workspace), { env: {} }).mode).toBe('run');
+      // A task given anyway is recorded.
+      expect(resolve_config(base(workspace), CRITIQUE).prompt).toBe('do it');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses each setting only a builder or its loop uses, naming the flag', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const refused: ReadonlyArray<readonly [Partial<VolleyConfig>, string]> = [
+        [{ builder_model: 'opus' }, '--builder-model (builder_model)'],
+        [{ builder_provider: 'ollama' }, '--builder-provider (builder_provider)'],
+        [{ builder_url: 'http://localhost:1' }, '--builder-url (builder_url)'],
+        [{ builder_max_steps: 5 }, '--builder-max-steps (builder_max_steps)'],
+        [{ builder_permission_mode: 'acceptEdits' }, '--builder-permission-mode (builder_permission_mode)'],
+        [{ allow_unsandboxed_builder: true }, '--allow-unsandboxed-builder (allow_unsandboxed_builder)'],
+        [{ sandbox_image: 'img:1' }, '--sandbox-image (sandbox_image)'],
+        [{ max_iterations: 3 }, '--max-iterations (max_iterations)'],
+        [{ max_cost_usd: 1 }, '--max-cost-usd (max_cost_usd)'],
+        [{ git_checkpoints: true }, '--git (git_checkpoints)'],
+        [{ worktree: true }, '--worktree (worktree)'],
+        [{ discard_worktree: true }, '--discard-worktree (discard_worktree)'],
+        [{ fail_on_gate_edit: true }, '--fail-on-gate-edit (fail_on_gate_edit)'],
+      ];
+      for (const [setting, named] of refused) {
+        expect(() => resolve_config({ ...base(workspace), ...setting }, CRITIQUE)).toThrow(
+          `volley critique refuses ${named}: a critique runs no builder and no loop`,
+        );
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("reads none of the builder's env vars, and lets a local critic run contained with no key", () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const env = {
+        VOLLEY_BUILDER_MAX_STEPS: 'not a number',
+        VOLLEY_SANDBOX_IMAGE: 'other/img:1',
+        VOLLEY_ALLOW_UNSANDBOXED_BUILDER: '1',
+      };
+      const config = resolve_config(base(workspace), { mode: 'critique', env });
+      expect(config.builder_max_steps).toBe(DEFAULT_BUILDER_MAX_STEPS);
+      expect(config.sandbox_image).toBe('volley-sandbox:latest');
+      expect(config.allow_unsandboxed_builder).toBe(false);
+
+      // In the container, a run's claude_cli builder needs an API key; a
+      // critique has no builder, so a local critic needs nothing.
+      const local = { ...base(workspace), critic_provider: 'ollama' as const, critic_model: 'qwen3:8b' };
+      const contained = { VOLLEY_CONTAINED: '1' };
+      expect(() => resolve_config(local, { env: contained })).toThrow('claude_cli (builder)');
+      expect(resolve_config(local, { mode: 'critique', env: contained }).critic_provider).toBe('ollama');
     } finally {
       cleanup();
     }

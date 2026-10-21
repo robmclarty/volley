@@ -53,8 +53,15 @@ export type RunStatus =
    * the run halts on the spot rather than iterating, because a check the builder
    * can rewrite is not evidence the work is done. */
   | 'gate_edit_blocked'
+  /** A critique's other outcome: the critic requested changes, or the check
+   * failed, on the one change it reviewed. A run never ends this way. */
+  | 'rejected'
   | 'interrupted'
   | 'error';
+
+/** What a run does: the builder/critic loop (`run`), or one check and one
+ * critique of a change already made, with no builder at all (`critique`). */
+export type RunMode = 'run' | 'critique';
 
 /** User-facing configuration, before resolution (config file / flags). */
 export type VolleyConfig = {
@@ -93,6 +100,13 @@ export type ResolvedConfig = {
   version: 2;
   run_id: string;
   started_at: string;
+  /** A run, or a critique (`volley critique`). A critique's builder fields
+   * hold the defaults, untouched by flags and the environment, since no
+   * builder is ever constructed, and its loop settings are one round with
+   * nothing isolated or committed. */
+  mode: RunMode;
+  /** The task. A critique needs none, since a critic judges against the
+   * criteria alone, so it's empty unless one was given to record. */
   prompt: string;
   criteria: string;
   check: CheckMode;
@@ -330,6 +344,8 @@ export type RunResult = {
    * survived — every non-worktree run, every integrated run, every discarded
    * one. `--json` consumers read it here; the run's `summary.json` mirrors it. */
   salvaged_branch: string | null;
+  /** A run, or a critique, which runs no builder. */
+  mode: RunMode;
   /** Where this run keeps its config, summary, trajectory, feedback, verdict,
    * and iterations: `<state_dir>/<run_id>/` under a state root, else the
    * workspace's `.volley/`. Inside the sandbox container it is the container's

@@ -93,6 +93,7 @@ export function write_resolved_config(config: ResolvedConfig): void {
     version: config.version,
     run_id: config.run_id,
     started_at: config.started_at,
+    mode: config.mode,
     prompt: config.prompt,
     criteria: config.criteria,
     check: config.check,

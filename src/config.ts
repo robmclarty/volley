@@ -13,6 +13,7 @@ import { openrouter_api_key, SEAT_URL_PROVIDERS, takes_seat_url } from './engine
 import { config_error } from './types.js';
 import { default_state_root, RUN_ID_PATTERN } from './workspace.js';
 import type {
+  RunMode,
   BuilderPermissionMode,
   BuilderProvider,
   CriticPreset,
@@ -152,7 +153,38 @@ export type ResolveOptions = {
    * resume` passes the root it found the run under, or null for a run an older
    * volley kept in the workspace's `.volley/`, which resumes there. */
   state_dir?: string | null;
+  /** A run (the default), or a critique, which has no builder or loop. */
+  mode?: RunMode;
 };
+
+/** What only a builder, or the loop around it, uses, with the flag that sets
+ * each: a critique has no use for any of them, so naming one is an error
+ * rather than something quietly ignored. */
+const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
+  ['builder_model', '--builder-model'],
+  ['builder_provider', '--builder-provider'],
+  ['builder_url', '--builder-url'],
+  ['builder_max_steps', '--builder-max-steps'],
+  ['builder_permission_mode', '--builder-permission-mode'],
+  ['allow_unsandboxed_builder', '--allow-unsandboxed-builder'],
+  ['sandbox_image', '--sandbox-image'],
+  ['max_iterations', '--max-iterations'],
+  ['max_cost_usd', '--max-cost-usd'],
+  ['git_checkpoints', '--git'],
+  ['worktree', '--worktree'],
+  ['discard_worktree', '--discard-worktree'],
+  ['fail_on_gate_edit', '--fail-on-gate-edit'],
+];
+
+function refuse_builder_settings(raw: VolleyConfig): void {
+  for (const [field, flag] of CRITIQUE_REFUSED) {
+    if (raw[field] !== undefined && raw[field] !== false) {
+      throw config_error(
+        `volley critique refuses ${flag} (${field}): a critique runs no builder and no loop`,
+      );
+    }
+  }
+}
 
 /** `--builder-max-steps` (a merged flag/config value) wins over the
  * `VOLLEY_BUILDER_MAX_STEPS` env var, which wins over the default. Local
@@ -350,8 +382,15 @@ export function resolve_config(
 ): ResolvedConfig {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
+  // A critique runs no builder, so it reads nothing a run reads for one: the
+  // builder's settings are refused, its env vars go unread, and its seat keeps
+  // the defaults.
+  const critique = options.mode === 'critique';
+  if (critique) refuse_builder_settings(raw);
+  const builder_env = critique ? {} : env;
 
-  if (typeof raw.prompt !== 'string' || raw.prompt.length === 0) {
+  const has_prompt = typeof raw.prompt === 'string' && raw.prompt.length > 0;
+  if (!has_prompt && !critique) {
     throw config_error('missing required option: --prompt');
   }
   if (typeof raw.workspace !== 'string' || raw.workspace.length === 0) {
@@ -362,10 +401,10 @@ export function resolve_config(
   }
 
   const workspace = validate_workspace(resolve(cwd, raw.workspace));
-  const prompt = expand_at_file(raw.prompt, cwd);
+  const prompt = has_prompt ? expand_at_file(raw.prompt, cwd) : '';
   const criteria = expand_at_file(raw.criteria, cwd);
 
-  const max_iterations = raw.max_iterations ?? DEFAULT_MAX_ITERATIONS;
+  const max_iterations = raw.max_iterations ?? (critique ? 1 : DEFAULT_MAX_ITERATIONS);
   if (!Number.isInteger(max_iterations) || max_iterations < 1) {
     throw config_error(`--max-iterations must be a positive integer; got: ${String(raw.max_iterations)}`);
   }
@@ -399,12 +438,12 @@ export function resolve_config(
   // running *inside* a container (the correct blast-radius default) or the
   // operator explicitly opts out to run uncontained on the host. Under acp,
   // a person approves each command instead, so nothing is refused here.
-  const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, env);
+  const allow_unsandboxed_builder = resolve_allow_unsandboxed_builder(raw, builder_env);
   const contained = detect_containment(env);
   if (
     TOOL_LOOP_BUILDER_PROVIDERS.includes(builder_provider) &&
     options.uncontained_builder !== 'ask' &&
-    unguarded_builder(raw, env)
+    unguarded_builder(raw, builder_env)
   ) {
     throw config_error(
       `builder-provider '${builder_provider}' runs volley's tool loop with a real bash ` +
@@ -414,7 +453,7 @@ export function resolve_config(
     );
   }
 
-  const builder_max_steps = resolve_builder_max_steps(raw, env);
+  const builder_max_steps = resolve_builder_max_steps(raw, builder_env);
 
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
   if (!CRITIC_PROVIDERS.includes(critic_provider)) {
@@ -440,7 +479,7 @@ export function resolve_config(
   // on the host and Docker-free by design, where subscription auth works.
   if (contained) {
     const claude_roles = [
-      builder_provider === 'claude_cli' ? 'builder' : null,
+      builder_provider === 'claude_cli' && !critique ? 'builder' : null,
       critic_provider === 'claude_cli' ? 'critic' : null,
     ].filter((role): role is string => role !== null);
     const auth_mode = env['VOLLEY_AUTH_MODE'] ?? 'auto';
@@ -483,7 +522,7 @@ export function resolve_config(
     throw config_error('gate_paths must be an array of glob strings');
   }
 
-  const sandbox_image = resolve_sandbox_image(raw, env);
+  const sandbox_image = resolve_sandbox_image(raw, builder_env);
   const state_dir =
     options.state_dir !== undefined ? options.state_dir : resolve_state_dir(raw.state_dir, cwd, env);
   // Each run's folder would land among the workspace's own files, where no
@@ -500,6 +539,7 @@ export function resolve_config(
     version: 2,
     run_id,
     started_at: options.started_at ?? new Date().toISOString(),
+    mode: critique ? 'critique' : 'run',
     prompt,
     criteria,
     check,

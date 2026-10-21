@@ -64,6 +64,7 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     version: 2,
     run_id: 'test-run-id',
     started_at: new Date().toISOString(),
+    mode: 'run',
     prompt: 'write the file',
     criteria: 'the file exists',
     check: 'none',

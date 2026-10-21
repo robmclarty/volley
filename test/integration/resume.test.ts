@@ -185,6 +185,22 @@ describe('resume', () => {
     }
   });
 
+  it('refuses to resume a critique, which has one round and nothing to resume', () => {
+    const { workspace, cleanup } = temp_workspace();
+    const root = mkdtempSync(join(tmpdir(), 'volley-state-'));
+    try {
+      const config = test_config({ workspace, run_id: 'a-critique', state_dir: root, mode: 'critique' });
+      initialize_run_state(config);
+      write_resolved_config(config);
+      expect(() => load_resume_state(workspace, 'a-critique', root)).toThrow(
+        'run a-critique is a critique, which has one round and nothing to resume; run volley critique again',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      cleanup();
+    }
+  });
+
   it('rejects a run id that does not match the recorded run', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
