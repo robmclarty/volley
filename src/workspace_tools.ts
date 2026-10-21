@@ -94,8 +94,8 @@ function scoped_files(workspace: string, path: string | undefined, limit: number
   let is_dir: boolean;
   try {
     is_dir = statSync(start).isDirectory();
-  } catch {
-    throw new Error(`no such file or directory: ${path}`);
+  } catch (err) {
+    throw new Error(`no such file or directory: ${path}`, { cause: err });
   }
   return is_dir ? walk(root, start, limit) : [{ rel: relative(root, start), abs: start }];
 }

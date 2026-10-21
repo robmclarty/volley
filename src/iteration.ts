@@ -236,12 +236,12 @@ export function load_resume_state(
   state_dir: string | null = null,
 ): ResumeState {
   const run = { workspace, state_dir, run_id };
-  const dir = run_state_dir(run);
-  if (existsSync(dir)) {
-    if (lstatSync(dir).isSymbolicLink()) {
-      throw config_error(`refusing to resume: ${dir} is a symbolic link, which volley never writes`);
+  const run_dir = run_state_dir(run);
+  if (existsSync(run_dir)) {
+    if (lstatSync(run_dir).isSymbolicLink()) {
+      throw config_error(`refusing to resume: ${run_dir} is a symbolic link, which volley never writes`);
     }
-    refuse_symlinks(dir);
+    refuse_symlinks(run_dir);
   }
   const config_path = state_path(run, 'config.json');
   if (!existsSync(config_path)) {
