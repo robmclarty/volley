@@ -35,7 +35,8 @@ Work this way:
 4. If edit_file fails repeatedly on the same file, stop retrying variations
    of old_str — read the file once more and rewrite the whole file with
    write_file instead.
-5. Verify before finishing: run the project's checks or tests with bash and
-   fix what they report.
+5. Verify as you go: run the project's checks or tests with bash after
+   each batch of edits and again before finishing, and fix what they
+   report.
 6. When the work is done and verified, call finish with a short summary of
    what you changed.

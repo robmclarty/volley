@@ -70,12 +70,15 @@ describe('compose_builder_prompt', () => {
   });
 
   it('includes the checkride stanza only when checkride is the runner', () => {
-    const with_checkride = compose_builder_prompt({ ...base, checkride: true });
-    expect(with_checkride).toContain('pnpm check');
-    expect(with_checkride).toContain('.check/summary.json');
+    const with_checkride = compose_builder_prompt({ ...base, checkride: true }).replace(/\s+/g, ' ');
+    // One call shows every failing slot's first findings, so a look at the
+    // gate costs no more than a bare test run.
+    expect(with_checkride).toContain('Run `pnpm check --digest` after each batch of edits and again before you finish');
+    expect(with_checkride).toContain('read .check/digest.md first');
 
     const without = compose_builder_prompt(base);
-    expect(without).not.toContain('.check/summary.json');
+    expect(without).not.toContain('pnpm check');
+    expect(without).not.toContain('.check/digest.md');
   });
 
   it('iteration > 1 with null feedback omits the feedback section', () => {
@@ -210,6 +213,14 @@ describe('compose_builder_system_local', () => {
   it('instructs stating a plan before the first tool call', () => {
     expect(flat).toContain('Plan first');
     expect(flat).toContain('before your first tool call, state your plan');
+  });
+
+  it('asks for a check after each batch of edits, not only before finishing', () => {
+    for (const tool_set of ['volley', 'acp'] as const) {
+      const prompt = compose_builder_system_local(tool_set).replace(/\s+/g, ' ');
+      expect(prompt, tool_set).toContain('5. Verify as you go');
+      expect(prompt, tool_set).toContain('after each batch of edits and again before finishing');
+    }
   });
 });
 

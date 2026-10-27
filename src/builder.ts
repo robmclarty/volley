@@ -306,8 +306,10 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
     parts.push(
       '',
       'The definition of done for this workspace includes `pnpm check` (checkride)',
-      'exiting 0. Run it yourself before finishing; on failure, read',
-      '.check/summary.json, then the failing slot\'s raw output, fix, and re-run.',
+      'exiting 0. Run `pnpm check --digest` after each batch of edits and again',
+      'before you finish. When it fails, read .check/digest.md first: it lists',
+      'each failing slot\'s first findings. Open a slot\'s raw output under .check/',
+      'only if the digest isn\'t enough, then fix and re-run.',
     );
   }
   return parts.join('\n');
