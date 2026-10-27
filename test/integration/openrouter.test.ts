@@ -67,6 +67,56 @@ afterEach(async () => {
   await close_servers();
 });
 
+/** The text of the `[volley]` countdown notes among a request's messages. */
+function countdown_notes(messages: unknown[]): string[] {
+  return messages
+    .map((message) => (message as { role?: unknown; content?: unknown }))
+    .filter((message) => message.role === 'user' && typeof message.content === 'string')
+    .map((message) => message.content as string)
+    .filter((content) => content.startsWith('[volley]'));
+}
+
+describe("the builder's step countdown, through fascicle's real tool loop", () => {
+  it('ends only the last turns with a note, never keeps one, and counts the cutoff', async () => {
+    // A builder that lists files every turn and never finishes, against a
+    // four-step budget: the countdown covers the last two.
+    const builder_server = await stub_openai([
+      { tool_call: { id: 'call_1', name: 'list_files', input: {} } },
+    ]);
+    const critic_server = await stub_openai(APPROVED);
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        openrouter_seats(workspace, {
+          builder_url: builder_server.url,
+          critic_url: critic_server.url,
+          builder_max_steps: 4,
+        }),
+        { env: ENV },
+      );
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        install_signal_handlers: false,
+      });
+
+      const notes = builder_server.seen.map((request) => countdown_notes(request.messages));
+      expect(notes).toHaveLength(4);
+      expect(notes[0]).toEqual([]);
+      expect(notes[1]).toEqual([]);
+      expect(notes[2]).toEqual([expect.stringContaining('[volley] 2 steps left in this session')]);
+      // The transcript kept none of the earlier note: each turn sends only its own.
+      expect(notes[3]).toEqual([expect.stringContaining('This is the last step of this session')]);
+      for (const request of builder_server.seen.slice(2)) {
+        expect(request.messages.at(-1)).toMatchObject({ role: 'user' });
+      }
+
+      expect(result.builder_max_steps_hits).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('both seats on openrouter, against stand-in OpenRouter servers', () => {
   it('runs each seat on its own server, with the key, the title, and its own model', async () => {
     const builder_server = await stub_openai('done');
