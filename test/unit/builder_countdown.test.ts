@@ -16,7 +16,7 @@ const history: Message[] = [
 /** The text the hook appended for a turn, or undefined when it left the turn
  * alone. */
 async function note_at(max_steps: number, step_index: number): Promise<string | undefined> {
-  const prepared = await step_countdown(max_steps, 'the check (`pnpm check --digest`)')({
+  const prepared = await step_countdown(max_steps, 'the check (`pnpm exec checkride --digest`)')({
     step_index,
     messages: history,
   });
@@ -48,9 +48,9 @@ describe('step_countdown', () => {
 
   it('appends the steps left, this one included, and how to check, in the window', async () => {
     const first = await note_at(50, 45);
-    expect(first).toBe(countdown_note(5, 'the check (`pnpm check --digest`)'));
+    expect(first).toBe(countdown_note(5, 'the check (`pnpm exec checkride --digest`)'));
     expect(first).toContain('[volley] 5 steps left in this session, this one included');
-    expect(first).toContain("If you haven't run the check (`pnpm check --digest`) since your last edit");
+    expect(first).toContain("If you haven't run the check (`pnpm exec checkride --digest`) since your last edit");
     expect(await note_at(50, 48)).toContain('2 steps left');
   });
 
@@ -95,6 +95,17 @@ describe("the builder seat's countdown", () => {
       expect(prepared?.messages?.at(-1)?.content).toContain('5 steps left');
       expect(prepared?.messages?.at(-1)?.content).toContain('the check (`npm test`)');
     }
+  });
+
+  it("names volley's own checkride command, which needs no check script", async () => {
+    const opts = await builder_opts({
+      builder_provider: 'ollama',
+      builder_max_steps: 10,
+      check: 'auto',
+      check_resolved: 'checkride',
+    });
+    const prepared = await opts?.prepare_step?.({ step_index: 6, messages: history });
+    expect(prepared?.messages?.at(-1)?.content).toContain('the check (`pnpm exec checkride --digest`)');
   });
 
   it("names the project's tests when no check gates the run", async () => {

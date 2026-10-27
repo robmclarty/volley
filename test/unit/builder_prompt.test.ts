@@ -73,11 +73,13 @@ describe('compose_builder_prompt', () => {
     const with_checkride = compose_builder_prompt({ ...base, checkride: true }).replace(/\s+/g, ' ');
     // One call shows every failing slot's first findings, so a look at the
     // gate costs no more than a bare test run.
-    expect(with_checkride).toContain('Run `pnpm check --digest` after each batch of edits and again before you finish');
+    expect(with_checkride).toContain(
+      'Run `pnpm exec checkride --digest`, the check volley gates on, after each batch of edits and again before you finish',
+    );
     expect(with_checkride).toContain('read .check/digest.md first');
 
     const without = compose_builder_prompt(base);
-    expect(without).not.toContain('pnpm check');
+    expect(without).not.toContain('checkride');
     expect(without).not.toContain('.check/digest.md');
   });
 

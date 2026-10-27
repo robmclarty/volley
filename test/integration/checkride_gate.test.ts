@@ -116,7 +116,7 @@ describe('checkride_gate_loop', () => {
 
       // The builder prompt carried the checkride self-verify stanza.
       const first_builder = engine.calls.find((c) => c.role === 'builder');
-      expect(prompt_text(first_builder)).toContain('pnpm check');
+      expect(prompt_text(first_builder)).toContain('pnpm exec checkride --digest');
 
       // Critic 1 received the failing slot's raw artifact, not a digest.
       const first_critic = engine.calls.find((c) => c.role === 'critic');

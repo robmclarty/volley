@@ -78,9 +78,9 @@ prompt ──> builder (full agentic session in your workspace)
   the start of each failing slot's raw output, else the end of a command's
   output, capped at 6,000 characters. If the previous session hit its step
   limit, the prompt says so and asks it to run the check first. In a
-  checkride workspace it's asked to run `pnpm check --digest` after each batch
-  of edits and to read `.check/digest.md` when that fails, one capped file for
-  every failing slot, before any slot's raw output. It has full tools
+  checkride workspace it's asked to run `pnpm exec checkride --digest` after
+  each batch of edits and to read `.check/digest.md` when that fails, one
+  capped file for every failing slot, before any slot's raw output. It has full tools
   (Read/Write/Edit/Bash) and runs with `--permission-mode acceptEdits` by
   default.
 - **Check** is auto-detected: if the workspace uses checkride, volley runs

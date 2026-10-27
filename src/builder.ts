@@ -122,10 +122,11 @@ function resolve_builder_system(config: ResolvedConfig, tool_set?: ToolSet): str
 const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
 
 /** How the step countdown tells the builder to run the check: the command
- * checkride's digest comes from, the configured command, or the project's own
- * tests when no check gates the run. */
+ * volley gates on, with the digest and without `--json`, the configured
+ * command, or the project's own tests when no check gates the run. A
+ * workspace can hold checkride with no `check` script, so not `pnpm check`. */
 function check_hint(config: ResolvedConfig): string {
-  if (config.check_resolved === 'checkride') return 'the check (`pnpm check --digest`)';
+  if (config.check_resolved === 'checkride') return 'the check (`pnpm exec checkride --digest`)';
   if (config.check_resolved === 'command') return `the check (\`${config.check}\`)`;
   return "the project's tests";
 }
@@ -314,11 +315,11 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
   if (input.checkride) {
     parts.push(
       '',
-      'The definition of done for this workspace includes `pnpm check` (checkride)',
-      'exiting 0. Run `pnpm check --digest` after each batch of edits and again',
-      'before you finish. When it fails, read .check/digest.md first: it lists',
-      'each failing slot\'s first findings. Open a slot\'s raw output under .check/',
-      'only if the digest isn\'t enough, then fix and re-run.',
+      'The definition of done for this workspace includes checkride exiting 0. Run',
+      '`pnpm exec checkride --digest`, the check volley gates on, after each batch of',
+      'edits and again before you finish. When it fails, read .check/digest.md',
+      'first: it lists each failing slot\'s first findings. Open a slot\'s raw',
+      'output under .check/ only if the digest isn\'t enough, then fix and re-run.',
     );
   }
   return parts.join('\n');
