@@ -10,9 +10,11 @@ import {
   compose_builder_system,
   compose_builder_system_local,
   make_builder_step,
+  PREVIOUS_CHECK_MAX_CHARS,
 } from '../../src/builder.js';
 import type { BuilderDeps } from '../../src/builder.js';
-import type { BuilderProvider } from '../../src/types.js';
+import { skipped_check } from '../../src/check/command.js';
+import type { BuilderProvider, CheckResult } from '../../src/types.js';
 import { acp_session, temp_workspace, test_config } from '../helpers/harness.js';
 import { mock_engine } from '../helpers/mock_engine.js';
 
@@ -22,7 +24,26 @@ const base = {
   feedback: null,
   iteration: 1,
   checkride: false,
+  previous: null,
 };
+
+/** A red checkride run, as `run_checkride` returns it. */
+function failed_checkride(overrides: Partial<CheckResult> = {}): CheckResult {
+  return {
+    ran: true,
+    runner: 'checkride',
+    ok: false,
+    exit_code: 1,
+    duration_ms: 3041,
+    failing_slots: ['types', 'lint'],
+    detail: [
+      { slot: 'types', path: '/ws/.check/types.stdout.txt', content: 'src/a.ts(3,1): error TS2322', truncated: false },
+      { slot: 'lint', path: '/ws/.check/lint.json', content: '{"diagnostics":[]}', truncated: false },
+    ],
+    digest: '# checkride failure digest\n\n## types — tsc\n\n- src/a.ts:3 TS2322\n',
+    ...overrides,
+  };
+}
 
 describe('compose_builder_prompt', () => {
   it('first iteration has no feedback section', () => {
@@ -60,6 +81,89 @@ describe('compose_builder_prompt', () => {
   it('iteration > 1 with null feedback omits the feedback section', () => {
     const prompt = compose_builder_prompt({ ...base, iteration: 3, feedback: null });
     expect(prompt).not.toContain('PREVIOUS CRITIC FEEDBACK');
+  });
+});
+
+describe('compose_builder_prompt: the previous round', () => {
+  const later = { ...base, iteration: 2, feedback: '- fix the types' };
+
+  it("shows a failed check's slots, exit code, and checkride's digest after the critic's feedback", () => {
+    const prompt = compose_builder_prompt({
+      ...later,
+      previous: { check: failed_checkride(), step_limit_hit: null },
+    });
+    expect(prompt).toContain('PREVIOUS CHECK RESULT');
+    expect(prompt).toContain('The check failed on the work your last session left (checkride, exit 1).');
+    expect(prompt).toContain('Failing slots: types, lint.');
+    expect(prompt).toContain('- src/a.ts:3 TS2322');
+    // The digest stands in for the raw artifacts, which stay the critic's.
+    expect(prompt).not.toContain('{"diagnostics":[]}');
+    expect(prompt.indexOf('PREVIOUS CRITIC FEEDBACK')).toBeLessThan(prompt.indexOf('PREVIOUS CHECK RESULT'));
+  });
+
+  it("falls back to each failing slot's raw output, named by its file, when there is no digest", () => {
+    const { digest: _digest, ...check } = failed_checkride();
+    const prompt = compose_builder_prompt({ ...later, previous: { check, step_limit_hit: null } });
+    expect(prompt).toContain('types (.check/types.stdout.txt):\nsrc/a.ts(3,1): error TS2322');
+    expect(prompt).toContain('lint (.check/lint.json):\n{"diagnostics":[]}');
+  });
+
+  it("shows the end of a command check's output, where its summary is", () => {
+    const log = `${'noise\n'.repeat(2000)}FAIL test/widget.test.ts > spins\n`;
+    const check: CheckResult = {
+      ran: true,
+      runner: 'command',
+      ok: false,
+      exit_code: 2,
+      duration_ms: 10,
+      failing_slots: [],
+      detail: [],
+      log,
+    };
+    const prompt = compose_builder_prompt({ ...later, previous: { check, step_limit_hit: null } });
+    expect(prompt).toContain('The check failed on the work your last session left (exit 2).');
+    expect(prompt).not.toContain('Failing slots');
+    expect(prompt).toContain(`… (the last ${String(PREVIOUS_CHECK_MAX_CHARS)} characters of ${String(log.trimEnd().length)})`);
+    expect(prompt).toContain('FAIL test/widget.test.ts > spins');
+  });
+
+  it('caps the excerpt and says where the rest is', () => {
+    const digest = `# checkride failure digest\n${'- finding\n'.repeat(1000)}`;
+    const prompt = compose_builder_prompt({
+      ...later,
+      previous: { check: failed_checkride({ digest }), step_limit_hit: null },
+    });
+    expect(prompt).toContain(
+      `… (cut at ${String(PREVIOUS_CHECK_MAX_CHARS)} characters; .check/digest.md has the rest)`,
+    );
+    const section = prompt.slice(prompt.indexOf('PREVIOUS CHECK RESULT'));
+    expect(section.length).toBeLessThan(PREVIOUS_CHECK_MAX_CHARS + 400);
+  });
+
+  it('says nothing of a check that passed or never ran, or on the first iteration', () => {
+    const passed = { ...failed_checkride(), ok: true, exit_code: 0, failing_slots: [] };
+    for (const check of [passed, skipped_check('cost_cap'), skipped_check('none'), null]) {
+      const prompt = compose_builder_prompt({ ...later, previous: { check, step_limit_hit: null } });
+      expect(prompt).not.toContain('PREVIOUS CHECK RESULT');
+    }
+    const first = compose_builder_prompt({
+      ...base,
+      previous: { check: failed_checkride(), step_limit_hit: 50 },
+    });
+    expect(first).not.toContain('PREVIOUS CHECK RESULT');
+    expect(first).not.toContain('step limit');
+  });
+
+  it('tells the builder its last session ran out of steps, and to check first', () => {
+    const prompt = compose_builder_prompt({
+      ...later,
+      previous: { check: null, step_limit_hit: 50 },
+    }).replace(/\s+/g, ' ');
+    expect(prompt).toContain('Your last session hit its 50-step limit before it called finish');
+    expect(prompt).toContain('Run the check first this time');
+
+    const stopped = compose_builder_prompt({ ...later, previous: { check: null, step_limit_hit: null } });
+    expect(stopped).not.toContain('step limit');
   });
 });
 

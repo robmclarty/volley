@@ -135,14 +135,17 @@ describe('read_failing_artifacts', () => {
       mkdirSync(join(workspace, '.check'));
       writeFileSync(join(workspace, '.check', 'lint.json'), '{"issues": 3}');
       writeFileSync(join(workspace, '.check', 'test.stdout.txt'), '1 failing');
-      const artifacts = read_failing_artifacts(workspace, [
+      const artifacts = read_failing_artifacts(join(workspace, '.check'), [
         { name: 'lint', adapter: 'oxlint', ok: false, exit_code: 1, duration_ms: 1, output_file: 'lint.json' },
         { name: 'test', adapter: 'vitest', ok: false, exit_code: 1, duration_ms: 1, output_file: null },
         { name: 'ghost', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: null },
+        { name: 'dir', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: '..' },
       ]);
       expect(artifacts[0]?.content).toBe('{"issues": 3}');
       expect(artifacts[1]?.content).toBe('1 failing');
       expect(artifacts[2]?.path).toBeNull();
+      // A path that names a directory has no artifact to read.
+      expect(artifacts[3]?.path).toBeNull();
     } finally {
       cleanup();
     }
@@ -153,7 +156,7 @@ describe('read_failing_artifacts', () => {
     try {
       mkdirSync(join(workspace, '.check'));
       writeFileSync(join(workspace, '.check', 'big.json'), 'x'.repeat(CHECK_ARTIFACT_MAX_CHARS + 100));
-      const [artifact] = read_failing_artifacts(workspace, [
+      const [artifact] = read_failing_artifacts(join(workspace, '.check'), [
         { name: 'big', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: 'big.json' },
       ]);
       expect(artifact?.truncated).toBe(true);

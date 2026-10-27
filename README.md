@@ -73,11 +73,17 @@ prompt ──> builder (full agentic session in your workspace)
 ```
 
 - **Builder** gets the task, the acceptance criteria, and the previous
-  iteration's critic feedback. It has full tools (Read/Write/Edit/Bash) and
-  runs with `--permission-mode acceptEdits` by default.
+  iteration's critic feedback. When the previous iteration's check failed, it
+  also gets what the check said: checkride's digest of the failing slots, else
+  the start of each failing slot's raw output, else the end of a command's
+  output, capped at 6,000 characters. If the previous session hit its step
+  limit, the prompt says so and asks it to run the check first. It has full
+  tools (Read/Write/Edit/Bash) and runs with `--permission-mode acceptEdits`
+  by default.
 - **Check** is auto-detected: if the workspace uses checkride, volley runs
-  `pnpm exec checkride --json` and gates on the summary. Any shell command
-  works too (`--check "npm test"`), or `--check none` for critic-only runs.
+  `pnpm exec checkride --json --digest` and gates on the summary. Any shell
+  command works too (`--check "npm test"`), or `--check none` for critic-only
+  runs.
 - **Critic** is read-only (`Read`, `Grep`, `Glob` — no write path at all) and
   returns a schema-validated `{ verdict, feedback, unmet_criteria }`. It is told
   which files the builder changed, so it reviews a change rather than a tree.
@@ -85,7 +91,7 @@ prompt ──> builder (full agentic session in your workspace)
   cannot get them wrong.
 
 Each iteration is a fresh session — no context carries over except through the
-workspace filesystem and the critic's feedback. Swap the critic to change what
+workspace filesystem, the critic's feedback, and a failed check's output. Swap the critic to change what
 the loop optimizes for: `--critic reviewer` (default), `optimizer`,
 `researcher`, or a path to your own system prompt.
 
@@ -241,7 +247,9 @@ default root, from any directory, since the run's recorded config names its
 workspace. A run an older volley started keeps its state in the workspace's
 `.volley/`, and resumes there: point `--workspace` at it, or run `resume` from
 inside it. A run directory with a symbolic link in it is refused, since volley
-never writes one.
+never writes one. The resumed run's first builder gets what the last completed
+iteration left it, as it would have without the stop: the critic's feedback,
+the check's output if it failed, and the step-limit note.
 
 **A resume on the host runs only a config this machine signed.** A resume runs
 what the run's `config.json` says, its check command and its seats included.
@@ -882,7 +890,7 @@ the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
   trajectory.jsonl     # every fascicle trajectory event (replayable, below)
   feedback.md          # current critic feedback (harness-written)
   verdict              # approved | changes_requested (harness-written)
-  iterations/NNN/      # per-iteration archive: feedback, verdict, check artifacts, summary
+  iterations/NNN/      # per-iteration archive: feedback, verdict, check artifacts and digest, summary
 ```
 
 - **Why outside.** Some checks read every file in the tree, dot-directories

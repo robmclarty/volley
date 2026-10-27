@@ -83,6 +83,49 @@ describe('resume', () => {
     }
   });
 
+  it("carries a failed command check's output into the resumed run's first builder", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        run_id: 'red-command-run',
+        max_iterations: 3,
+        check: 'echo "FAIL widget spins"; exit 1',
+        check_resolved: 'command',
+      });
+      const engine_1 = mock_engine((call, index) => {
+        if (call.role === 'critic') return reject_reply('the widget still spins');
+        return index === 0
+          ? { content: 'first pass', cost_usd: 0.1 }
+          : { content: '', error: new aborted_error('sigint') };
+      });
+      await expect(
+        run_volley(config, { renderer: silent_renderer(), engine: engine_1, install_signal_handlers: false }),
+      ).rejects.toThrow();
+
+      const resume = load_resume_state(workspace, 'red-command-run');
+      expect(resume.state.check).toMatchObject({ ran: true, runner: 'command', ok: false, exit_code: 1 });
+      expect(resume.state.check?.log).toContain('FAIL widget spins');
+      // It stopped on its own, so there's no step limit to mention.
+      expect(resume.state.builder?.finish_reason).toBe('stop');
+
+      const engine_2 = mock_engine((call) =>
+        call.role === 'builder' ? { content: 'fixed', cost_usd: 0.1 } : approve_reply(),
+      );
+      await run_volley(
+        config,
+        { renderer: silent_renderer(), engine: engine_2, install_signal_handlers: false },
+        resume.state,
+      );
+      const resumed = prompt_text(engine_2.calls.find((c) => c.role === 'builder'));
+      expect(resumed).toContain('The check failed on the work your last session left (exit 1).');
+      expect(resumed).toContain('FAIL widget spins');
+      expect(resumed).not.toContain('step limit');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('persists the worktree flags and restores them on resume, defaulting off for legacy configs', () => {
     const { workspace, cleanup } = temp_workspace();
     try {

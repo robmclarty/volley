@@ -4,7 +4,7 @@
  * or a model driving volley's tools on any other provider, local or hosted.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { model_call } from 'fascicle';
 import type {
@@ -24,7 +24,7 @@ import { accumulate } from './cost.js';
 import { seat_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
 import { config_error, phase_error } from './types.js';
-import type { LoopState, ResolvedConfig } from './types.js';
+import type { CheckResult, LoopState, ResolvedConfig } from './types.js';
 import type { ToolSet } from './workspace_tools.js';
 import { build_root } from './worktree.js';
 
@@ -173,13 +173,93 @@ function builder_tool_options(
   };
 }
 
+/** What the builder is told about the iteration before its own, besides the
+ * critic's feedback. */
+export type PreviousRound = {
+  /** That iteration's check. Its output goes in the prompt when it failed. */
+  check: CheckResult | null;
+  /** The step limit that iteration's builder hit before it called finish, or
+   * null when it stopped on its own. */
+  step_limit_hit: number | null;
+};
+
 export type BuilderPromptInput = {
   task: string;
   criteria: string;
   feedback: string | null;
   iteration: number;
   checkride: boolean;
+  previous: PreviousRound | null;
 };
+
+/** How much of the last check's output the builder's prompt carries: a few KB,
+ * whatever the runner. checkride's digest already fits in 8 kB, and the builder
+ * can run the check again for the rest. */
+export const PREVIOUS_CHECK_MAX_CHARS = 6000;
+
+/** The first `max` characters of `text`, saying where it was cut. */
+function head(text: string, max: number, rest: string): string {
+  return text.length <= max ? text : `${text.slice(0, max)}\n… (cut at ${String(max)} characters; ${rest})`;
+}
+
+/** The last `max` characters of `text`, saying what came before was cut. */
+function tail(text: string, max: number): string {
+  return text.length <= max
+    ? text
+    : `… (the last ${String(max)} characters of ${String(text.length)})\n${text.slice(-max)}`;
+}
+
+/** The part of a failed check the builder reads first: checkride's digest,
+ * else the start of each failing slot's raw output, else the end of a
+ * command's output, where test runners and compilers sum up. */
+function check_excerpt(check: CheckResult): string {
+  const max = PREVIOUS_CHECK_MAX_CHARS;
+  if (check.digest !== undefined) {
+    return head(check.digest.trimEnd(), max, '.check/digest.md has the rest');
+  }
+  if (check.detail.length > 0) {
+    const slots = check.detail.map((artifact) => {
+      const source = artifact.path === null ? '' : ` (.check/${basename(artifact.path)})`;
+      return `${artifact.slot}${source}:\n${artifact.content.trimEnd()}`;
+    });
+    return head(slots.join('\n\n'), max, 'each slot\'s raw output under .check/ has the rest');
+  }
+  return tail((check.log ?? '').trimEnd(), max);
+}
+
+/** The check section of a later iteration's prompt: what the deterministic
+ * gate itself said about the last session's work, so the builder starts from
+ * its words rather than the critic's account of them, or re-running it to
+ * find out. Empty unless that check ran and failed. */
+function previous_check_section(check: CheckResult | null): string[] {
+  if (check === null || !check.ran || check.ok) return [];
+  const runner = check.runner === 'checkride' ? 'checkride, ' : '';
+  const exit = check.exit_code === null ? 'no exit code' : `exit ${String(check.exit_code)}`;
+  const lines = [
+    '',
+    'PREVIOUS CHECK RESULT',
+    '---------------------',
+    `The check failed on the work your last session left (${runner}${exit}).`,
+  ];
+  if (check.failing_slots.length > 0) {
+    lines.push(`Failing slots: ${check.failing_slots.join(', ')}.`);
+  }
+  const excerpt = check_excerpt(check);
+  if (excerpt.length > 0) lines.push('', excerpt);
+  return lines;
+}
+
+/** The line a later iteration's prompt carries when the last session ran out
+ * of steps: it never got to verify, so this one should check first. */
+function step_limit_lines(step_limit_hit: number | null): string[] {
+  if (step_limit_hit === null) return [];
+  return [
+    '',
+    `Your last session hit its ${String(step_limit_hit)}-step limit before it called finish, so`,
+    'it may never have verified its work. Run the check first this time, and keep',
+    'enough steps in hand to verify again before you finish.',
+  ];
+}
 
 export function compose_builder_prompt(input: BuilderPromptInput): string {
   const parts = [
@@ -202,6 +282,12 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
       '',
       'Address the feedback above. The workspace already contains your prior work;',
       'read the current state, then make the necessary changes.',
+    );
+  }
+  if (input.iteration > 1 && input.previous !== null) {
+    parts.push(
+      ...previous_check_section(input.previous.check),
+      ...step_limit_lines(input.previous.step_limit_hit),
     );
   }
   if (input.checkride) {
@@ -277,9 +363,12 @@ export type BuilderRunDeps = {
   warn: (message: string) => void;
 };
 
+/** Run one builder session on the opened iteration `state`, told what the
+ * iteration before it left behind (`previous`, null on the first). */
 export async function run_builder(
   deps: BuilderRunDeps,
   state: LoopState,
+  previous: PreviousRound | null,
   ctx: RunContext,
 ): Promise<LoopState> {
   const { config } = deps;
@@ -308,6 +397,7 @@ export async function run_builder(
         feedback: state.feedback,
         iteration: state.iteration,
         checkride: config.check_resolved === 'checkride',
+        previous,
       }),
     );
     // `max_steps` is a backstop, not a failure — surface it and carry on.

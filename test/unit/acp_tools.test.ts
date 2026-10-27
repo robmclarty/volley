@@ -118,7 +118,7 @@ describe('acp_seat_tools: the builder', () => {
 describe('acp_seat_tools: the check', () => {
   it("asks through the session exactly when run_command's own gate would ask before the same command", async () => {
     const cwd = temp_dir();
-    const command = 'pnpm exec checkride --json';
+    const command = 'pnpm exec checkride --json --digest';
     const request: ToolApprovalRequest = {
       tool_name: command,
       input: { command },

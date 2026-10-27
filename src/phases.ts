@@ -9,7 +9,7 @@
 import { aborted_error } from 'fascicle';
 import type { RunContext, StreamChunk, ToolApprovalHandler } from 'fascicle';
 import { run_builder } from './builder.js';
-import type { BuilderStep } from './builder.js';
+import type { BuilderStep, PreviousRound } from './builder.js';
 import { collect_changes } from './changes.js';
 import { run_checkride } from './check/checkride.js';
 import { CHECK_REJECTED, rejected_check, run_command_check, skipped_check } from './check/command.js';
@@ -77,7 +77,7 @@ function record_check_chunk(ctx: RunContext, chunk: StreamChunk): void {
 
 /** The command line the check runs, or null when no check is configured. */
 function check_command(config: ResolvedConfig): string | null {
-  if (config.check_resolved === 'checkride') return 'pnpm exec checkride --json';
+  if (config.check_resolved === 'checkride') return 'pnpm exec checkride --json --digest';
   if (config.check_resolved === 'command') return config.check;
   return null;
 }
@@ -200,6 +200,18 @@ function next_iteration(s: LoopState): LoopState {
   };
 }
 
+/** What the builder of the iteration after `s` hears about it beyond the
+ * critic's feedback: its check, and whether its builder ran out of steps. Null
+ * before the first iteration. A resumed run's state carries both, read back
+ * from the last archived iteration. */
+function previous_round(config: ResolvedConfig, s: LoopState): PreviousRound | null {
+  if (s.iteration === 0) return null;
+  return {
+    check: s.check,
+    step_limit_hit: s.builder?.finish_reason === 'max_steps' ? config.builder_max_steps : null,
+  };
+}
+
 /** What changed in the build root since the baseline, reported as it's
  * measured: the count, and a warning for any gate edit. A run measures the
  * builder's work this way after every build, and a critique measures the
@@ -229,7 +241,12 @@ export async function build_phase(
   const next = next_iteration(s);
   emit(ctx, { volley: 'round_start', round: next.iteration });
   renderer.phase_start(next.iteration, 'builder');
-  const built = await run_builder({ builder, config, warn: renderer.warn }, next, ctx);
+  const built = await run_builder(
+    { builder, config, warn: renderer.warn },
+    next,
+    previous_round(config, s),
+    ctx,
+  );
   renderer.phase_end(built.iteration, 'builder', true);
   renderer.cost_line(
     built.iteration,

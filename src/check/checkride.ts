@@ -1,10 +1,12 @@
 /**
- * checkride runner: spawn `pnpm exec checkride --json`, gate on the
+ * checkride runner: spawn `pnpm exec checkride --json --digest`, gate on the
  * `.check/summary.json` contract (`schema_version: 1`), and collect raw
  * failing-slot artifacts for the critic — the critic reads what the tool
- * actually said, not a normalized digest.
+ * actually said, not a normalized digest. The digest checkride writes on a red
+ * run is kept beside them for the next builder, which needs a short list of
+ * what to fix more than the whole of every slot's output.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
@@ -170,16 +172,17 @@ export function failing_checks(summary: CheckrideSummary): CheckrideSummaryCheck
   return summary.checks.filter((c) => !c.ok && c.skipped !== true);
 }
 
-/** Per failing slot: the raw artifact (`.check/<output_file>` when present,
- * else `.check/<slot>.stdout.txt`), truncated with a pointer to the file. */
+/** Per failing slot: the raw artifact (`<output_file>` when present, else
+ * `<slot>.stdout.txt`) in `check_dir`, a workspace's `.check/` or an archived
+ * iteration's copy of it, truncated with a pointer to the file. */
 export function read_failing_artifacts(
-  workspace: string,
+  check_dir: string,
   failing: CheckrideSummaryCheck[],
 ): CheckArtifact[] {
   return failing.map((check) => {
     const file = check.output_file ?? `${check.name}.stdout.txt`;
-    const path = join(workspace, '.check', file);
-    if (!existsSync(path)) {
+    const path = join(check_dir, file);
+    if (!existsSync(path) || !statSync(path).isFile()) {
       return { slot: check.name, path: null, content: '(no artifact found)', truncated: false };
     }
     const raw = readFileSync(path, 'utf8');
@@ -193,13 +196,21 @@ export function read_failing_artifacts(
   });
 }
 
+/** checkride's digest of a red run (`.check/digest.md`, written under
+ * `--digest` and removed on a green one), or undefined when there is none. It
+ * is capped by checkride itself, at 8 kB. */
+function read_digest(workspace: string): string | undefined {
+  const path = join(workspace, '.check', 'digest.md');
+  return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+}
+
 export type CheckrideOpts = CheckSpawnOptions & {
   workspace: string;
 };
 
 export async function run_checkride(opts: CheckrideOpts): Promise<CheckResult> {
   const { workspace, ...spawn_options } = opts;
-  const proc = await spawn_capture('pnpm', ['exec', 'checkride', '--json'], {
+  const proc = await spawn_capture('pnpm', ['exec', 'checkride', '--json', '--digest'], {
     ...spawn_options,
     cwd: workspace,
   });
@@ -210,6 +221,9 @@ export async function run_checkride(opts: CheckrideOpts): Promise<CheckResult> {
   }
   const { summary } = parse_summary_with_fallback(proc.stdout, opts.workspace);
   const failing = failing_checks(summary);
+  // Only a red run writes a digest; on a green one checkride removes any
+  // stale one, and volley doesn't look.
+  const digest = summary.ok ? undefined : read_digest(opts.workspace);
   return {
     ran: true,
     runner: 'checkride',
@@ -217,7 +231,8 @@ export async function run_checkride(opts: CheckrideOpts): Promise<CheckResult> {
     exit_code: proc.exit_code,
     duration_ms: summary.total_duration_ms,
     failing_slots: failing.map((c) => c.name),
-    detail: read_failing_artifacts(opts.workspace, failing),
+    detail: read_failing_artifacts(join(opts.workspace, '.check'), failing),
     summary,
+    ...(digest !== undefined ? { digest } : {}),
   };
 }

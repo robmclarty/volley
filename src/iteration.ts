@@ -13,12 +13,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { read_failing_artifacts } from './check/checkride.js';
+import type { CheckrideSummary, CheckrideSummaryCheck } from './check/checkride.js';
 import { EMPTY_USAGE } from './cost.js';
 import { shown } from './render/format.js';
 import { config_error } from './types.js';
 import type {
   BuilderPermissionMode,
   BuilderProvider,
+  CheckArtifact,
+  CheckResult,
   CriticProvider,
   LoopState,
   PhaseRecord,
@@ -110,6 +114,9 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
         if (artifact.path !== null && existsSync(artifact.path)) {
           writeFileSync(join(dir, 'check', basename(artifact.path)), readFileSync(artifact.path));
         }
+      }
+      if (check.digest !== undefined) {
+        writeFileSync(join(dir, 'check', 'digest.md'), check.digest);
       }
     } else {
       writeFileSync(join(dir, 'check', 'check.log'), check.log ?? '');
@@ -278,6 +285,118 @@ function refuse_symlinks(dir: string): void {
   }
 }
 
+/** The part of an archived iteration's `summary.json` a resumed run reads
+ * back. Every field is unknown until checked, since the archive could be torn
+ * or older than this volley. */
+type ArchivedRound = {
+  builder?: unknown;
+  check?: {
+    ran?: unknown;
+    runner?: unknown;
+    ok?: unknown;
+    exit_code?: unknown;
+    duration_ms?: unknown;
+    failing_slots?: unknown;
+  } | null;
+};
+
+/** An archived file's text, or undefined when there's no file to read there. */
+function read_text(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+function read_json(path: string): unknown {
+  const text = read_text(path);
+  if (text === undefined) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** The failing slots' raw artifacts from an archived iteration's `check/`,
+ * which holds each under its base name, found through the archived checkride
+ * summary. */
+function archived_artifacts(check_dir: string, failing_slots: string[]): CheckArtifact[] {
+  const summary = read_json(join(check_dir, 'summary.json')) as Partial<CheckrideSummary> | null;
+  const checks = Array.isArray(summary?.checks) ? summary.checks : [];
+  const failing = failing_slots.map((name): CheckrideSummaryCheck => {
+    const output_file = checks.find((check) => check.name === name)?.output_file;
+    return {
+      name,
+      adapter: null,
+      ok: false,
+      exit_code: null,
+      duration_ms: 0,
+      output_file: typeof output_file === 'string' ? basename(output_file) : null,
+    };
+  });
+  return read_failing_artifacts(check_dir, failing);
+}
+
+/** The check an archived iteration ran, rebuilt from its directory with the
+ * output its failure is shown by: the digest and the failing slots' artifacts
+ * for checkride, the log for a command. Null when it ran none. */
+function archived_check(dir: string, recorded: ArchivedRound['check']): CheckResult | null {
+  if (recorded?.ran !== true || typeof recorded.ok !== 'boolean') return null;
+  const runner = recorded.runner === 'checkride' ? 'checkride' : 'command';
+  const failing_slots = Array.isArray(recorded.failing_slots)
+    ? recorded.failing_slots.filter((slot): slot is string => typeof slot === 'string')
+    : [];
+  const check: CheckResult = {
+    ran: true,
+    runner,
+    ok: recorded.ok,
+    exit_code: typeof recorded.exit_code === 'number' ? recorded.exit_code : null,
+    duration_ms: typeof recorded.duration_ms === 'number' ? recorded.duration_ms : 0,
+    failing_slots,
+    detail: [],
+  };
+  if (check.ok) return check;
+  const check_dir = join(dir, 'check');
+  if (runner === 'command') {
+    const log = read_text(join(check_dir, 'check.log'));
+    return log === undefined ? check : { ...check, log };
+  }
+  const digest = read_text(join(check_dir, 'digest.md'));
+  return {
+    ...check,
+    detail: archived_artifacts(check_dir, failing_slots),
+    ...(digest !== undefined ? { digest } : {}),
+  };
+}
+
+/** An archived builder record, as `archive_iteration` wrote it from the
+ * phase's own, or null when there is none with a finish reason. */
+function archived_builder(recorded: unknown): PhaseRecord | null {
+  if (typeof recorded !== 'object' || recorded === null) return null;
+  return typeof (recorded as Partial<PhaseRecord>).finish_reason === 'string'
+    ? (recorded as PhaseRecord)
+    : null;
+}
+
+/** What the last completed iteration left for the next build: its check and
+ * its builder's record, which tell the resumed run's first builder what the
+ * gate said and whether the last session ran out of steps, as a run that never
+ * stopped would have. Null for both before the first iteration. */
+function archived_round(
+  run: StateLocation,
+  completed: number,
+): Pick<LoopState, 'check' | 'builder'> {
+  if (completed === 0) return { check: null, builder: null };
+  const dir = iteration_dir(run, completed);
+  const recorded = read_json(join(dir, 'summary.json')) as ArchivedRound | null;
+  return {
+    check: archived_check(dir, recorded?.check),
+    builder: archived_builder(recorded?.builder),
+  };
+}
+
 /** Recover a resumable run from its state directory (`.volley/`, or
  * `<state_dir>/<run_id>/` under a state root): settings from config.json,
  * totals from summary.json, feedback from feedback.md. An iteration directory
@@ -382,11 +501,10 @@ export function load_resume_state(
     feedback,
     verdict: null,
     unmet_criteria: [],
-    check: null,
+    ...archived_round(run, completed),
     // Re-measured by the resumed run's first `build` step, against a baseline
     // captured at resume — a resumed run reports what it changes from there.
     changes: null,
-    builder: null,
     critic: null,
     total_usage: summary?.total_usage ?? EMPTY_USAGE,
     total_cost_usd: summary?.total_cost_usd ?? 0,

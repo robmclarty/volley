@@ -7,21 +7,29 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { aborted_error } from 'fascicle';
 import type { ToolApprovalRequest } from 'fascicle';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { acp_command_env } from '../../src/acp_tools.js';
 import { CHECK_REJECTED } from '../../src/check/command.js';
+import { load_resume_state } from '../../src/iteration.js';
 import { run_volley } from '../../src/orchestrator.js';
 import type { OrchestratorDeps } from '../../src/orchestrator.js';
 import { silent_renderer, temp_workspace, test_config } from '../helpers/harness.js';
 import { approve_reply, mock_engine, prompt_text, reject_reply } from '../helpers/mock_engine.js';
 
 /** A stand-in checkride binary honoring the `--json` + `.check/summary.json`
- * contract: fails the `test` slot while BROKEN exists in the workspace. */
+ * contract: fails the `test` slot while BROKEN exists in the workspace, and
+ * under `--digest` writes `.check/digest.md` on a red run and removes it on a
+ * green one. */
 const FAKE_CHECKRIDE = `#!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 const broken = existsSync('BROKEN');
 mkdirSync('.check', { recursive: true });
+if (process.argv.includes('--digest')) {
+  if (broken) writeFileSync('.check/digest.md', '# checkride failure digest\\n\\n## test — vitest\\n\\n- widget spins\\n');
+  else rmSync('.check/digest.md', { force: true });
+}
 const checks = [{
   name: 'test', adapter: 'vitest', description: 'tests',
   ok: !broken, exit_code: broken ? 1 : 0, duration_ms: 42, output_file: 'test.json',
@@ -115,10 +123,19 @@ describe('checkride_gate_loop', () => {
       expect(prompt_text(first_critic)).toContain('failing slots: test');
       expect(prompt_text(first_critic)).toContain('widget spins');
 
-      // Archived check artifacts for the failing iteration.
+      // The second builder read what the gate itself said, digest and all.
+      const second_builder = engine.calls.filter((c) => c.role === 'builder')[1];
+      expect(prompt_text(second_builder)).toContain('PREVIOUS CHECK RESULT');
+      expect(prompt_text(second_builder)).toContain('Failing slots: test.');
+      expect(prompt_text(second_builder)).toContain('## test — vitest');
+
+      // Archived check artifacts for the failing iteration, the digest with
+      // them; the green iteration has none.
       const archive = join(workspace, '.volley', 'iterations', '001', 'check');
       expect(existsSync(join(archive, 'summary.json'))).toBe(true);
       expect(existsSync(join(archive, 'test.json'))).toBe(true);
+      expect(readFileSync(join(archive, 'digest.md'), 'utf8')).toContain('- widget spins');
+      expect(existsSync(join(workspace, '.volley', 'iterations', '002', 'check', 'digest.md'))).toBe(false);
 
       const iteration_1 = JSON.parse(
         readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
@@ -126,6 +143,57 @@ describe('checkride_gate_loop', () => {
       expect(iteration_1.check.ok).toBe(false);
       expect(iteration_1.check.runner).toBe('checkride');
       expect(iteration_1.check.failing_slots).toEqual(['test']);
+    } finally {
+      cleanup();
+    }
+  }, 60000);
+});
+
+describe('a resumed run after a red check', () => {
+  it("shows its first builder the archived check, and that the last session ran out of steps", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      setup_checkride_workspace(workspace);
+      const config = test_config({
+        workspace,
+        run_id: 'red-then-resumed',
+        check: 'auto',
+        check_resolved: 'checkride',
+        max_iterations: 3,
+        builder_max_steps: 12,
+      });
+
+      // Iteration 1 burns its steps and leaves the gate red; iteration 2's
+      // builder is interrupted before it does anything.
+      const engine_1 = mock_engine((call, index) => {
+        if (call.role === 'critic') return reject_reply('the test slot fails', ['tests pass']);
+        return index === 0
+          ? { content: '', finish_reason: 'max_steps', cost_usd: 0.1 }
+          : { content: '', error: new aborted_error('sigint') };
+      });
+      await expect(
+        run_volley(config, { renderer: silent_renderer(), engine: engine_1, install_signal_handlers: false }),
+      ).rejects.toThrow();
+
+      const resume = load_resume_state(workspace, 'red-then-resumed');
+      expect(resume.state.check?.ok).toBe(false);
+      expect(resume.state.check?.digest).toContain('- widget spins');
+      expect(resume.state.check?.detail[0]?.content).toContain('widget spins');
+      expect(resume.state.builder?.finish_reason).toBe('max_steps');
+
+      const engine_2 = mock_engine((call) =>
+        call.role === 'builder' ? { content: 'fixed', cost_usd: 0.1 } : approve_reply(),
+      );
+      await run_volley(
+        config,
+        { renderer: silent_renderer(), engine: engine_2, install_signal_handlers: false },
+        resume.state,
+      );
+      const resumed = prompt_text(engine_2.calls.find((c) => c.role === 'builder')).replace(/\s+/g, ' ');
+      expect(resumed).toContain('ITERATION: 2');
+      expect(resumed).toContain('PREVIOUS CHECK RESULT');
+      expect(resumed).toContain('## test — vitest');
+      expect(resumed).toContain('Your last session hit its 12-step limit');
     } finally {
       cleanup();
     }

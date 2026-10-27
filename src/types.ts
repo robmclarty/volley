@@ -203,6 +203,9 @@ export type CheckResult = {
   detail: CheckArtifact[];
   /** Raw checkride summary JSON (when the runner is checkride). */
   summary?: unknown;
+  /** checkride's capped excerpt of the failing slots (`.check/digest.md`),
+   * when the check failed and checkride wrote one. */
+  digest?: string;
   /** Captured combined output (when the runner is a shell command). */
   log?: string;
 };
