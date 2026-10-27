@@ -462,6 +462,13 @@ tool loop per iteration (capped by `--builder-max-steps`, default 50; hitting
 the cap is treated as partial work, not an error). The produced workspace goes
 to check + critic exactly like a `claude_cli` build.
 
+So that a model that explores first still verifies, the last few steps of each
+session count down: five, or a tenth of a longer budget. Each of those turns
+ends with a note of how many steps are left and the command that runs the
+check, and the last says that only `finish` runs on it, as fascicle refuses
+any other call there. The note is added to what that one turn sends, never to
+the transcript, so it never piles up and a local runtime's cached prefix holds.
+
 A local builder makes one tool call per turn by default, since some model and
 runtime pairs return parallel calls badly. For a pair that handles them, such
 as qwen3.8 on Ollama's MLX runner, which returns several reads at once,

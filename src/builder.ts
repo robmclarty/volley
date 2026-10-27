@@ -19,6 +19,7 @@ import type {
   ToolApprovalHandler,
 } from 'fascicle';
 import { warn_small_local_context } from './builder/context_check.js';
+import { step_countdown } from './builder/countdown.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { accumulate } from './cost.js';
 import { seat_base_url } from './engine.js';
@@ -119,15 +120,24 @@ function resolve_builder_system(config: ResolvedConfig, tool_set?: ToolSet): str
 // salvage-rate health metric.
 const BUILDER_TOOL_CALL_REPAIR_ATTEMPTS = 3;
 
+/** How the step countdown tells the builder to run the check: the command
+ * checkride's digest comes from, the configured command, or the project's own
+ * tests when no check gates the run. */
+function check_hint(config: ResolvedConfig): string {
+  if (config.check_resolved === 'checkride') return 'the check (`pnpm check --digest`)';
+  if (config.check_resolved === 'command') return `the check (\`${config.check}\`)`;
+  return "the project's tests";
+}
+
 /** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
  * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
  * permission mode) and brings its own built-in tools — this arm is unchanged
  * from v2, and takes no injected tools or approval handler. Every other
  * builder, local or `openrouter`, brings none, so volley supplies its whole
  * workspace tool surface (or the set the caller injected in its place, with
- * the handler that answers its approvals) plus the five per-call loop knobs
- * and **no** schema (it produces a workspace, not a verdict); per-call values
- * win over engine defaults. */
+ * the handler that answers its approvals), the per-call loop knobs, the step
+ * countdown (`./builder/countdown.ts`), and **no** schema (it produces a
+ * workspace, not a verdict); per-call values win over engine defaults. */
 function builder_tool_options(
   deps: BuilderDeps,
 ): Pick<
@@ -139,6 +149,7 @@ function builder_tool_options(
   | 'tool_error_policy'
   | 'tool_call_repair_attempts'
   | 'max_tool_calls_per_step'
+  | 'prepare_step'
 > {
   const { config } = deps;
   const bash_executor = deps.bash_executor ?? null;
@@ -170,6 +181,7 @@ function builder_tool_options(
     tool_error_policy: 'feed_back',
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
     max_tool_calls_per_step: config.builder_max_tool_calls,
+    prepare_step: step_countdown(config.builder_max_steps, check_hint(config)),
   };
 }
 

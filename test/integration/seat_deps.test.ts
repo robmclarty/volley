@@ -99,6 +99,7 @@ function options_of(call: MockCall | undefined): Record<string, unknown> {
       if (key === 'abort') return [key, value instanceof AbortSignal ? '<signal>' : value];
       if (key === 'trajectory' || key === 'schema') return [key, `<${key}>`];
       if (key === 'tools') return [key, (value as Tool[]).map((tool) => tool.name)];
+      if (key === 'prepare_step') return [key, typeof value === 'function' ? '<countdown>' : value];
       return [key, value];
     }),
   );
@@ -188,6 +189,7 @@ function todays_options(round: Round): { builder: Record<string, unknown>; criti
       tool_error_policy: 'feed_back',
       tool_call_repair_attempts: 3,
       max_tool_calls_per_step: 1,
+      prepare_step: '<countdown>',
     },
     critic: {
       ...shared,
