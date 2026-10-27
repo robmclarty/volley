@@ -135,17 +135,27 @@ describe('read_failing_artifacts', () => {
       mkdirSync(join(workspace, '.check'));
       writeFileSync(join(workspace, '.check', 'lint.json'), '{"issues": 3}');
       writeFileSync(join(workspace, '.check', 'test.stdout.txt'), '1 failing');
+      writeFileSync(join(workspace, 'outside.stdout.txt'), 'not the check\'s');
+      writeFileSync(join(workspace, '.check', '..dots.txt'), 'kept');
       const artifacts = read_failing_artifacts(join(workspace, '.check'), [
         { name: 'lint', adapter: 'oxlint', ok: false, exit_code: 1, duration_ms: 1, output_file: 'lint.json' },
         { name: 'test', adapter: 'vitest', ok: false, exit_code: 1, duration_ms: 1, output_file: null },
         { name: 'ghost', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: null },
         { name: 'dir', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: '..' },
+        { name: '../outside', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: null },
+        { name: 'away', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: '../outside.stdout.txt' },
+        { name: 'dots', adapter: null, ok: false, exit_code: 1, duration_ms: 1, output_file: '..dots.txt' },
       ]);
       expect(artifacts[0]?.content).toBe('{"issues": 3}');
       expect(artifacts[1]?.content).toBe('1 failing');
       expect(artifacts[2]?.path).toBeNull();
       // A path that names a directory has no artifact to read.
       expect(artifacts[3]?.path).toBeNull();
+      // Nor does one that leaves .check/, by slot name or output file, though
+      // the file is there; a name that merely starts with dots stays inside.
+      expect(artifacts[4]?.path).toBeNull();
+      expect(artifacts[5]?.path).toBeNull();
+      expect(artifacts[6]?.content).toBe('kept');
     } finally {
       cleanup();
     }

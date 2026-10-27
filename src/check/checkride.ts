@@ -7,7 +7,7 @@
  * what to fix more than the whole of every slot's output.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { aborted_error } from 'fascicle';
@@ -172,9 +172,18 @@ export function failing_checks(summary: CheckrideSummary): CheckrideSummaryCheck
   return summary.checks.filter((c) => !c.ok && c.skipped !== true);
 }
 
+/** Whether `path` sits under `dir`. */
+function within(dir: string, path: string): boolean {
+  const from_dir = relative(dir, path);
+  return from_dir !== '..' && !from_dir.startsWith(`..${sep}`) && !isAbsolute(from_dir);
+}
+
 /** Per failing slot: the raw artifact (`<output_file>` when present, else
  * `<slot>.stdout.txt`) in `check_dir`, a workspace's `.check/` or an archived
- * iteration's copy of it, truncated with a pointer to the file. */
+ * iteration's copy of it, truncated with a pointer to the file. The names come
+ * from a summary the builder could have written, so a path that leaves
+ * `check_dir` has no artifact, rather than putting a file from elsewhere in
+ * front of a model. */
 export function read_failing_artifacts(
   check_dir: string,
   failing: CheckrideSummaryCheck[],
@@ -182,7 +191,7 @@ export function read_failing_artifacts(
   return failing.map((check) => {
     const file = check.output_file ?? `${check.name}.stdout.txt`;
     const path = join(check_dir, file);
-    if (!existsSync(path) || !statSync(path).isFile()) {
+    if (!within(check_dir, path) || !existsSync(path) || !statSync(path).isFile()) {
       return { slot: check.name, path: null, content: '(no artifact found)', truncated: false };
     }
     const raw = readFileSync(path, 'utf8');
