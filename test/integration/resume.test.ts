@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aborted_error } from 'fascicle';
-import { find_run_state, load_resume_state } from '../../src/iteration.js';
+import { CHECK_REJECTED, rejected_check } from '../../src/check/command.js';
+import { archive_iteration, find_run_state, load_resume_state } from '../../src/iteration.js';
+import { initial_state } from '../../src/loop_state.js';
 import { run_volley } from '../../src/orchestrator.js';
 import { exit_code_for_error } from '../../src/exit_codes.js';
 import { error_kind } from '../../src/types.js';
@@ -121,6 +123,20 @@ describe('resume', () => {
       expect(resumed).toContain('The check failed on the work your last session left (exit 1).');
       expect(resumed).toContain('FAIL widget spins');
       expect(resumed).not.toContain('step limit');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('keeps a rejected checkride check rejected across a resume', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({ workspace, run_id: 'rejected-run', check_resolved: 'checkride' });
+      initialize_run_state(config);
+      write_resolved_config(config);
+      archive_iteration(config, { ...initial_state(), iteration: 1, check: rejected_check('checkride') });
+      const resume = load_resume_state(workspace, 'rejected-run');
+      expect(resume.state.check).toMatchObject({ ran: true, runner: 'checkride', ok: false, log: CHECK_REJECTED });
     } finally {
       cleanup();
     }

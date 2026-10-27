@@ -118,6 +118,11 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
       if (check.digest !== undefined) {
         writeFileSync(join(dir, 'check', 'digest.md'), check.digest);
       }
+      // A checkride check has a log only when it was rejected, and the log
+      // says so.
+      if (check.log !== undefined) {
+        writeFileSync(join(dir, 'check', 'check.log'), check.log);
+      }
     } else {
       writeFileSync(join(dir, 'check', 'check.log'), check.log ?? '');
       writeFileSync(join(dir, 'check', 'check.exit'), `${String(check.exit_code)}\n`);
@@ -342,7 +347,8 @@ function archived_artifacts(check_dir: string, failing_slots: string[]): CheckAr
 
 /** The check an archived iteration ran, rebuilt from its directory with the
  * output its failure is shown by: the digest and the failing slots' artifacts
- * for checkride, the log for a command. Null when it ran none. */
+ * for checkride, the log for a command or a rejected check. Null when it ran
+ * none. */
 function archived_check(dir: string, recorded: ArchivedRound['check']): CheckResult | null {
   if (recorded?.ran !== true || typeof recorded.ok !== 'boolean') return null;
   const runner = recorded.runner === 'checkride' ? 'checkride' : 'command';
@@ -360,13 +366,12 @@ function archived_check(dir: string, recorded: ArchivedRound['check']): CheckRes
   };
   if (check.ok) return check;
   const check_dir = join(dir, 'check');
-  if (runner === 'command') {
-    const log = read_text(join(check_dir, 'check.log'));
-    return log === undefined ? check : { ...check, log };
-  }
+  const log = read_text(join(check_dir, 'check.log'));
+  const logged = log === undefined ? check : { ...check, log };
+  if (runner === 'command') return logged;
   const digest = read_text(join(check_dir, 'digest.md'));
   return {
-    ...check,
+    ...logged,
     detail: archived_artifacts(check_dir, failing_slots),
     ...(digest !== undefined ? { digest } : {}),
   };

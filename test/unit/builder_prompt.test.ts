@@ -13,7 +13,7 @@ import {
   PREVIOUS_CHECK_MAX_CHARS,
 } from '../../src/builder.js';
 import type { BuilderDeps } from '../../src/builder.js';
-import { skipped_check } from '../../src/check/command.js';
+import { rejected_check, skipped_check } from '../../src/check/command.js';
 import type { BuilderProvider, CheckResult } from '../../src/types.js';
 import { acp_session, temp_workspace, test_config } from '../helpers/harness.js';
 import { mock_engine } from '../helpers/mock_engine.js';
@@ -155,6 +155,18 @@ describe('compose_builder_prompt: the previous round', () => {
     });
     expect(first).not.toContain('PREVIOUS CHECK RESULT');
     expect(first).not.toContain('step limit');
+  });
+
+  it('says a check the user rejected never ran, rather than that the work failed it', () => {
+    for (const runner of ['checkride', 'command'] as const) {
+      const prompt = compose_builder_prompt({
+        ...later,
+        previous: { check: rejected_check(runner), step_limit_hit: null },
+      }).replace(/\s+/g, ' ');
+      expect(prompt, runner).toContain('PREVIOUS CHECK RESULT');
+      expect(prompt, runner).toContain('The check never ran on the work your last session left');
+      expect(prompt, runner).not.toContain('The check failed');
+    }
   });
 
   it('tells the builder its last session ran out of steps, and to check first', () => {

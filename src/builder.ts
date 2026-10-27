@@ -21,6 +21,7 @@ import type {
 import { warn_small_local_context } from './builder/context_check.js';
 import { step_countdown } from './builder/countdown.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
+import { CHECK_REJECTED } from './check/command.js';
 import { accumulate } from './cost.js';
 import { seat_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
@@ -242,15 +243,23 @@ function check_excerpt(check: CheckResult): string {
 /** The check section of a later iteration's prompt: what the deterministic
  * gate itself said about the last session's work, so the builder starts from
  * its words rather than the critic's account of them, or re-running it to
- * find out. Empty unless that check ran and failed. */
+ * find out. Empty unless that check ran and failed. A check the user rejected
+ * when it asked to run is recorded as failed but said nothing, and the
+ * section says so rather than call the work failed. */
 function previous_check_section(check: CheckResult | null): string[] {
   if (check === null || !check.ran || check.ok) return [];
+  const heading = ['', 'PREVIOUS CHECK RESULT', '---------------------'];
+  if (check.log === CHECK_REJECTED) {
+    return [
+      ...heading,
+      'The check never ran on the work your last session left: it was rejected when it',
+      'asked to run, so nothing has verified that work yet.',
+    ];
+  }
   const runner = check.runner === 'checkride' ? 'checkride, ' : '';
   const exit = check.exit_code === null ? 'no exit code' : `exit ${String(check.exit_code)}`;
   const lines = [
-    '',
-    'PREVIOUS CHECK RESULT',
-    '---------------------',
+    ...heading,
     `The check failed on the work your last session left (${runner}${exit}).`,
   ];
   if (check.failing_slots.length > 0) {
