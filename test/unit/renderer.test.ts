@@ -25,6 +25,7 @@ const RESULT: RunResult = {
   builder_cost_usd: 1.2,
   critic_cost_usd: 0.3,
   check_duration_ms: 500,
+  builder_max_steps_hits: 0,
   final_verdict: 'approved',
   salvaged_branch: null,
   run_state_dir: '/state/volley/r1',

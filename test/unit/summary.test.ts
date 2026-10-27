@@ -58,6 +58,7 @@ function run_result(overrides: Partial<RunResult> = {}): RunResult {
     builder_cost_usd: 0.3,
     critic_cost_usd: 0.12,
     check_duration_ms: 4200,
+    builder_max_steps_hits: 0,
     final_verdict: 'approved',
     salvaged_branch: null,
     run_state_dir: '/state/volley/test-run-id',

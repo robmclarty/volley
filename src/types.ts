@@ -324,6 +324,9 @@ export type LoopState = {
   builder_cost_usd: number;
   critic_cost_usd: number;
   check_duration_ms: number;
+  /** How many of the run's builder sessions ended on the step limit
+   * (`max_steps`) rather than calling finish. */
+  builder_max_steps_hits: number;
   iteration_cost_usd: number;
   halt: HaltReason;
   cost_warned: boolean;
@@ -345,6 +348,12 @@ export type RunResult = {
   builder_cost_usd: number;
   critic_cost_usd: number;
   check_duration_ms: number;
+  /** How many of the run's builder sessions hit the step limit before they
+   * called finish: work handed to the check and critic unverified. The
+   * warning a run prints for each goes to stderr, which `--json` silences, so
+   * a harness reads it here. Always 0 for a `claude_cli` builder, which has
+   * no step limit, and for a critique. */
+  builder_max_steps_hits: number;
   final_verdict: Verdict | null;
   /** The run branch teardown left behind because this run's work was never
    * integrated: under `--worktree` without `--git` a converged run has no

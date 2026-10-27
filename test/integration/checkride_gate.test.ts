@@ -180,11 +180,12 @@ describe('a resumed run after a red check', () => {
       expect(resume.state.check?.digest).toContain('- widget spins');
       expect(resume.state.check?.detail[0]?.content).toContain('widget spins');
       expect(resume.state.builder?.finish_reason).toBe('max_steps');
+      expect(resume.state.builder_max_steps_hits).toBe(1);
 
       const engine_2 = mock_engine((call) =>
         call.role === 'builder' ? { content: 'fixed', cost_usd: 0.1 } : approve_reply(),
       );
-      await run_volley(
+      const result = await run_volley(
         config,
         { renderer: silent_renderer(), engine: engine_2, install_signal_handlers: false },
         resume.state,
@@ -194,6 +195,8 @@ describe('a resumed run after a red check', () => {
       expect(resumed).toContain('PREVIOUS CHECK RESULT');
       expect(resumed).toContain('## test — vitest');
       expect(resumed).toContain('Your last session hit its 12-step limit');
+      // The count carries across the stop.
+      expect(result.builder_max_steps_hits).toBe(1);
     } finally {
       cleanup();
     }

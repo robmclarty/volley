@@ -23,6 +23,7 @@ export function initial_state(): LoopState {
     builder_cost_usd: 0,
     critic_cost_usd: 0,
     check_duration_ms: 0,
+    builder_max_steps_hits: 0,
     iteration_cost_usd: 0,
     halt: null,
     cost_warned: false,

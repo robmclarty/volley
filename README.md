@@ -170,7 +170,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-model` | `opus` | `opus`/`sonnet`/`haiku` or a full model id. |
 | `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local builder](#local-builder) and [OpenRouter](#openrouter)). |
 | `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
-| `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. |
+| `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. `--json` and `summary.json` count the sessions that hit it as `builder_max_steps_hits`. |
 | `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn; past it, fascicle runs the first ones and drops the rest. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
@@ -460,7 +460,9 @@ surface itself — `read_file`, `search_files`, `list_files`, `write_file`,
 `edit_file`, `bash`, `fetch`, and an explicit `finish` — and runs one bounded
 tool loop per iteration (capped by `--builder-max-steps`, default 50; hitting
 the cap is treated as partial work, not an error). The produced workspace goes
-to check + critic exactly like a `claude_cli` build.
+to check + critic exactly like a `claude_cli` build. Each hit prints a warning,
+and `--json`, which silences warnings, and `summary.json` count them as
+`builder_max_steps_hits`.
 
 So that a model that explores first still verifies, the last few steps of each
 session count down: five, or a tenth of a longer budget. Each of those turns

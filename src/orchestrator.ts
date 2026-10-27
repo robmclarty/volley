@@ -283,9 +283,11 @@ function finalize_failed_run(config: ResolvedConfig, err: unknown): void {
     const prior = existsSync(summary_path)
       ? (JSON.parse(readFileSync(summary_path, 'utf8')) as RunResult)
       : run_result_from_state(config, initial_state(), status, null);
-    // A summary an older volley wrote, resumed here, has no run_state_dir.
+    // A summary an older volley wrote, resumed here, has no run_state_dir
+    // and no step-limit count.
     write_run_summary(config, {
       ...prior,
+      builder_max_steps_hits: (prior.builder_max_steps_hits as number | undefined) ?? 0,
       run_state_dir: run_state_dir(config),
       status,
       completed_at: new Date().toISOString(),

@@ -175,6 +175,7 @@ export function run_result_from_state(
     builder_cost_usd: state.builder_cost_usd,
     critic_cost_usd: state.critic_cost_usd,
     check_duration_ms: state.check_duration_ms,
+    builder_max_steps_hits: state.builder_max_steps_hits,
     final_verdict: state.verdict,
     // The loop itself never salvages: the orchestrator re-stamps this after
     // teardown when a converged `--worktree` run's work was kept on its branch,
@@ -511,6 +512,8 @@ export function load_resume_state(
     builder_cost_usd: summary?.builder_cost_usd ?? 0,
     critic_cost_usd: summary?.critic_cost_usd ?? 0,
     check_duration_ms: summary?.check_duration_ms ?? 0,
+    // An older volley's summary has no count.
+    builder_max_steps_hits: summary?.builder_max_steps_hits ?? 0,
     iteration_cost_usd: 0,
     halt: null,
     cost_warned: false,

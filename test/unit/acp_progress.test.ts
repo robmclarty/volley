@@ -309,6 +309,7 @@ function run_summary(
     builder_cost_usd: 0,
     critic_cost_usd: 0,
     check_duration_ms: 0,
+    builder_max_steps_hits: 0,
     final_verdict: 'approved',
     salvaged_branch: null,
     run_state_dir: '/state/volley/r',

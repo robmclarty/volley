@@ -181,8 +181,12 @@ describe('local builder (ollama provider)', () => {
       expect(result.status).toBe('budget_exhausted');
       expect(engine.calls.some((c) => c.role === 'critic')).toBe(true);
 
-      // The cutoff surfaced as a renderer warning naming the step limit.
+      // The cutoff surfaced as a renderer warning naming the step limit, and
+      // is counted where `--json` and the run summary carry it.
       expect(warnings.some((w) => w.includes('8-step limit'))).toBe(true);
+      expect(result.builder_max_steps_hits).toBe(1);
+      const run_summary = JSON.parse(readFileSync(join(workspace, '.volley', 'summary.json'), 'utf8'));
+      expect(run_summary.builder_max_steps_hits).toBe(1);
 
       const summary = JSON.parse(
         readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
@@ -236,8 +240,9 @@ describe('local builder (ollama provider)', () => {
       const result = await run_volley(config, { renderer, engine, install_signal_handlers: false });
 
       expect(result.status).toBe('success');
-      // A clean finish is not a max_steps cutoff — no warning.
+      // A clean finish is not a max_steps cutoff — no warning, no count.
       expect(warnings.some((w) => w.includes('step limit'))).toBe(false);
+      expect(result.builder_max_steps_hits).toBe(0);
 
       const summary = JSON.parse(
         readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),

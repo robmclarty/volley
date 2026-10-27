@@ -280,6 +280,7 @@ function run_result(): RunResult {
     builder_cost_usd: 0.05,
     critic_cost_usd: 0.05,
     check_duration_ms: 5,
+    builder_max_steps_hits: 0,
     final_verdict: 'approved',
     salvaged_branch: null,
     run_state_dir: '/state/volley/test-run-id',

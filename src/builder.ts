@@ -412,11 +412,12 @@ export async function run_builder(
         previous,
       }),
     );
-    // `max_steps` is a backstop, not a failure — surface it and carry on.
-    if (result.finish_reason === 'max_steps') {
-      deps.warn(builder_max_steps_warning(config.builder_max_steps));
-    }
-    return accumulate(state, 'builder', result, config.builder_model);
+    const built = accumulate(state, 'builder', result, config.builder_model);
+    // `max_steps` is a backstop, not a failure — surface it, count it, and
+    // carry on.
+    if (result.finish_reason !== 'max_steps') return built;
+    deps.warn(builder_max_steps_warning(config.builder_max_steps));
+    return { ...built, builder_max_steps_hits: built.builder_max_steps_hits + 1 };
   } catch (err) {
     throw phase_error('builder', state.iteration, err);
   }
