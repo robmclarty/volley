@@ -175,7 +175,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
 | `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. `--json` and `summary.json` count the sessions that hit it as `builder_max_steps_hits`. |
 | `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn, not counting reads (`read_file`, `search_files`, `list_files`); past it, fascicle runs the calls before the first one over, drops the rest, and tells the model which it dropped. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
-| `--builder-max-output-tokens` | `32768` (ollama, lmstudio), the provider's (openrouter) | Output tokens a tool-loop builder may generate per turn, reasoning included (`num_predict` on Ollama). A turn cut off at it before it calls a tool costs that step, not the session. Or `VOLLEY_BUILDER_MAX_OUTPUT_TOKENS`. Ignored for `claude_cli`. |
+| `--builder-max-output-tokens` | `16384` (ollama, lmstudio), the provider's (openrouter) | Output tokens a tool-loop builder may generate per turn, reasoning included (`num_predict` on Ollama). A turn cut off at it before it calls a tool costs that step, not the session. Or `VOLLEY_BUILDER_MAX_OUTPUT_TOKENS`. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
@@ -490,7 +490,7 @@ A thinking model can spend one turn reasoning for a long time: on Ollama's MLX
 runner, with nothing capping a turn, one qwen3.8 turn ran to 30,847 tokens and
 19 minutes before a single `read_file`, since the runner lets an unset
 `num_predict` run to the model's trained context less the prompt. So a local
-builder's turns are capped at 32,768 output tokens, reasoning included, and
+builder's turns are capped at 16,384 output tokens, reasoning included, and
 `--builder-max-output-tokens <n>` sets another cap. A turn cut off there
 before it makes a tool call costs that one step: fascicle tells the model it
 hit the limit and the session goes on. Each iteration's `summary.json` counts

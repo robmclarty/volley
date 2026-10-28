@@ -382,10 +382,10 @@ describe('resolve_config', () => {
     }
   });
 
-  it('caps a local builder at 32768 output tokens a turn by default, and leaves openrouter and claude_cli to theirs', () => {
+  it('caps a local builder at 16384 output tokens a turn by default, and leaves openrouter and claude_cli to theirs', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
-      expect(DEFAULT_BUILDER_MAX_OUTPUT_TOKENS).toBe(32768);
+      expect(DEFAULT_BUILDER_MAX_OUTPUT_TOKENS).toBe(16384);
       const env = { OPENROUTER_API_KEY: 'sk-or-test' };
       const cap = (builder_provider: BuilderProvider, extra: Partial<VolleyConfig> = {}, more = {}) =>
         resolve_config(
@@ -397,8 +397,8 @@ describe('resolve_config', () => {
           },
           { env: { ...env, ...more } },
         ).builder_max_output_tokens;
-      expect(cap('ollama')).toBe(32768);
-      expect(cap('lmstudio')).toBe(32768);
+      expect(cap('ollama')).toBe(16384);
+      expect(cap('lmstudio')).toBe(16384);
       expect(cap('openrouter')).toBeNull();
       expect(cap('claude_cli')).toBeNull();
       // Set, it wins on every provider.

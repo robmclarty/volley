@@ -28,7 +28,7 @@ const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_BUILDER_MAX_STEPS = 50;
 export const DEFAULT_BUILDER_MAX_TOOL_CALLS = 1;
-export const DEFAULT_BUILDER_MAX_OUTPUT_TOKENS = 32768;
+export const DEFAULT_BUILDER_MAX_OUTPUT_TOKENS = 16384;
 export const DEFAULT_CHECK = 'auto';
 const DEFAULT_CRITIC = 'reviewer';
 const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
@@ -219,7 +219,7 @@ const BUILDER_MAX_TOOL_CALLS: BuilderCount = {
  * can be refused, so it's capped only when asked. */
 const CAPPED_BY_DEFAULT: ReadonlyArray<BuilderProvider> = ['ollama', 'lmstudio'];
 
-/** The output cap's flag and env var, and its default for `provider`: 32k
+/** The output cap's flag and env var, and its default for `provider`: 16k
  * tokens on a local builder, else the provider's own limit (null). */
 function builder_max_output_tokens_count(provider: BuilderProvider): BuilderCount<number | null> {
   return {

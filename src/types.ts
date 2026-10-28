@@ -134,7 +134,7 @@ export type ResolvedConfig = {
   builder_max_tool_calls: number;
   /** The most output tokens a tool-loop builder may generate in one turn,
    * reasoning included, or null to leave each turn to the provider's own
-   * limit. 32768 by default on a local builder (ollama, lmstudio), null on
+   * limit. 16384 by default on a local builder (ollama, lmstudio), null on
    * openrouter. A turn cut off at it before it made a tool call costs that
    * one step, not the session: fascicle feeds back that it hit the limit and
    * the loop goes on. Ignored by the `claude_cli` builder. */
