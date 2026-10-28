@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.10.0 — 2026-10-27
+
+### Added
+- **A builder sees what the last check said (#6).** When the previous iteration's check failed, the builder's prompt carries a `PREVIOUS CHECK RESULT` section: the exit code, the failing slots, and an excerpt capped at 6,000 characters, taken from checkride's digest (volley now runs `pnpm exec checkride --json --digest` and archives `check/digest.md`), else the start of each failing slot's raw output, else the end of a command's output. A resume rebuilds it from the archive, and a check the user rejected under `volley acp` reads as never having run, not as failed.
+- **A tool-loop builder's last steps count down (#6).** The last five steps of a session, or a tenth of a longer budget, end with a note of how many are left and the command that runs the check, and the last says that only `finish` runs on it. When a session hits its step limit, the next prompt says so and asks for the check first.
+- **`--builder-max-output-tokens <n>` caps a tool-loop builder's output per turn (#6).** Or `VOLLEY_BUILDER_MAX_OUTPUT_TOKENS`. Reasoning counts, and Ollama gets it as `num_predict`. An ollama or lmstudio builder is capped at 16,384 by default, an openrouter one only when you set a cap. A turn cut off before it calls a tool costs that step instead of ending the session, and each iteration's summary counts those turns as `builder.truncated_turns`.
+- **`builder_max_steps_hits` counts the builder sessions that ran out of steps (#6).** It's on `RunResult`, so `--json` and `summary.json` carry it, since the warning each one prints goes to stderr, which `--json` silences.
+
+### Changed
+- **Reads don't count against `--builder-max-tool-calls` (#6).** `read_file`, `search_files`, and `list_files` are read-only, so a builder that batches them gets them all, and past the cap the next request names the calls that were dropped. Above a cap of one, step 2 of the builder's prompt no longer names the cap.
+- **The builder is asked to check as it goes (#6).** In a checkride workspace it's told to run `pnpm exec checkride --digest` after each batch of edits and to read `.check/digest.md` before any slot's raw output, and both harness prompts say to verify after each batch of edits, not only before finishing.
+- **`RunResult` has `builder_max_steps_hits` and `ResolvedConfig` has `builder_max_output_tokens`.** Both are required, so SDK code that builds either by hand needs them.
+
+### Fixed
+- **A contained `--worktree` run keeps its work.** The sandbox image has no git identity, so volley's own commits failed inside it: the salvage commit that keeps a converged run's work on `volley/<run id>`, the `--git` checkpoints, and the squash merge. They now fall back to `volley <volley@volley.invalid>` for whatever git lacks, and an identity you configured still wins.
+- **A failing slot's raw output is read only from inside the check directory.** Slot names and output files come from a summary the builder could have written, and a `../` in one could put a file from outside it in front of the critic or the next builder.
+
+### Internal
+- **Built on fascicle 0.17.1**, which names a turn's dropped tool calls to the model and can go on past a turn cut off at its output cap.
+- **The publish workflow keeps its OIDC identity out of the job that runs dependencies.** A `build` job verifies the tag, installs, runs the gate, builds, and packs with read-only permissions, and a separate `publish` job holds `id-token: write` behind the `npm-publish` approval and publishes that tarball with `--ignore-scripts`.
+- **The tests drive the step countdown, the per-turn cap's read-only reads, and the output cap through fascicle's real tool loop**, against a stand-in OpenAI server that now takes several calls a turn and can end one on `length`.
+
 ## v0.9.0 — 2026-10-20
 
 ### Added
