@@ -7,6 +7,13 @@ name: Publish
 # tarball to this commit and workflow run, verifiable on npmjs.com and via
 # `npm audit signatures`.
 #
+# Two jobs, so the OIDC identity never shares a job with the repo's
+# dependencies. `build` installs them, runs the gate and packs the tarball,
+# with no way to mint a token. `publish` holds id-token: write and the
+# approval gate, and runs nothing from the repo: it downloads that tarball and
+# publishes it as it is, with scripts off. A compromised dev dependency can
+# still fail the build, but it can't publish with this workflow's identity.
+#
 # One-time setup outside the repo (all three before the first CI publish):
 #   - The very first version is published by hand - a trusted publisher is
 #     configured on the package's settings page, which only exists once the
@@ -34,13 +41,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read # checkout only
-  id-token: write # OIDC identity for npm trusted publishing + provenance
+  contents: read # checkout only; the publish job swaps this for id-token alone
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment: npm-publish # required-reviewer gate: the human approval step
+    outputs:
+      name: ${{ steps.pack.outputs.name }}
+      version: ${{ steps.pack.outputs.version }}
+      tarball: ${{ steps.pack.outputs.tarball }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -74,16 +83,11 @@ jobs:
       # uses the exact pnpm that wrote the lockfile and reads workspace overrides.
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
-      # No registry-url here: setup-node would write an .npmrc keyed to a
-      # NODE_AUTH_TOKEN env var, which shadows the tokenless OIDC flow.
+      # No pnpm cache here: a cache can be written by other runs, and what this
+      # job packs is what gets published.
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
-          cache: pnpm
-
-      # Trusted Publishing needs npm >= 11.5.1; pin the major to be sure.
-      - name: Update npm
-        run: npm install -g npm@11
 
       - run: pnpm install --frozen-lockfile
 
@@ -105,17 +109,65 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      # npm pack takes the dist/ the build step just wrote. The tarball's name
+      # is npm's: the scope's "@" dropped and its "/" made "-".
+      - name: Pack
+        id: pack
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          tarball="$(printf '%s' "$name" | sed 's|^@||; s|/|-|')-$version.tgz"
+          npm pack
+          test -f "$tarball"
+          {
+            echo "name=$name"
+            echo "version=$version"
+            echo "tarball=$tarball"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package
+          path: ${{ steps.pack.outputs.tarball }}
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm-publish # required-reviewer gate: the human approval step
+    permissions:
+      id-token: write # OIDC identity for npm trusted publishing + provenance
+    steps:
+      # No registry-url here: setup-node would write an .npmrc keyed to a
+      # NODE_AUTH_TOKEN env var, which shadows the tokenless OIDC flow.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      # Trusted Publishing needs npm >= 11.5.1; pin the major to be sure.
+      - name: Update npm
+        run: npm install -g npm@11 --ignore-scripts
+
+      - name: Download tarball
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package
+
       # npm (not pnpm) publish: the OIDC token exchange is an npm CLI flow.
       # --provenance is redundant under trusted publishing but documents intent
       # and fails closed if the OIDC identity is ever absent. A version already
       # on the registry (the hand-published first release, or a retry after a
       # success) is skipped rather than failed, so the tag push stays green.
       - name: Publish with provenance
+        env:
+          NAME: ${{ needs.build.outputs.name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TARBALL: ${{ needs.build.outputs.tarball }}
         run: |
-          name="$(node -p "require('./package.json').name")"
-          version="$(node -p "require('./package.json').version")"
-          if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
-            echo "::notice::$name@$version is already on npm; nothing to publish"
+          if [ -n "$(npm view "$NAME@$VERSION" version 2>/dev/null)" ]; then
+            echo "::notice::$NAME@$VERSION is already on npm; nothing to publish"
             exit 0
           fi
-          npm publish --provenance --access public
+          npm publish "./$TARBALL" --provenance --access public --ignore-scripts
