@@ -174,7 +174,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local builder](#local-builder) and [OpenRouter](#openrouter)). |
 | `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
 | `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. `--json` and `summary.json` count the sessions that hit it as `builder_max_steps_hits`. |
-| `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn; past it, fascicle runs the first ones and drops the rest. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
+| `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn, not counting reads (`read_file`, `search_files`, `list_files`); past it, fascicle runs the calls before the first one over, drops the rest, and tells the model which it dropped. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
@@ -475,10 +475,13 @@ any other call there. The note is added to what that one turn sends, never to
 the transcript, so it never piles up and a local runtime's cached prefix holds.
 
 A local builder makes one tool call per turn by default, since some model and
-runtime pairs return parallel calls badly. For a pair that handles them, such
-as qwen3.8 on Ollama's MLX runner, which returns several reads at once,
-`--builder-max-tool-calls <n>` lets each turn carry up to `n`. fascicle runs a
-turn's calls in order, so a read can't race an edit, and the builder's prompt
+runtime pairs return parallel calls badly. Reads don't count: `read_file`,
+`search_files`, and `list_files` are read-only, so a model that batches them,
+as qwen3.8 on Ollama's MLX runner does, gets them all. A turn's calls run in
+order, so a read can't race an edit. Past the cap, fascicle drops the
+remaining calls and the next request names them, so the model can make them
+again. For a pair that handles parallel calls, `--builder-max-tool-calls <n>`
+lets each turn make up to `n` changes or commands, and the builder's prompt
 then asks it to batch independent reads but make one change or command per
 turn.
 

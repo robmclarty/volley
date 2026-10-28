@@ -76,14 +76,12 @@ const ONE_CALL_A_TURN = '2. Call one tool at a time and read its result before d
 
 /** Step 2 for a builder that may make several calls a turn: fascicle runs a
  * turn's calls in order, so a read can't race an edit, but each change or
- * command is still worth reading before the next. */
-function batched_calls(max_tool_calls: number): string {
-  return [
-    `2. Batch independent reads into one turn, up to ${String(max_tool_calls)} calls, but`,
-    '   make one change or command per turn, and read its result before',
-    '   deciding the next call.',
-  ].join('\n');
-}
+ * command is still worth reading before the next. Reads don't count toward
+ * the cap, so the step names no number. */
+const BATCHED_CALLS = [
+  '2. Batch independent reads into one turn, but make one change or command per',
+  '   turn, and read its result before deciding the next call.',
+].join('\n');
 
 // The CLI system prompt assumes CLI semantics (built-in tools, implicit
 // cwd), so the local builder gets its own — its tool set, the
@@ -99,7 +97,7 @@ export function compose_builder_system_local(
   ].join('\n');
   const append = readFileSync(join(builder_presets_dir(), HARNESS_APPENDS[tool_set]), 'utf8');
   const worded =
-    max_tool_calls > 1 ? append.replace(ONE_CALL_A_TURN, batched_calls(max_tool_calls)) : append;
+    max_tool_calls > 1 ? append.replace(ONE_CALL_A_TURN, BATCHED_CALLS) : append;
   return `${identity}\n\n${worded.trimEnd()}`;
 }
 

@@ -207,6 +207,10 @@ describe('read_only_tools', () => {
     ]);
   });
 
+  it("marks every one read_only, so a builder's per-turn cap doesn't count it", () => {
+    expect(read_only_tools('/ws').every((t) => t.read_only === true)).toBe(true);
+  });
+
   it('caps the match count constant sanely', () => {
     expect(SEARCH_MAX_MATCHES).toBeGreaterThan(0);
   });

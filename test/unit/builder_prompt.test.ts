@@ -250,7 +250,7 @@ describe('compose_builder_system_local: tool calls per turn', () => {
       // replacement no longer matches shows up here.
       expect(batched, tool_set).not.toContain('Call one tool at a time');
       expect(batched).toContain(
-        '2. Batch independent reads into one turn, up to 4 calls, but make one change or command per turn',
+        '2. Batch independent reads into one turn, but make one change or command per turn',
       );
       expect(batched).toContain('3. Read before you edit');
     }

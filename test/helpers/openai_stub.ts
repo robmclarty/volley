@@ -29,10 +29,14 @@ export type StubOpenAi = {
   seen: SeenOpenAiRequest[];
 };
 
-/** One scripted reply: text the model streams, then a tool call it makes. */
+type StubCall = { id: string; name: string; input: unknown };
+
+/** One scripted reply: text the model streams, then the tool call it makes,
+ * or the several it makes in one turn. */
 export type StubTurn = {
   text?: string;
-  tool_call?: { id: string; name: string; input: unknown };
+  tool_call?: StubCall;
+  tool_calls?: ReadonlyArray<StubCall>;
 };
 
 const USAGE = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
@@ -53,12 +57,12 @@ function sse(frames: ReadonlyArray<unknown>): string {
 function turn_frames(turn: StubTurn): unknown[] {
   const deltas: unknown[] = [];
   if (turn.text !== undefined) deltas.push({ role: 'assistant', content: turn.text });
-  const call = turn.tool_call;
-  if (call !== undefined) {
+  const calls = [...(turn.tool_call === undefined ? [] : [turn.tool_call]), ...(turn.tool_calls ?? [])];
+  for (const [index, call] of calls.entries()) {
     deltas.push({
       tool_calls: [
         {
-          index: 0,
+          index,
           id: call.id,
           type: 'function',
           function: { name: call.name, arguments: JSON.stringify(call.input) },
@@ -68,7 +72,7 @@ function turn_frames(turn: StubTurn): unknown[] {
   }
   return [
     ...deltas.map((delta) => ({ choices: [{ index: 0, delta }] })),
-    { choices: [{ index: 0, delta: {}, finish_reason: call === undefined ? 'stop' : 'tool_calls' }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: calls.length === 0 ? 'stop' : 'tool_calls' }] },
     { choices: [], usage: USAGE },
   ];
 }

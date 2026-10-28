@@ -135,7 +135,7 @@ describe('local builder (ollama provider)', () => {
       const builder = engine.calls.find((c) => c.role === 'builder');
       expect(builder?.opts.max_tool_calls_per_step).toBe(4);
       expect(String(builder?.opts.system).replace(/\s+/g, ' ')).toContain(
-        'Batch independent reads into one turn, up to 4 calls',
+        'Batch independent reads into one turn, but make one change or command per turn',
       );
     } finally {
       cleanup();

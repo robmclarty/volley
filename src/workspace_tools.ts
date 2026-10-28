@@ -133,6 +133,9 @@ const list_files_input = z.object({
     .describe('Optional substring filter applied to each relative path.'),
 });
 
+// Each is `read_only`, so a builder's per-turn call cap doesn't count it: a
+// read changes nothing a later call in the turn could depend on.
+//
 // Each tool is typed as fascicle's `Tool` (input `unknown`) and re-parses the
 // model's raw arguments with its own schema. fascicle's `Tool` is invariant
 // on the input type, so typed-per-tool values will not widen into `Tool[]`;
@@ -142,6 +145,7 @@ const list_files_input = z.object({
 export function read_only_tools(workspace: string): Tool[] {
   const read_file: Tool = {
     name: 'read_file',
+    read_only: true,
     description:
       'Read a UTF-8 text file from the workspace. Returns the file content ' +
       `(truncated at ${String(READ_FILE_MAX_BYTES)} bytes).`,
@@ -158,6 +162,7 @@ export function read_only_tools(workspace: string): Tool[] {
 
   const search_files: Tool = {
     name: 'search_files',
+    read_only: true,
     description:
       'Search workspace files for lines matching a regular expression. Returns ' +
       `up to ${String(SEARCH_MAX_MATCHES)} "relative/path:line: text" hits.`,
@@ -191,6 +196,7 @@ export function read_only_tools(workspace: string): Tool[] {
 
   const list_files: Tool = {
     name: 'list_files',
+    read_only: true,
     description:
       'List files under a workspace directory (recursively; skips node_modules, ' +
       '.git, and other build/output directories).',

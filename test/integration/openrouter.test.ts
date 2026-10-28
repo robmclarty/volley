@@ -4,7 +4,7 @@
  * one per seat, so every request a seat makes can be traced to the server it
  * reached, with the key and the attribution it carried.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolve_config } from '../../src/config.js';
@@ -111,6 +111,53 @@ describe("the builder's step countdown, through fascicle's real tool loop", () =
       }
 
       expect(result.builder_max_steps_hits).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe("the builder's per-turn cap, through fascicle's real tool loop", () => {
+  it("runs a turn's reads beside its one change, and names the call it dropped", async () => {
+    // At the default cap of one, a turn that reads twice, writes, and runs a
+    // command: the reads don't count, the write is the turn's one counted
+    // call, and the command is dropped. The next turn finishes.
+    const builder_server = await stub_openai([
+      {
+        tool_calls: [
+          { id: 'call_1', name: 'list_files', input: {} },
+          { id: 'call_2', name: 'search_files', input: { pattern: 'x' } },
+          { id: 'call_3', name: 'write_file', input: { path: 'out.txt', content: 'done' } },
+          { id: 'call_4', name: 'bash', input: { command: 'touch ran.txt' } },
+        ],
+      },
+      { tool_call: { id: 'call_5', name: 'finish', input: { summary: 'wrote out.txt' } } },
+    ]);
+    const critic_server = await stub_openai(APPROVED);
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        openrouter_seats(workspace, {
+          builder_url: builder_server.url,
+          critic_url: critic_server.url,
+        }),
+        { env: ENV },
+      );
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      expect(readFileSync(join(workspace, 'out.txt'), 'utf8')).toBe('done');
+      expect(existsSync(join(workspace, 'ran.txt'))).toBe(false);
+
+      const second = builder_server.seen[1]?.messages ?? [];
+      const results = second.filter((message) => (message as { role?: unknown }).role === 'tool');
+      expect(results).toHaveLength(3);
+      const notice = second
+        .map((message) => (message as { role?: unknown; content?: unknown }))
+        .find((message) => message.role === 'user' && typeof message.content === 'string' && message.content.includes('bash('));
+      expect(notice?.content).toContain('touch ran.txt');
     } finally {
       cleanup();
     }
