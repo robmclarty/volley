@@ -28,6 +28,7 @@ const DEFAULT_CRITIC_MODEL = 'opus';
 export const DEFAULT_MAX_ITERATIONS = 10;
 export const DEFAULT_BUILDER_MAX_STEPS = 50;
 export const DEFAULT_BUILDER_MAX_TOOL_CALLS = 1;
+export const DEFAULT_BUILDER_MAX_OUTPUT_TOKENS = 32768;
 export const DEFAULT_CHECK = 'auto';
 const DEFAULT_CRITIC = 'reviewer';
 const DEFAULT_BUILDER_PROVIDER: BuilderProvider = 'claude_cli';
@@ -210,12 +211,23 @@ const BUILDER_MAX_TOOL_CALLS: BuilderCount = {
   fallback: DEFAULT_BUILDER_MAX_TOOL_CALLS,
 };
 
-/** Unset by default: each turn runs to the provider's own limit. */
-const BUILDER_MAX_OUTPUT_TOKENS: BuilderCount<null> = {
-  flag: '--builder-max-output-tokens',
-  env_var: 'VOLLEY_BUILDER_MAX_OUTPUT_TOKENS',
-  fallback: null,
-};
+/** The builders whose turns are capped when nothing sets a cap: the local
+ * ones, where nothing else bounds a turn. Ollama's MLX runner lets an unset
+ * `num_predict` run to the model's trained context less the prompt, which is
+ * how one qwen3.8 turn spent 30,847 tokens thinking. A hosted model on
+ * OpenRouter has its own output limit, and a request for more than it allows
+ * can be refused, so it's capped only when asked. */
+const CAPPED_BY_DEFAULT: ReadonlyArray<BuilderProvider> = ['ollama', 'lmstudio'];
+
+/** The output cap's flag and env var, and its default for `provider`: 32k
+ * tokens on a local builder, else the provider's own limit (null). */
+function builder_max_output_tokens_count(provider: BuilderProvider): BuilderCount<number | null> {
+  return {
+    flag: '--builder-max-output-tokens',
+    env_var: 'VOLLEY_BUILDER_MAX_OUTPUT_TOKENS',
+    fallback: CAPPED_BY_DEFAULT.includes(provider) ? DEFAULT_BUILDER_MAX_OUTPUT_TOKENS : null,
+  };
+}
 
 /** A builder count's flag or config value wins over its env var, which wins
  * over the default, and either must be a positive integer. Local builder
@@ -483,7 +495,7 @@ export function resolve_config(
   const builder_max_output_tokens = resolve_builder_count(
     raw.builder_max_output_tokens,
     builder_env,
-    BUILDER_MAX_OUTPUT_TOKENS,
+    builder_max_output_tokens_count(builder_provider),
   );
 
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;

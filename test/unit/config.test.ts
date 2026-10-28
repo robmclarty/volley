@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
+  DEFAULT_BUILDER_MAX_OUTPUT_TOKENS,
   DEFAULT_BUILDER_MAX_TOOL_CALLS,
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
@@ -26,7 +27,7 @@ import { detect_containment } from '../../src/containment.js';
 import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { error_kind } from '../../src/types.js';
-import type { VolleyConfig } from '../../src/types.js';
+import type { BuilderProvider, VolleyConfig } from '../../src/types.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import { initialize_run_state, write_resolved_config } from '../../src/workspace.js';
 import { temp_workspace } from '../helpers/harness.js';
@@ -381,7 +382,34 @@ describe('resolve_config', () => {
     }
   });
 
-  it('resolves builder_max_output_tokens from the flag, then VOLLEY_BUILDER_MAX_OUTPUT_TOKENS, then unset', () => {
+  it('caps a local builder at 32768 output tokens a turn by default, and leaves openrouter and claude_cli to theirs', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(DEFAULT_BUILDER_MAX_OUTPUT_TOKENS).toBe(32768);
+      const env = { OPENROUTER_API_KEY: 'sk-or-test' };
+      const cap = (builder_provider: BuilderProvider, extra: Partial<VolleyConfig> = {}, more = {}) =>
+        resolve_config(
+          {
+            ...base(workspace),
+            builder_provider,
+            ...(builder_provider === 'claude_cli' ? {} : { allow_unsandboxed_builder: true }),
+            ...extra,
+          },
+          { env: { ...env, ...more } },
+        ).builder_max_output_tokens;
+      expect(cap('ollama')).toBe(32768);
+      expect(cap('lmstudio')).toBe(32768);
+      expect(cap('openrouter')).toBeNull();
+      expect(cap('claude_cli')).toBeNull();
+      // Set, it wins on every provider.
+      expect(cap('ollama', { builder_max_output_tokens: 8192 })).toBe(8192);
+      expect(cap('openrouter', {}, { VOLLEY_BUILDER_MAX_OUTPUT_TOKENS: '16384' })).toBe(16384);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('resolves builder_max_output_tokens from the flag, then VOLLEY_BUILDER_MAX_OUTPUT_TOKENS, then the default', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
       expect(resolve_config(base(workspace), { env: {} }).builder_max_output_tokens).toBeNull();

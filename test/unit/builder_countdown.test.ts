@@ -114,6 +114,15 @@ describe("the builder seat's countdown", () => {
     expect(prepared?.messages?.at(-1)?.content).toContain("If you haven't run the project's tests");
   });
 
+  it('asks for the output cap, and to go on past a turn it cuts off, only when one is set', async () => {
+    const capped = await builder_opts({ builder_provider: 'ollama', builder_max_output_tokens: 32768 });
+    expect(capped?.max_tokens).toBe(32768);
+    expect(capped?.truncated_turn_policy).toBe('continue');
+    const uncapped = await builder_opts({ builder_provider: 'openrouter', builder_max_output_tokens: null });
+    expect(uncapped?.max_tokens).toBeUndefined();
+    expect(uncapped?.truncated_turn_policy).toBeUndefined();
+  });
+
   it('stays off the claude_cli builder, which runs its own loop', async () => {
     const opts = await builder_opts({ builder_provider: 'claude_cli' });
     expect(opts?.prepare_step).toBeUndefined();
