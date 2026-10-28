@@ -18,7 +18,7 @@ import { existsSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check_error, config_error } from './types.js';
-import { backup_stamp } from './workspace.js';
+import { backup_stamp, commit_identity } from './workspace.js';
 
 /** A live worktree: the checked-out path and the branch it holds. */
 export type WorktreeHandle = {
@@ -247,7 +247,7 @@ export type TeardownOutcome = {
    * was salvaged, or the run committed nothing worth keeping). */
   salvaged_branch: string | null;
   /** The checkout teardown refused to delete because its work could not be
-   * committed (no git identity, a stale index lock, a broken repo): the files are
+   * committed (a stale index lock, a broken repo): the files are
    * still on disk, and the next run rotates them aside rather than destroying
    * them. Null whenever the checkout was removed. */
   kept_path: string | null;
@@ -309,6 +309,7 @@ function salvage_worktree(repo: string, path: string, branch: string): TeardownO
   if (existsSync(path)) {
     git_quiet(path, ['add', '-A']);
     git_quiet(path, [
+      ...commit_identity(path),
       'commit',
       '-m',
       `volley: salvage unintegrated worktree (${branch})`,

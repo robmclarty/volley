@@ -146,6 +146,27 @@ export function write_resolved_config(
   return true;
 }
 
+/** The identity volley's own commits fall back to. git won't commit without a
+ * name and an email, and the sandbox image carries no git config, so inside
+ * it a checkpoint or a worktree's salvage commit failed outright; a machine
+ * never set up for git can be the same. `.invalid` is reserved, so the email
+ * can't reach anyone. */
+const FALLBACK_IDENTITY: ReadonlyArray<readonly [string, string]> = [
+  ['user.name', 'volley'],
+  ['user.email', 'volley@volley.invalid'],
+];
+
+/** The `-c` flags that give a commit in `cwd` the fallback identity for each
+ * part git has no value for. One the repo or the user configured wins, and so
+ * does a `GIT_AUTHOR_*` or `GIT_COMMITTER_*` variable, which git ranks above
+ * any config. Put them ahead of the subcommand. */
+export function commit_identity(cwd: string): string[] {
+  return FALLBACK_IDENTITY.flatMap(([key, value]) => {
+    const set = spawnSync('git', ['config', '--get', key], { cwd, encoding: 'utf8' });
+    return set.status === 0 && set.stdout.trim() !== '' ? [] : ['-c', `${key}=${value}`];
+  });
+}
+
 /**
  * `--git`: commit everything under `root` after a phase (`git -C <root>`, run
  * here via the spawn `cwd`). `root` is the build root (`build_root`): the
@@ -168,7 +189,7 @@ export function git_checkpoint(root: string, message: string, excluded_dir: stri
   if (add.error !== undefined || add.status !== 0) {
     throw check_error(`git add failed: ${add.stderr?.toString() ?? String(add.error)}`);
   }
-  const commit = spawnSync('git', ['commit', '-m', message, '--no-verify'], {
+  const commit = spawnSync('git', [...commit_identity(root), 'commit', '-m', message, '--no-verify'], {
     cwd: root,
   });
   // Exit 1 with "nothing to commit" is a no-op iteration, not a failure. So is
@@ -210,7 +231,7 @@ export function integrate_worktree(workspace: string, branch: string, message: s
       `git merge --squash ${branch} failed: ${(squash.stderr || squash.stdout).trim()}`,
     );
   }
-  const commit = spawnSync('git', ['commit', '-m', message, '--no-verify'], {
+  const commit = spawnSync('git', [...commit_identity(workspace), 'commit', '-m', message, '--no-verify'], {
     cwd: workspace,
     encoding: 'utf8',
   });

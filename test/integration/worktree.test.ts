@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Tool } from 'fascicle';
 import { run_volley } from '../../src/orchestrator.js';
 import { create_renderer } from '../../src/render/renderer.js';
@@ -315,6 +315,84 @@ describe('worktree-branch checkpoints + integration', () => {
         caught = err;
       }
       expect(error_kind(caught)).toBe('config_error');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+/** Take away every git identity a commit in `workspace` could use, as in the
+ * sandbox image: no repo or global config, no system config, and no guessing
+ * one from the machine. Returns the undo. */
+function without_git_identity(workspace: string): () => void {
+  for (const key of ['user.name', 'user.email']) {
+    spawnSync('git', ['config', '--unset', key], { cwd: workspace });
+  }
+  const global = join(workspace, '..', `${String(process.pid)}-no-identity.gitconfig`);
+  writeFileSync(global, '[user]\n\tuseConfigOnly = true\n');
+  vi.stubEnv('GIT_CONFIG_GLOBAL', global);
+  vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+  return () => {
+    vi.unstubAllEnvs();
+    rmSync(global, { force: true });
+  };
+}
+
+/** The author of `ref`'s commit, as `name <email>`. */
+function author(repo: string, ref: string): string {
+  return spawnSync('git', ['log', '-1', '--format=%an <%ae>', ref], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+}
+
+describe('commits with no git identity, as in the sandbox image', () => {
+  it('salvages a converged run onto its branch under volley as the author', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    const restore = without_git_identity(workspace);
+    try {
+      // The bare commit volley's salvage made before: git refuses it.
+      const bare = spawnSync('git', ['commit', '--allow-empty', '-m', 'x'], { cwd: workspace, encoding: 'utf8' });
+      expect(bare.status).not.toBe(0);
+
+      const config = worktree_config(workspace);
+      const branch = worktree_branch(config.run_id);
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine: writing_builder(),
+        install_signal_handlers: false,
+      });
+      expect(result.salvaged_branch).toBe(branch);
+      expect(show(workspace, `${branch}:out.txt`)).toBe('done');
+      expect(author(workspace, branch)).toBe('volley <volley@volley.invalid>');
+      expect(existsSync(worktree_path(workspace))).toBe(false);
+    } finally {
+      restore();
+      cleanup();
+    }
+  });
+
+  it('checkpoints and integrates a --git run under volley as the author', async () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    const restore = without_git_identity(workspace);
+    try {
+      const result = await run_volley(worktree_git_config(workspace), {
+        renderer: silent_renderer(),
+        engine: writing_builder(),
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      expect(readFileSync(join(workspace, 'out.txt'), 'utf8')).toBe('done');
+      expect(author(workspace, 'HEAD')).toBe('volley <volley@volley.invalid>');
+    } finally {
+      restore();
+      cleanup();
+    }
+  });
+
+  it("keeps an identity the repo has, rather than putting volley's in its place", () => {
+    const { workspace, cleanup } = temp_git_workspace();
+    try {
+      writeFileSync(join(workspace, 'a.txt'), 'a');
+      git_checkpoint(workspace, 'checkpoint');
+      expect(author(workspace, 'HEAD')).toBe('Volley Test <test@volley.local>');
     } finally {
       cleanup();
     }

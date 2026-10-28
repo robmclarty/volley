@@ -563,6 +563,10 @@ surprise at teardown:
 | `--worktree` | Committed onto `volley/<run id>` and left there. Recover it with `git switch volley/<run id>` or `git cherry-pick`; the branch is named in the final summary and in `--json` as `salvaged_branch`. |
 | `--worktree --discard-worktree` | Thrown away with the branch — verdicts only, nothing kept. |
 
+volley's own commits (`--git` checkpoints, the squash merge, and the salvage
+commit) use your git identity. Where git has none, as in the sandbox image,
+they fall back to `volley <volley@volley.invalid>` rather than fail.
+
 Any run that does *not* converge (cost cap, budget exhausted, interrupt, error)
 is discarded wholesale in all three modes: an abandoned phase leaves nothing
 behind.
