@@ -21,6 +21,9 @@ export type SeenOpenAiRequest = {
   x_title: string | null;
   /** The request's `messages`, as sent: what the model read. */
   messages: unknown[];
+  /** The output cap it asked for, as `max_tokens` or `max_completion_tokens`,
+   * or null when it set none. */
+  token_limit: number | null;
 };
 
 export type StubOpenAi = {
@@ -32,11 +35,13 @@ export type StubOpenAi = {
 type StubCall = { id: string; name: string; input: unknown };
 
 /** One scripted reply: text the model streams, then the tool call it makes,
- * or the several it makes in one turn. */
+ * or the several it makes in one turn, and how it finished when that isn't
+ * the one its calls imply, such as `length` for a turn cut off at its cap. */
 export type StubTurn = {
   text?: string;
   tool_call?: StubCall;
   tool_calls?: ReadonlyArray<StubCall>;
+  finish_reason?: string;
 };
 
 const USAGE = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
@@ -72,7 +77,11 @@ function turn_frames(turn: StubTurn): unknown[] {
   }
   return [
     ...deltas.map((delta) => ({ choices: [{ index: 0, delta }] })),
-    { choices: [{ index: 0, delta: {}, finish_reason: calls.length === 0 ? 'stop' : 'tool_calls' }] },
+    {
+      choices: [
+        { index: 0, delta: {}, finish_reason: turn.finish_reason ?? (calls.length === 0 ? 'stop' : 'tool_calls') },
+      ],
+    },
     { choices: [], usage: USAGE },
   ];
 }
@@ -93,7 +102,10 @@ function answer(
         model?: unknown;
         stream?: unknown;
         messages?: unknown;
+        max_tokens?: unknown;
+        max_completion_tokens?: unknown;
       };
+      const token_limit = body.max_tokens ?? body.max_completion_tokens;
       const model = typeof body.model === 'string' ? body.model : null;
       const path = req.url ?? '';
       seen.push({
@@ -104,6 +116,7 @@ function answer(
         authorization: header(req, 'authorization'),
         x_title: header(req, 'x-title'),
         messages: Array.isArray(body.messages) ? body.messages : [],
+        token_limit: typeof token_limit === 'number' ? token_limit : null,
       });
       if (req.method !== 'POST' || !path.endsWith('/chat/completions')) {
         res.writeHead(200, { 'content-type': 'application/json' });

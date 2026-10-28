@@ -276,6 +276,9 @@ export async function preflight(
     );
     renderer.info(`builder max steps: ${config.builder_max_steps}`);
     renderer.info(`builder tool calls per turn: ${config.builder_max_tool_calls}`);
+    renderer.info(
+      `builder output tokens per turn: ${config.builder_max_output_tokens ?? "the provider's limit"}`,
+    );
   }
   if (tool_loop_builder) {
     const contained = detect_containment(env);

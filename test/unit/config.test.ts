@@ -381,6 +381,49 @@ describe('resolve_config', () => {
     }
   });
 
+  it('resolves builder_max_output_tokens from the flag, then VOLLEY_BUILDER_MAX_OUTPUT_TOKENS, then unset', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config(base(workspace), { env: {} }).builder_max_output_tokens).toBeNull();
+      expect(
+        resolve_config(base(workspace), { env: { VOLLEY_BUILDER_MAX_OUTPUT_TOKENS: '' } }).builder_max_output_tokens,
+      ).toBeNull();
+      const env = { VOLLEY_BUILDER_MAX_OUTPUT_TOKENS: '8192' };
+      expect(resolve_config(base(workspace), { env }).builder_max_output_tokens).toBe(8192);
+      expect(
+        resolve_config({ ...base(workspace), builder_max_output_tokens: 16384 }, { env })
+          .builder_max_output_tokens,
+      ).toBe(16384);
+      for (const bad of [0, -1, 2.5]) {
+        expect(() =>
+          resolve_config({ ...base(workspace), builder_max_output_tokens: bad }, { env: {} }),
+        ).toThrow('--builder-max-output-tokens / VOLLEY_BUILDER_MAX_OUTPUT_TOKENS must be a positive integer');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('preserves builder_max_output_tokens across a persist→restore round-trip, and unset as unset', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const [run_id, cap] of [['cap-run', 12000], ['uncapped-run', undefined]] as const) {
+        const original = resolve_config(
+          { ...base(workspace), ...(cap === undefined ? {} : { builder_max_output_tokens: cap }) },
+          { run_id, env: {}, state_dir: null },
+        );
+        initialize_run_state(original);
+        write_resolved_config(original);
+        const resume = load_resume_state(workspace, run_id);
+        expect(resolve_config(resume.raw_config, { run_id, env: {} }).builder_max_output_tokens).toBe(
+          cap ?? null,
+        );
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
   it('preserves builder_max_tool_calls across a persist→restore round-trip', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -1030,6 +1073,7 @@ describe('resolve_config: a critique', () => {
         [{ builder_url: 'http://localhost:1' }, '--builder-url (builder_url)'],
         [{ builder_max_steps: 5 }, '--builder-max-steps (builder_max_steps)'],
         [{ builder_max_tool_calls: 2 }, '--builder-max-tool-calls (builder_max_tool_calls)'],
+        [{ builder_max_output_tokens: 8192 }, '--builder-max-output-tokens (builder_max_output_tokens)'],
         [{ builder_permission_mode: 'acceptEdits' }, '--builder-permission-mode (builder_permission_mode)'],
         [{ allow_unsandboxed_builder: true }, '--allow-unsandboxed-builder (allow_unsandboxed_builder)'],
         [{ sandbox_image: 'img:1' }, '--sandbox-image (sandbox_image)'],

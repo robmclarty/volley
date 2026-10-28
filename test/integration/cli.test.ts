@@ -202,6 +202,7 @@ describe('volley --help', () => {
       '--builder-url',
       '--builder-max-steps',
       '--builder-max-tool-calls',
+      '--builder-max-output-tokens',
       '--allow-unsandboxed-builder',
       '--critic-model',
       '--critic-provider',

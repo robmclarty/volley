@@ -136,8 +136,9 @@ function check_hint(config: ResolvedConfig): string {
  * builder, local or `openrouter`, brings none, so volley supplies its whole
  * workspace tool surface (or the set the caller injected in its place, with
  * the handler that answers its approvals), the per-call loop knobs, the step
- * countdown (`./builder/countdown.ts`), and **no** schema (it produces a
- * workspace, not a verdict); per-call values win over engine defaults. */
+ * countdown (`./builder/countdown.ts`), the output cap when one is set, and
+ * **no** schema (it produces a workspace, not a verdict); per-call values win
+ * over engine defaults. */
 function builder_tool_options(
   deps: BuilderDeps,
 ): Pick<
@@ -150,6 +151,8 @@ function builder_tool_options(
   | 'tool_call_repair_attempts'
   | 'max_tool_calls_per_step'
   | 'prepare_step'
+  | 'max_tokens'
+  | 'truncated_turn_policy'
 > {
   const { config } = deps;
   const bash_executor = deps.bash_executor ?? null;
@@ -182,6 +185,13 @@ function builder_tool_options(
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
     max_tool_calls_per_step: config.builder_max_tool_calls,
     prepare_step: step_countdown(config.builder_max_steps, check_hint(config)),
+    // A capped turn that runs out before it calls a tool goes on to the next
+    // step instead of ending the session; with no cap, a turn cut off at the
+    // provider's own limit still ends it, as one cut off at a full context
+    // window would only be cut off again.
+    ...(config.builder_max_output_tokens !== null
+      ? { max_tokens: config.builder_max_output_tokens, truncated_turn_policy: 'continue' as const }
+      : {}),
   };
 }
 

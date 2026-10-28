@@ -164,6 +164,55 @@ describe("the builder's per-turn cap, through fascicle's real tool loop", () => 
   });
 });
 
+describe("the builder's output cap, through fascicle's real tool loop", () => {
+  /** A builder whose first turn is cut off while it's still thinking, then
+   * finishes, run with `cap` as its output cap or none. */
+  async function cut_off_round(cap?: number) {
+    const builder_server = await stub_openai([
+      { text: 'Let me think about the whole tree first', finish_reason: 'length' },
+      { tool_call: { id: 'call_1', name: 'finish', input: { summary: 'done' } } },
+    ]);
+    const critic_server = await stub_openai(APPROVED);
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        openrouter_seats(workspace, {
+          builder_url: builder_server.url,
+          critic_url: critic_server.url,
+          ...(cap === undefined ? {} : { builder_max_output_tokens: cap }),
+        }),
+        { env: ENV },
+      );
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        install_signal_handlers: false,
+      });
+      const iteration = JSON.parse(
+        readFileSync(join(result.run_state_dir, 'iterations', '001', 'summary.json'), 'utf8'),
+      ) as { builder: { finish_reason: string; truncated_turns?: number } };
+      return { seen: builder_server.seen, builder: iteration.builder };
+    } finally {
+      cleanup();
+    }
+  }
+
+  it('asks each turn for the cap, and goes on past a turn cut off before a tool call', async () => {
+    const { seen, builder } = await cut_off_round(64);
+    expect(seen.map((request) => request.token_limit)).toEqual([64, 64]);
+    // The second turn heard what happened to the first.
+    expect(JSON.stringify(seen[1]?.messages)).toContain('64-token output limit');
+    expect(builder.finish_reason).toBe('stop');
+    expect(builder.truncated_turns).toBe(1);
+  });
+
+  it('with no cap, sets none, and a cut-off turn still ends the session', async () => {
+    const { seen, builder } = await cut_off_round();
+    expect(seen.map((request) => request.token_limit)).toEqual([null]);
+    expect(builder.finish_reason).toBe('length');
+    expect(builder.truncated_turns).toBeUndefined();
+  });
+});
+
 describe('both seats on openrouter, against stand-in OpenRouter servers', () => {
   it('runs each seat on its own server, with the key, the title, and its own model', async () => {
     const builder_server = await stub_openai('done');

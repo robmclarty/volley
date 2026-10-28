@@ -74,6 +74,7 @@ export type VolleyConfig = {
   builder_url?: string;
   builder_max_steps?: number;
   builder_max_tool_calls?: number;
+  builder_max_output_tokens?: number;
   allow_unsandboxed_builder?: boolean;
   critic_model?: string;
   critic_provider?: CriticProvider;
@@ -131,6 +132,12 @@ export type ResolvedConfig = {
    * raise it for a pair that handles them. Ignored by the `claude_cli`
    * builder. */
   builder_max_tool_calls: number;
+  /** The most output tokens a tool-loop builder may generate in one turn,
+   * reasoning included, or null to leave each turn to the provider's own
+   * limit. A turn cut off at it before it made a tool call costs that one
+   * step, not the session: fascicle feeds back that it hit the limit and the
+   * loop goes on. Ignored by the `claude_cli` builder. */
+  builder_max_output_tokens: number | null;
   /** Operator opt-out permitting a non-`claude_cli` builder to run without a
    * sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;
@@ -269,6 +276,10 @@ export type PhaseRecord = {
    * counts behind the salvage-rate health metric. */
   tool_calls: number;
   salvaged_tool_calls: number;
+  /** Turns the provider cut off at the output cap before they made a tool
+   * call (`--builder-max-output-tokens`), each of which cost a step and went
+   * on. Set on a builder record when any was; absent otherwise. Additive. */
+  truncated_turns?: number;
   /** Provider-error retries that preceded this phase's successful call
    * — the local-critic degradation ladder's first rung: a stochastic
    * Ollama stream death is retried once before falling back. Set on the critic

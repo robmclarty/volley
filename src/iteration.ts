@@ -74,6 +74,9 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
     // tool-call encoding is drifting from its runtime's parser (pin them as one
     // unit). 0 when the phase made no tool calls (the CLI builder's own loop).
     salvage_rate: record.tool_calls === 0 ? 0 : record.salvaged_tool_calls / record.tool_calls,
+    // Turns cut off at the builder's output cap before a tool call. Emitted
+    // only when there were any. Additive.
+    ...(record.truncated_turns !== undefined ? { truncated_turns: record.truncated_turns } : {}),
     // Degradation-ladder bookkeeping, critic-only: the provider-error
     // retries that preceded this verdict, their cause, whether it was rendered
     // by the tool-less fallback, and why. Emitted only when set, so the builder
@@ -478,6 +481,10 @@ export function load_resume_state(
     ...(recorded['builder_max_tool_calls'] === undefined
       ? {}
       : { builder_max_tool_calls: Number(recorded['builder_max_tool_calls']) }),
+    // Null when the run left it unset, as any run before it was recorded did.
+    ...(typeof recorded['builder_max_output_tokens'] === 'number'
+      ? { builder_max_output_tokens: recorded['builder_max_output_tokens'] }
+      : {}),
     critic_model: String(recorded['critic_model']),
     critic_provider: (recorded['critic_provider'] ?? 'claude_cli') as CriticProvider,
     ...(typeof recorded['critic_url'] === 'string' ? { critic_url: recorded['critic_url'] } : {}),

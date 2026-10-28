@@ -168,6 +168,7 @@ const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
   ['builder_url', '--builder-url'],
   ['builder_max_steps', '--builder-max-steps'],
   ['builder_max_tool_calls', '--builder-max-tool-calls'],
+  ['builder_max_output_tokens', '--builder-max-output-tokens'],
   ['builder_permission_mode', '--builder-permission-mode'],
   ['allow_unsandboxed_builder', '--allow-unsandboxed-builder'],
   ['sandbox_image', '--sandbox-image'],
@@ -189,8 +190,13 @@ function refuse_builder_settings(raw: VolleyConfig): void {
   }
 }
 
-/** A tool-loop builder's count: its step cap, or its tool calls per turn. */
-type BuilderCount = { flag: string; env_var: string; fallback: number };
+/** A tool-loop builder's count: its step cap, its tool calls per turn, or
+ * its output tokens per turn, with the value it takes when nothing sets it. */
+type BuilderCount<fallback extends number | null = number> = {
+  flag: string;
+  env_var: string;
+  fallback: fallback;
+};
 
 const BUILDER_MAX_STEPS: BuilderCount = {
   flag: '--builder-max-steps',
@@ -204,14 +210,21 @@ const BUILDER_MAX_TOOL_CALLS: BuilderCount = {
   fallback: DEFAULT_BUILDER_MAX_TOOL_CALLS,
 };
 
+/** Unset by default: each turn runs to the provider's own limit. */
+const BUILDER_MAX_OUTPUT_TOKENS: BuilderCount<null> = {
+  flag: '--builder-max-output-tokens',
+  env_var: 'VOLLEY_BUILDER_MAX_OUTPUT_TOKENS',
+  fallback: null,
+};
+
 /** A builder count's flag or config value wins over its env var, which wins
  * over the default, and either must be a positive integer. Local builder
  * only; ignored by the `claude_cli` arm. */
-function resolve_builder_count(
+function resolve_builder_count<fallback extends number | null>(
   value: number | undefined,
   env: Record<string, string | undefined>,
-  count: BuilderCount,
-): number {
+  count: BuilderCount<fallback>,
+): number | fallback {
   if (value !== undefined) return positive_count(value, value, count);
   const env_value = env[count.env_var];
   if (env_value !== undefined && env_value !== '') {
@@ -220,7 +233,11 @@ function resolve_builder_count(
   return count.fallback;
 }
 
-function positive_count(value: number, original: unknown, count: BuilderCount): number {
+function positive_count(
+  value: number,
+  original: unknown,
+  count: Pick<BuilderCount, 'flag' | 'env_var'>,
+): number {
   if (!Number.isInteger(value) || value < 1) {
     throw config_error(
       `${count.flag} / ${count.env_var} must be a positive integer; got: ${String(original)}`,
@@ -463,6 +480,11 @@ export function resolve_config(
     builder_env,
     BUILDER_MAX_TOOL_CALLS,
   );
+  const builder_max_output_tokens = resolve_builder_count(
+    raw.builder_max_output_tokens,
+    builder_env,
+    BUILDER_MAX_OUTPUT_TOKENS,
+  );
 
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
   if (!CRITIC_PROVIDERS.includes(critic_provider)) {
@@ -558,6 +580,7 @@ export function resolve_config(
     builder_url,
     builder_max_steps,
     builder_max_tool_calls,
+    builder_max_output_tokens,
     allow_unsandboxed_builder,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,

@@ -49,6 +49,7 @@ export function phase_record(
   duration_ms: number = result.timing?.duration_ms ?? 0,
 ): PhaseRecord {
   const rate = throughput(result);
+  const truncated = result.steps.filter((step) => step.truncated === true).length;
   return {
     provider: result.model_resolved.provider,
     model,
@@ -60,6 +61,7 @@ export function phase_record(
     finish_reason: result.finish_reason,
     tool_calls: result.tool_calls.length,
     salvaged_tool_calls: result.tool_calls.filter((call) => call.salvaged === true).length,
+    ...(truncated > 0 ? { truncated_turns: truncated } : {}),
     ...(rate !== undefined ? { throughput: rate } : {}),
   };
 }

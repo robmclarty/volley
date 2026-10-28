@@ -175,6 +175,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-url` | the provider's env var | The builder's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. Lets the builder and critic run on different machines with the same provider (see [Seats on different machines](#seats-on-different-machines)). |
 | `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. `--json` and `summary.json` count the sessions that hit it as `builder_max_steps_hits`. |
 | `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn, not counting reads (`read_file`, `search_files`, `list_files`); past it, fascicle runs the calls before the first one over, drops the rest, and tells the model which it dropped. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
+| `--builder-max-output-tokens` | the provider's | Output tokens a tool-loop builder may generate per turn, reasoning included (`num_predict` on Ollama). A turn cut off at it before it calls a tool costs that step, not the session. Or `VOLLEY_BUILDER_MAX_OUTPUT_TOKENS`. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
@@ -412,7 +413,7 @@ Providers and their setup:
 Install the peer for your provider in the project running volley (e.g.
 `pnpm add ai-sdk-ollama@^4.3.0`); fascicle loads it lazily only when the local
 critic actually runs. The version matters. The major must satisfy fascicle's
-declared peer range (`^4` for fascicle 0.16.3, which tracks the AI SDK v7
+declared peer range (`^4` for fascicle 0.17.1, which tracks the AI SDK v7
 line), and volley declares 4.3.0 as its floor (an optional peer, so your
 package manager flags an older copy at install time). Before 4.3.0,
 ai-sdk-ollama streams a thinking model's reasoning only when the request sets
@@ -484,6 +485,15 @@ again. For a pair that handles parallel calls, `--builder-max-tool-calls <n>`
 lets each turn make up to `n` changes or commands, and the builder's prompt
 then asks it to batch independent reads but make one change or command per
 turn.
+
+A thinking model can spend one turn reasoning for a long time: on Ollama's MLX
+runner, with nothing capping a turn, one qwen3.8 turn ran to 30,847 tokens and
+19 minutes before a single `read_file`. `--builder-max-output-tokens <n>` caps
+each turn at `n` output tokens, reasoning included. A turn cut off there
+before it makes a tool call costs that one step: fascicle tells the model it
+hit the limit and the session goes on. Each iteration's `summary.json` counts
+those turns as `builder.truncated_turns`. Unset, each turn runs to the
+provider's own limit, and a turn cut off there still ends the session.
 
 ```sh
 volley \
@@ -720,7 +730,7 @@ for you ([below](#zed-setup)).
 `--builder-provider`, `--builder-model`, `--critic-provider`, and
 `--critic-model`. A missing one is refused with every missing flag named. The
 rest are optional: `--builder-url`, `--critic-url`, `--builder-max-steps`,
-`--builder-max-tool-calls`, `--allow-unsandboxed-builder`, `--critic`, `--check`, `--max-iterations`,
+`--builder-max-tool-calls`, `--builder-max-output-tokens`, `--allow-unsandboxed-builder`, `--critic`, `--check`, `--max-iterations`,
 `--max-cost-usd`, and `--state-dir`.
 
 It refuses these before serving, each with exit 5:
