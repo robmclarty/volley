@@ -71,12 +71,13 @@ describe('run_command_check: its environment', () => {
     expect(log).not.toContain('ANTHROPIC_API_KEY');
   });
 
-  it("inherits volley's whole environment when handed none; a run hands it the command env", async () => {
+  it("runs with volley's environment less both seat keys when handed none", async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'sk-or-secret');
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
     const log = await check_env();
-    expect(log).toContain('OPENROUTER_API_KEY=sk-or-secret');
-    expect(log).toContain('ANTHROPIC_API_KEY=sk-ant-secret');
+    expect(log).toContain(`PATH=${process.env.PATH ?? ''}`);
+    expect(log).not.toContain('OPENROUTER_API_KEY');
+    expect(log).not.toContain('ANTHROPIC_API_KEY');
   });
 });
 

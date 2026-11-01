@@ -17,6 +17,7 @@
 import { existsSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { command_env } from './engine.js';
 import { check_error, config_error } from './types.js';
 import { backup_stamp, commit_identity } from './workspace.js';
 
@@ -153,7 +154,7 @@ type GitResult = { status: number; stdout: string; stderr: string };
 /** Run git in `cwd`. A missing git binary is a precondition failure (like the
  * missing-repo guard); a non-zero exit is left to the caller to interpret. */
 function git(cwd: string, args: string[]): GitResult {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  const result = spawnSync('git', args, { cwd, env: command_env(process.env), encoding: 'utf8' });
   if (result.error !== undefined) {
     throw config_error(`git is required for --worktree but could not run: ${String(result.error)}`);
   }
@@ -176,7 +177,7 @@ function git_ok(cwd: string, args: string[]): GitResult {
  * path can interrogate the repo without reintroducing a throw. */
 function git_quiet(cwd: string, args: string[]): GitResult {
   try {
-    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    const result = spawnSync('git', args, { cwd, env: command_env(process.env), encoding: 'utf8' });
     return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
   } catch {
     // Teardown is cleanup; never mask the run's real outcome.

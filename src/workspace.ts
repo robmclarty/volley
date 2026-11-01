@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync }
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { command_env } from './engine.js';
 import { sign_config } from './trust.js';
 import { check_error, config_error } from './types.js';
 import type { ResolvedConfig } from './types.js';
@@ -162,7 +163,11 @@ const FALLBACK_IDENTITY: ReadonlyArray<readonly [string, string]> = [
  * any config. Put them ahead of the subcommand. */
 export function commit_identity(cwd: string): string[] {
   return FALLBACK_IDENTITY.flatMap(([key, value]) => {
-    const set = spawnSync('git', ['config', '--get', key], { cwd, encoding: 'utf8' });
+    const set = spawnSync('git', ['config', '--get', key], {
+      cwd,
+      env: command_env(process.env),
+      encoding: 'utf8',
+    });
     return set.status === 0 && set.stdout.trim() !== '' ? [] : ['-c', `${key}=${value}`];
   });
 }
@@ -185,12 +190,13 @@ export function git_checkpoint(root: string, message: string, excluded_dir: stri
     throw config_error(`git checkpoints require a git repository: ${root}`);
   }
   const pathspec = excluded_dir === null ? [] : ['--', ':/', `:(exclude,literal)${excluded_dir}`];
-  const add = spawnSync('git', ['add', '-A', ...pathspec], { cwd: root });
+  const add = spawnSync('git', ['add', '-A', ...pathspec], { cwd: root, env: command_env(process.env) });
   if (add.error !== undefined || add.status !== 0) {
     throw check_error(`git add failed: ${add.stderr?.toString() ?? String(add.error)}`);
   }
   const commit = spawnSync('git', [...commit_identity(root), 'commit', '-m', message, '--no-verify'], {
     cwd: root,
+    env: command_env(process.env),
   });
   // Exit 1 with "nothing to commit" is a no-op iteration, not a failure. So is
   // "nothing added to commit", which git says instead when the only untracked
@@ -221,6 +227,7 @@ export function integrate_worktree(workspace: string, branch: string, message: s
   }
   const squash = spawnSync('git', ['merge', '--squash', branch], {
     cwd: workspace,
+    env: command_env(process.env),
     encoding: 'utf8',
   });
   if (squash.error !== undefined) {
@@ -233,6 +240,7 @@ export function integrate_worktree(workspace: string, branch: string, message: s
   }
   const commit = spawnSync('git', [...commit_identity(workspace), 'commit', '-m', message, '--no-verify'], {
     cwd: workspace,
+    env: command_env(process.env),
     encoding: 'utf8',
   });
   if (commit.error !== undefined) {

@@ -663,11 +663,12 @@ OPENROUTER_API_KEY=sk-or-v1-... volley \
 - **The key.** `OPENROUTER_API_KEY` is required whenever either seat is on
   `openrouter`. Unset, volley exits 5 naming it, before any work. It goes out
   as a Bearer token, with `X-Title: volley` so OpenRouter attributes the
-  traffic. The check and every command a tool-loop builder runs get volley's
+  traffic. Every process volley starts (the check, each command a tool-loop
+  builder runs, and volley's own git and checkride calls) gets volley's
   environment without it, or `ANTHROPIC_API_KEY`, so nothing the builder
-  writes can read a key a seat spends. A `claude_cli` seat under
-  `VOLLEY_AUTH_MODE=oauth` still inherits the whole environment, as the
-  Claude CLI's login needs.
+  writes, a git filter or hook included, can read a key a seat spends. A
+  `claude_cli` seat under `VOLLEY_AUTH_MODE=oauth` still inherits the whole
+  environment, as the Claude CLI's login needs.
 - **The URL.** `VOLLEY_OPENROUTER_URL` (default `https://openrouter.ai/api/v1`)
   points both seats at a proxy or another OpenAI-compatible gateway, and
   `--builder-url` / `--critic-url` give one seat a URL of its own, under the

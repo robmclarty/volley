@@ -1,0 +1,26 @@
+id: spawn-sets-env
+message: |
+  Every process volley starts sets `env`, as `command_env(process.env)` unless
+  the caller hands a narrower one. Left out, the child inherits volley's whole
+  environment, seat keys included, and a git filter, hook, or script the
+  builder wrote could read them.
+severity: error
+language: typescript
+files:
+  - '**/src/**/*.ts'
+rule:
+  any:
+    - pattern: spawn($$$)
+    - pattern: spawnSync($$$)
+    - pattern: exec($$$)
+    - pattern: execSync($$$)
+    - pattern: execFile($$$)
+    - pattern: execFileSync($$$)
+    - pattern: fork($$$)
+  not:
+    has:
+      stopBy: end
+      kind: pair
+      has:
+        field: key
+        regex: '^env$'

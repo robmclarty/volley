@@ -21,6 +21,7 @@
  * fetch — the critic learns *where* to look, then looks.
  */
 import { spawnSync } from 'node:child_process';
+import { command_env } from './engine.js';
 import { config_error } from './types.js';
 import type { ChangeSet, ChangeStatus, ChangedFile } from './types.js';
 
@@ -72,6 +73,7 @@ function git(root: string, args: string[]): GitResult {
   try {
     const result = spawnSync('git', args, {
       cwd: root,
+      env: command_env(process.env),
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
     });

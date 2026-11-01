@@ -36,7 +36,7 @@ import { join, resolve } from 'node:path';
 import { capture_baseline } from './changes.js';
 import { detect_containment } from './containment.js';
 import { critic_canary } from './critic/run.js';
-import { create_volley_engine, seat_base_url, takes_seat_url } from './engine.js';
+import { command_env, create_volley_engine, seat_base_url, takes_seat_url } from './engine.js';
 import type { Engine } from './engine.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
 import type { Renderer } from './render/renderer.js';
@@ -118,7 +118,7 @@ async function probe_seat_endpoints(
 /** Which required executables are not runnable on the current PATH. */
 function toolchain_missing(tools: ReadonlyArray<string> = REQUIRED_TOOLCHAIN): string[] {
   return tools.filter((tool) => {
-    const result = spawnSync(tool, ['--version'], { stdio: 'ignore' });
+    const result = spawnSync(tool, ['--version'], { env: command_env(process.env), stdio: 'ignore' });
     return result.error !== undefined || result.status !== 0;
   });
 }
@@ -128,7 +128,7 @@ function toolchain_missing(tools: ReadonlyArray<string> = REQUIRED_TOOLCHAIN): s
  * run's job — worktree.ts). */
 function worktree_creatable(workspace: string): { ok: boolean; detail: string } {
   const repo = resolve(workspace);
-  const version = spawnSync('git', ['--version'], { stdio: 'ignore' });
+  const version = spawnSync('git', ['--version'], { env: command_env(process.env), stdio: 'ignore' });
   if (version.error !== undefined || version.status !== 0) {
     return { ok: false, detail: 'git is not available' };
   }
@@ -136,6 +136,7 @@ function worktree_creatable(workspace: string): { ok: boolean; detail: string } 
     return { ok: false, detail: `${repo} is not a git repository` };
   }
   const inside = spawnSync('git', ['-C', repo, 'rev-parse', '--is-inside-work-tree'], {
+    env: command_env(process.env),
     encoding: 'utf8',
   });
   if (inside.status !== 0 || (inside.stdout ?? '').trim() !== 'true') {
@@ -243,6 +244,7 @@ function report_gate_posture(config: ResolvedConfig, renderer: Renderer): void {
 function run_checkride_doctor(workspace: string): boolean {
   const doctor = spawnSync('pnpm', ['exec', 'checkride', 'doctor'], {
     cwd: workspace,
+    env: command_env(process.env),
     stdio: ['ignore', 'ignore', 'inherit'],
   });
   return doctor.error === undefined && doctor.status === 0;

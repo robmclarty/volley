@@ -11,6 +11,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { aborted_error } from 'fascicle';
+import { command_env } from '../engine.js';
 import { check_error } from '../types.js';
 import type { CheckArtifact, CheckResult } from '../types.js';
 
@@ -65,7 +66,7 @@ export type CheckSpawnOptions = {
   abort?: AbortSignal;
   /** The whole environment the check runs with, in place of volley's own;
    * nothing is merged in, so it carries the `PATH` the check needs. Absent,
-   * the check inherits volley's. */
+   * the check gets volley's less the seats' keys. */
   env?: Readonly<Record<string, string>>;
 };
 
@@ -83,7 +84,7 @@ export function spawn_capture(
   return new Promise((resolve_promise, reject) => {
     const proc = spawn(cmd, args, {
       cwd: options.cwd,
-      ...(options.env !== undefined ? { env: options.env } : {}),
+      env: options.env ?? command_env(process.env),
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
