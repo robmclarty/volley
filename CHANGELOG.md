@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.1 — 2026-11-01
+
+### Fixed
+- **No process volley starts can read a seat's key.** `volley acp` already kept `OPENROUTER_API_KEY` and `ANTHROPIC_API_KEY` from the check and the builder's commands, but a plain run handed both to the check (which runs the tests the builder wrote), to a tool-loop builder's `bash`, and to volley's own `git` and `checkride doctor` calls, where a git filter, textconv, or fsmonitor named in a repo config the builder wrote could read them. Every child process now gets volley's environment less those two keys. A `claude_cli` seat under `VOLLEY_AUTH_MODE=oauth` still inherits the whole environment, as the Claude CLI's login needs.
+
+### Internal
+- **An ast-grep rule, `spawn-sets-env`, fails any child process in `src/` that leaves `env` out**, and a test runs volley's git calls through a planted filter that dumps its environment, which must show neither key.
+
 ## v0.10.0 — 2026-10-27
 
 ### Added
