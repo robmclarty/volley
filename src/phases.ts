@@ -14,6 +14,7 @@ import { collect_changes } from './changes.js';
 import { run_checkride } from './check/checkride.js';
 import { CHECK_REJECTED, rejected_check, run_command_check, skipped_check } from './check/command.js';
 import { run_critic } from './critic/run.js';
+import { command_env } from './engine.js';
 import type { CriticStep } from './critic/run.js';
 import { archive_iteration, run_result_from_state } from './iteration.js';
 import type { Renderer } from './render/renderer.js';
@@ -83,10 +84,11 @@ function check_command(config: ResolvedConfig): string | null {
 }
 
 /** How the check runs when the caller sets it, as `volley acp` does. Left
- * out, the check inherits volley's environment and runs unasked, as on the
- * CLI. */
+ * out, the check runs unasked with volley's environment less the seats' keys,
+ * as on the CLI. */
 export type CheckGate = {
-  /** The whole environment the check runs with, in place of volley's own. */
+  /** The whole environment the check runs with, in place of volley's own less
+   * the seats' keys. */
   env?: Readonly<Record<string, string>>;
   /** Asked on the check's card before each check, the way a model call asks
    * before a gated tool runs. Anything short of an allow keeps the check from
@@ -148,13 +150,14 @@ function report_changes(
 }
 
 /** Run the configured check, checkride or a command, with the environment
- * the caller set for it, else volley's own. */
+ * the caller set for it, else volley's own less the seats' keys, since the
+ * check runs code the builder wrote. */
 async function execute_check(deps: PhaseDeps, abort: AbortSignal): Promise<CheckResult> {
   const { config } = deps;
   // The check gates the tree the builder actually wrote: the worktree
   // under `--worktree`, else the workspace.
   const root = build_root(config.workspace, config.worktree);
-  const options = { abort, ...(deps.check?.env !== undefined ? { env: deps.check.env } : {}) };
+  const options = { abort, env: deps.check?.env ?? command_env(process.env) };
   return config.check_resolved === 'checkride'
     ? run_checkride({ ...options, workspace: root })
     : run_command_check({ ...options, command: config.check, workspace: root });

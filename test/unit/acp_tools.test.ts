@@ -11,8 +11,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Tool, ToolApprovalRequest } from 'fascicle';
 import { workspace_tools } from 'fascicle/acp';
-import { acp_command_env, acp_seat_tools } from '../../src/acp_tools.js';
-import { SEAT_CREDENTIAL_VARS } from '../../src/engine.js';
+import { acp_seat_tools } from '../../src/acp_tools.js';
+import { command_env, SEAT_CREDENTIAL_VARS } from '../../src/engine.js';
 import { IGNORED_DIRS } from '../../src/workspace_tools.js';
 import { acp_session } from '../helpers/harness.js';
 
@@ -145,11 +145,11 @@ describe('acp_seat_tools: the check', () => {
   });
 });
 
-describe('acp_command_env', () => {
+describe('command_env', () => {
   it("is the agent's environment, PATH kept, less every variable a seat reads a key from", () => {
     expect(SEAT_CREDENTIAL_VARS).toEqual(['OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY']);
     expect(
-      acp_command_env({
+      command_env({
         PATH: '/usr/bin:/bin',
         HOME: '/home/someone',
         OPENROUTER_API_KEY: 'sk-or-secret',
@@ -166,7 +166,7 @@ describe('acp_command_env', () => {
       ANTHROPIC_API_KEY: 'sk-ant-secret',
     };
     const { builder, check } = acp_seat_tools(acp_session(temp_dir()), { env });
-    expect(check.env).toEqual(acp_command_env(env));
+    expect(check.env).toEqual(command_env(env));
     // `env` itself is found on PATH, and prints everything the command sees.
     const output = await call(by_name(builder.tools).run_command, { command: 'env' });
     expect(output).toContain(`PATH=${process.env.PATH ?? ''}`);

@@ -9,8 +9,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { acp_command_env } from '../../src/acp_tools.js';
 import { CHECK_REJECTED, rejected_check, run_command_check } from '../../src/check/command.js';
+import { command_env } from '../../src/engine.js';
 import { error_kind } from '../../src/types.js';
 import { temp_workspace } from '../helpers/harness.js';
 
@@ -62,16 +62,16 @@ async function check_env(env?: Readonly<Record<string, string>>): Promise<string
 }
 
 describe('run_command_check: its environment', () => {
-  it('sees PATH but neither seat key when handed the acp command env', async () => {
+  it('sees PATH but neither seat key when handed the command env', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'sk-or-secret');
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
-    const log = await check_env(acp_command_env(process.env));
+    const log = await check_env(command_env(process.env));
     expect(log).toContain(`PATH=${process.env.PATH ?? ''}`);
     expect(log).not.toContain('OPENROUTER_API_KEY');
     expect(log).not.toContain('ANTHROPIC_API_KEY');
   });
 
-  it("inherits volley's whole environment when handed none, as on the CLI", async () => {
+  it("inherits volley's whole environment when handed none; a run hands it the command env", async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'sk-or-secret');
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
     const log = await check_env();

@@ -10,8 +10,8 @@ import { join } from 'node:path';
 import { aborted_error } from 'fascicle';
 import type { ToolApprovalRequest } from 'fascicle';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { acp_command_env } from '../../src/acp_tools.js';
 import { CHECK_REJECTED } from '../../src/check/command.js';
+import { command_env } from '../../src/engine.js';
 import { load_resume_state } from '../../src/iteration.js';
 import { run_volley } from '../../src/orchestrator.js';
 import type { OrchestratorDeps } from '../../src/orchestrator.js';
@@ -227,11 +227,11 @@ describe('the check under a caller\'s gate', () => {
   }
 
   it('runs checkride with the environment it is handed: PATH, and neither seat key', async () => {
-    expect(await seen_by_checkride({ check: { env: acp_command_env(process.env) } })).toEqual(['PATH']);
+    expect(await seen_by_checkride({ check: { env: command_env(process.env) } })).toEqual(['PATH']);
   }, 60000);
 
-  it("runs checkride with volley's whole environment when handed none, as on the CLI", async () => {
-    expect(await seen_by_checkride({})).toEqual(['PATH', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY']);
+  it("runs checkride with volley's environment less both seat keys when handed none, as on the CLI", async () => {
+    expect(await seen_by_checkride({})).toEqual(['PATH']);
   }, 60000);
 
   /** One round whose check asks first, answered by `allow`. */

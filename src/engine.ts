@@ -27,10 +27,21 @@ const OPENROUTER_KEY_VAR = 'OPENROUTER_API_KEY';
  * CLI also reads on its own. */
 const ANTHROPIC_KEY_VAR = 'ANTHROPIC_API_KEY';
 
-/** Every variable a seat reads a credential from. Under acp, the builder's
- * commands and the check run without them, so nothing the builder writes can
- * read the keys its seats spend. */
+/** Every variable a seat reads a credential from. The builder's commands and
+ * the check run without them, so nothing the builder writes can read the keys
+ * its seats spend. */
 export const SEAT_CREDENTIAL_VARS: ReadonlyArray<string> = [OPENROUTER_KEY_VAR, ANTHROPIC_KEY_VAR];
+
+/** The environment the builder's commands and the check run with: `env`,
+ * `PATH` included, less every variable a seat reads a credential from. */
+export function command_env(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const stripped: ReadonlySet<string> = new Set(SEAT_CREDENTIAL_VARS);
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined && !stripped.has(entry[0]),
+    ),
+  );
+}
 
 /** Loopback authorities the container→host crossing rewrites. A base URL
  * pointing at one of these is local to wherever volley runs; contained, that is

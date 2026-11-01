@@ -26,7 +26,7 @@ import { workspace_tools } from 'fascicle/acp';
 import type { AcpSession } from 'fascicle/acp';
 import type { Tool, ToolApprovalHandler } from 'fascicle';
 import { finish_tool } from './builder/tools.js';
-import { SEAT_CREDENTIAL_VARS } from './engine.js';
+import { command_env } from './engine.js';
 import type { CheckGate } from './phases.js';
 import { IGNORED_DIRS } from './workspace_tools.js';
 import type { ToolSet } from './workspace_tools.js';
@@ -44,18 +44,6 @@ type AcpToolOptions = {
 
 /** One seat's tools, with the name of their set, which its prompt names. */
 type AcpSeatTools = { tools: ReadonlyArray<Tool>; tool_set: ToolSet };
-
-/** The environment the builder's commands and the check run with under acp:
- * the agent's own, `PATH` included, less every variable a seat reads a
- * credential from. */
-export function acp_command_env(env: Env): Record<string, string> {
-  const stripped: ReadonlySet<string> = new Set(SEAT_CREDENTIAL_VARS);
-  return Object.fromEntries(
-    Object.entries(env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined && !stripped.has(entry[0]),
-    ),
-  );
-}
 
 /** Whether `tool` asks before a call with `input`. A set without the tool
  * asks, so a check never runs unasked by mistake. */
@@ -79,8 +67,8 @@ export function acp_seat_tools(
   critic: AcpSeatTools;
   check: CheckGate;
 } {
-  const command_env = acp_command_env(options.env ?? process.env);
-  const tools = workspace_tools(session, { ignore: [...IGNORED_DIRS], command_env });
+  const env = command_env(options.env ?? process.env);
+  const tools = workspace_tools(session, { ignore: [...IGNORED_DIRS], command_env: env });
   const run_command = tools.find((tool) => tool.name === 'run_command');
   return {
     builder: {
@@ -90,7 +78,7 @@ export function acp_seat_tools(
     },
     critic: { tools: tools.filter((tool) => CRITIC_READS.has(tool.name)), tool_set: 'acp' },
     check: {
-      env: command_env,
+      env,
       on_approval: async (request) =>
         (await asks_before(run_command, request.input)) ? session.approve(request) : true,
     },

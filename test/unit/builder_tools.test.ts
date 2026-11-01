@@ -2,7 +2,7 @@ import { lookup as dns_lookup } from 'node:dns';
 import type { LookupFunction } from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Tool } from 'fascicle';
 import {
   BASH_TIMEOUT_MS,
@@ -176,6 +176,23 @@ describe('bash', () => {
       expect(out.stdout).toContain('hello');
       expect(out.stderr).toBe('');
     } finally {
+      cleanup();
+    }
+  });
+
+  it("runs a command without either seat's key, PATH kept", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    vi.stubEnv('OPENROUTER_API_KEY', 'sk-or-secret');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
+    try {
+      const out = await call_bash(tool_map(workspace).bash!, 'env');
+      expect(out.exit_code).toBe(0);
+      expect(out.stdout).toContain(`PATH=${process.env.PATH ?? ''}`);
+      expect(out.stdout).not.toContain('OPENROUTER_API_KEY');
+      expect(out.stdout).not.toContain('ANTHROPIC_API_KEY');
+      expect(out.stdout).not.toContain('secret');
+    } finally {
+      vi.unstubAllEnvs();
       cleanup();
     }
   });

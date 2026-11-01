@@ -43,6 +43,7 @@ import TurndownService from 'turndown';
 import { Agent, buildConnector, interceptors, request } from 'undici';
 import { z } from 'zod';
 import type { Tool, ToolExecContext } from 'fascicle';
+import { command_env } from '../engine.js';
 import { contain, read_only_tools } from '../workspace_tools.js';
 
 export const WRITE_FILE_MAX_BYTES = 1_000_000;
@@ -445,14 +446,17 @@ async function run_fetch(raw: unknown, ctx: ToolExecContext, config: FetchConfig
  * containment this runs *inside* volley's hardened container against the
  * bind-mounted worktree — the container is the isolation boundary, no
  * `docker exec` hop — and it is likewise the executor on the
- * `--allow-unsandboxed-builder` host escape hatch. `status` is null
- * when a signal (the timeout SIGKILL) killed the process.
+ * `--allow-unsandboxed-builder` host escape hatch. A command runs with
+ * volley's environment less the seats' keys, so nothing the builder runs can
+ * read the key its seat spends. `status` is null when a signal (the timeout
+ * SIGKILL) killed the process.
  */
 function host_bash_executor(cwd: string): BashExecutor {
   return (command, options) => {
     const result = spawnSync(command, {
       shell: true,
       cwd,
+      env: command_env(process.env),
       encoding: 'utf8',
       timeout: options.timeout_ms,
       killSignal: 'SIGKILL',
