@@ -129,6 +129,8 @@ describe('a whole volley turn through acp_agent and the SDK client', () => {
       expect(new Set(ids).size).toBe(4);
       const [write, run, finish, check] = ids;
       expect(turn.updates).toEqual([
+        // fascicle titles the thread from its first prompt.
+        { sessionUpdate: 'session_info_update', title: 'write hello.txt' },
         message('**Round 1**\n\n'),
         message('Writing hello.txt.'),
         ...card(

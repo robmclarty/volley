@@ -313,6 +313,8 @@ describe('one prompt through acp_agent and the SDK client', () => {
 
       expect(turn.stop_reason).toBe('end_turn');
       expect(turn.updates).toEqual([
+        // fascicle titles the thread from its first prompt.
+        { sessionUpdate: 'session_info_update', title: 'write the file' },
         text('agent_message_chunk', '**Round 1**\n\n'),
         text('agent_message_chunk', 'Wrote the file.'),
         text('agent_thought_chunk', '\n\n**Round 1 verdict: approved**\n\nLooks good.'),

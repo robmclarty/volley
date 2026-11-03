@@ -118,6 +118,8 @@ export function acp_session(
     roots: [cwd, ...additional].map((dir) => realpathSync(dir)),
     client_capabilities: {},
     mode: () => mode,
+    model: () => undefined,
+    mcp_tools: [],
     approve: () => false,
   };
 }
