@@ -526,6 +526,19 @@ when you set one, since a hosted model has its own output limit and can refuse
 a request for more; uncapped, a turn cut off at the provider's limit still ends
 the session.
 
+Every turn resends the whole session so far, so a long session's turns grow
+and slow. Each iteration's `summary.json` lists the builder's turns as
+`builder.steps`: each one's request size (`input_tokens`), its round trip, its
+prefill and decode times where they can be told apart (`timing_basis` says
+how: Ollama's own durations, or the time to the first streamed chunk), and how
+many characters each tool result added. That shows whether a slowing session
+spends its time reading the prompt or generating:
+
+```sh
+jq -r '.builder.steps[] | [.index, .input_tokens, .duration_ms, .prefill_ms, .decode_ms] | @tsv' \
+  ~/.local/state/volley/<run id>/iterations/001/summary.json
+```
+
 ```sh
 volley \
   --prompt "@task.md" --workspace ./my-project --criteria "@criteria.md" \

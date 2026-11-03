@@ -8,6 +8,7 @@ import type {
   FinishReason,
   GenerateOptions,
   GenerateResult,
+  StepRecord,
   StreamChunk,
   ToolCallRecord,
   UsageTotals,
@@ -26,6 +27,8 @@ export type MockReply = {
   /** Tool calls to report on the result — e.g. some marked `salvaged` — so a
    * test can drive the salvage-rate health metric. Default none. */
   tool_calls?: ToolCallRecord[];
+  /** Per-turn records to report on the result. Default none. */
+  steps?: StepRecord[];
   /** Chunks to stream through the call's `on_chunk` before it returns, as a
    * provider's stream would. Default none. */
   chunks?: StreamChunk[];
@@ -85,7 +88,7 @@ export function mock_engine(
     return {
       content: reply.content as t,
       tool_calls: reply.tool_calls ?? [],
-      steps: [],
+      steps: reply.steps ?? [],
       usage: reply.usage ?? DEFAULT_USAGE,
       ...cost,
       finish_reason: reply.finish_reason ?? 'stop',

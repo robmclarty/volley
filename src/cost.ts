@@ -4,12 +4,14 @@
  * state and enforces the cap predicate in the guard.
  */
 import { claude_cli_reported, throughput } from 'fascicle';
-import type { GenerateResult, UsageTotals } from 'fascicle';
+import type { GenerateResult, StepRecord, ToolCallRecord, UsageTotals } from 'fascicle';
 import type {
+  BuilderStepRecord,
   CostSource,
   LoopState,
   PhaseRecord,
   ResolvedConfig,
+  StepTimingBasis,
 } from './types.js';
 
 export const EMPTY_USAGE: UsageTotals = { input_tokens: 0, output_tokens: 0 };
@@ -66,8 +68,77 @@ export function phase_record(
   };
 }
 
+type StepSplit = { prefill_ms?: number; decode_ms?: number; timing_basis: StepTimingBasis };
+
+const NS_PER_MS = 1e6;
+
+function ns_field(payload: Record<string, unknown>, name: string): number | undefined {
+  const value = payload[name];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** A turn's prefill and decode times: Ollama's own durations when it reported
+ * them (in ns), else the time to the first streamed chunk, else none. */
+function step_split(step: StepRecord): StepSplit {
+  const reported = step.provider_reported?.['ollama'];
+  if (typeof reported === 'object' && reported !== null) {
+    const ollama = reported as Record<string, unknown>;
+    const evaluated = ns_field(ollama, 'eval_duration');
+    const prompt = ns_field(ollama, 'prompt_eval_duration');
+    if (evaluated !== undefined && prompt !== undefined) {
+      return {
+        prefill_ms: Math.round(prompt / NS_PER_MS),
+        decode_ms: Math.round(evaluated / NS_PER_MS),
+        timing_basis: 'ollama_reported',
+      };
+    }
+    const total = ns_field(ollama, 'total_duration');
+    const load = ns_field(ollama, 'load_duration');
+    if (evaluated !== undefined && total !== undefined && load !== undefined && total >= load + evaluated) {
+      return {
+        prefill_ms: Math.round((total - load - evaluated) / NS_PER_MS),
+        decode_ms: Math.round(evaluated / NS_PER_MS),
+        timing_basis: 'ollama_derived',
+      };
+    }
+  }
+  const timing = step.timing;
+  if (timing?.first_chunk_ms !== undefined && timing.whole_tool_call !== true) {
+    return {
+      prefill_ms: timing.first_chunk_ms,
+      decode_ms: Math.max(0, timing.duration_ms - timing.first_chunk_ms),
+      timing_basis: 'first_chunk',
+    };
+  }
+  return { timing_basis: 'none' };
+}
+
+/** How much a tool call's result put into the transcript: its output as the
+ * loop serializes it, or the error text it fed back. */
+function output_chars(call: ToolCallRecord): number {
+  if (call.output === undefined) return call.error?.message.length ?? 0;
+  return typeof call.output === 'string' ? call.output.length : (JSON.stringify(call.output) ?? '').length;
+}
+
+/** Each turn of a session as the archive records it, or undefined when the
+ * result has none. */
+export function step_records(result: GenerateResult<unknown>): BuilderStepRecord[] | undefined {
+  if (result.steps.length === 0) return undefined;
+  return result.steps.map((step) => ({
+    index: step.index,
+    input_tokens: step.usage.input_tokens,
+    output_tokens: step.usage.output_tokens,
+    duration_ms: step.timing?.duration_ms ?? 0,
+    ...step_split(step),
+    finish_reason: step.finish_reason,
+    ...(step.truncated === true ? { truncated: true as const } : {}),
+    tool_calls: step.tool_calls.map((call) => ({ name: call.name, output_chars: output_chars(call) })),
+  }));
+}
+
 /** Fold one phase's result into the loop state. Unknown cost records `null`
- * for the phase and warns once per run — a run never fails over pricing. */
+ * for the phase and warns once per run — a run never fails over pricing. The
+ * builder's record also carries its session's turns. */
 export function accumulate(
   state: LoopState,
   role: 'builder' | 'critic',
@@ -76,10 +147,11 @@ export function accumulate(
   duration_ms?: number,
 ): LoopState {
   const record = phase_record(result, model, duration_ms);
+  const steps = role === 'builder' ? step_records(result) : undefined;
   const cost = record.cost_usd ?? 0;
   return {
     ...state,
-    [role]: record,
+    [role]: steps !== undefined ? { ...record, steps } : record,
     total_usage: add_usage(state.total_usage, result.usage),
     total_cost_usd: state.total_cost_usd + cost,
     iteration_cost_usd: state.iteration_cost_usd + cost,

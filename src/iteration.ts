@@ -92,6 +92,9 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
     // Model speed, where fascicle could time the turns (never `claude_cli`).
     // Emitted only when measured. Additive.
     ...(record.throughput !== undefined ? { throughput: record.throughput } : {}),
+    // Each builder turn's request size, timing split, and tool output sizes,
+    // so a session's growth can be read back (#7). Builder-only. Additive.
+    ...(record.steps !== undefined ? { steps: record.steps } : {}),
   };
 }
 

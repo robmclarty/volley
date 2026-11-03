@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolCallRecord } from 'fascicle';
+import type { StepRecord, ToolCallRecord } from 'fascicle';
 import { compose_builder_system } from '../../src/builder.js';
 import { BUILDER_ALLOWED_TOOLS, settings_args } from '../../src/claude_cli_permissions.js';
 import { run_volley } from '../../src/orchestrator.js';
@@ -254,6 +254,58 @@ describe('local builder (ollama provider)', () => {
       // The finish summary reached the durable trajectory record.
       const trajectory = readFileSync(join(workspace, '.volley', 'trajectory.jsonl'), 'utf8');
       expect(trajectory).toContain(finish_summary);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("archives each builder turn's request size, timing split, and tool output sizes", async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        builder_provider: 'ollama',
+        builder_model: 'qwen3-coder:30b',
+        allow_unsandboxed_builder: true,
+        max_iterations: 1,
+      });
+      const turn = (index: number, input_tokens: number): StepRecord => ({
+        index,
+        text: '',
+        tool_calls: [
+          { id: `c${String(index)}`, name: 'read_file', input: { path: 'a.ts' }, output: 'x'.repeat(40), duration_ms: 1, started_at: 0 },
+        ],
+        usage: { input_tokens, output_tokens: 30 },
+        timing: { started_at: 0, duration_ms: 4000, first_chunk_ms: 1000 },
+        finish_reason: 'tool_calls',
+        provider_reported: { ollama: { total_duration: 4e9, load_duration: 0, eval_duration: 2.5e9 } },
+      });
+      const engine = mock_engine((call) =>
+        call.role === 'builder'
+          ? { content: 'done', cost_usd: 0, steps: [turn(0, 2600), turn(1, 3900)] }
+          : { content: { verdict: 'approved', feedback: 'ok', unmet_criteria: [] }, cost_usd: 0 },
+      );
+
+      await run_volley(config, { renderer: silent_renderer(), engine, install_signal_handlers: false });
+
+      const summary = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
+      );
+      expect(summary.builder.steps).toEqual([
+        {
+          index: 0,
+          input_tokens: 2600,
+          output_tokens: 30,
+          duration_ms: 4000,
+          prefill_ms: 1500,
+          decode_ms: 2500,
+          timing_basis: 'ollama_derived',
+          finish_reason: 'tool_calls',
+          tool_calls: [{ name: 'read_file', output_chars: 40 }],
+        },
+        expect.objectContaining({ index: 1, input_tokens: 3900 }),
+      ]);
+      expect(summary.critic).not.toHaveProperty('steps');
     } finally {
       cleanup();
     }

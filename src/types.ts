@@ -316,6 +316,39 @@ export type PhaseRecord = {
    * another way. A thinking seat needs ai-sdk-ollama 4.3.0 or later, which
    * streams the reasoning even though volley never sets `think`. */
   throughput?: Throughput;
+  /** Each turn of a builder session, in order, so a long session's growth
+   * and where its time went can be read off the archive (#7). Set on a builder
+   * record whose provider reported steps (every tool-loop builder); absent on
+   * the critic and on a session with none. Additive. */
+  steps?: BuilderStepRecord[];
+};
+
+/** Where a builder turn's prefill and decode times came from.
+ * `ollama_reported`: Ollama's own `prompt_eval_duration` and `eval_duration`
+ * (native transport). `ollama_derived`: prefill as `total_duration` less
+ * `load_duration` and `eval_duration`, the ai_sdk transport's metadata, which
+ * leaves `prompt_eval_duration` out; slightly high, since the total includes
+ * Ollama's own overhead. `first_chunk`: prefill as the time to the first
+ * streamed chunk, decode as the rest of the round trip. `none`: no split. */
+export type StepTimingBasis = 'ollama_reported' | 'ollama_derived' | 'first_chunk' | 'none';
+
+/** One turn of a builder session. */
+export type BuilderStepRecord = {
+  index: number;
+  /** The whole request this turn sent, so the session's growth reads as the
+   * sequence of these. */
+  input_tokens: number;
+  output_tokens: number;
+  /** The turn's provider round trip, tool execution excluded. */
+  duration_ms: number;
+  prefill_ms?: number;
+  decode_ms?: number;
+  timing_basis: StepTimingBasis;
+  finish_reason: FinishReason;
+  truncated?: true;
+  /** Each tool call the turn made, and how many characters its result put
+   * into the transcript every later turn resends. */
+  tool_calls: Array<{ name: string; output_chars: number }>;
 };
 
 export type HaltReason = 'cost_cap' | 'gate_edit' | null;

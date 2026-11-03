@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { GenerateResult } from 'fascicle';
+import type { GenerateResult, StepRecord, ToolCallRecord } from 'fascicle';
 import {
   accumulate,
   add_usage,
   cost_cap_hit,
   cost_source_of,
   phase_record,
+  step_records,
 } from '../../src/cost.js';
 import { initial_state } from '../../src/loop_state.js';
 import { test_config } from '../helpers/harness.js';
@@ -217,5 +218,120 @@ describe('cost_cap_hit', () => {
       1000,
     );
     expect(cost_cap_hit(capped, state)).toBe(true);
+  });
+});
+
+describe('step_records', () => {
+  function step(overrides: Partial<StepRecord> = {}): StepRecord {
+    return {
+      index: 0,
+      text: '',
+      tool_calls: [],
+      usage: { input_tokens: 2600, output_tokens: 120 },
+      timing: { started_at: 0, duration_ms: 5000, first_chunk_ms: 1800 },
+      finish_reason: 'tool_calls',
+      ...overrides,
+    };
+  }
+  const call = (overrides: Partial<ToolCallRecord>): ToolCallRecord => ({
+    id: 'c',
+    name: 'read_file',
+    input: {},
+    duration_ms: 1,
+    started_at: 0,
+    ...overrides,
+  });
+
+  it("derives prefill from the ai_sdk transport's Ollama durations, which leave prompt_eval_duration out", () => {
+    const [record] = step_records(
+      result({
+        steps: [
+          step({
+            provider_reported: {
+              ollama: { total_duration: 5.2e9, load_duration: 0.2e9, eval_duration: 3e9 },
+            },
+          }),
+        ],
+      }),
+    )!;
+    expect(record).toMatchObject({
+      input_tokens: 2600,
+      output_tokens: 120,
+      duration_ms: 5000,
+      prefill_ms: 2000,
+      decode_ms: 3000,
+      timing_basis: 'ollama_derived',
+    });
+  });
+
+  it("reads Ollama's own prompt_eval_duration when the native transport reports it", () => {
+    const [record] = step_records(
+      result({
+        steps: [
+          step({
+            provider_reported: {
+              ollama: {
+                total_duration: 5.2e9,
+                load_duration: 0.2e9,
+                prompt_eval_duration: 1.9e9,
+                eval_duration: 3e9,
+              },
+            },
+          }),
+        ],
+      }),
+    )!;
+    expect(record).toMatchObject({ prefill_ms: 1900, decode_ms: 3000, timing_basis: 'ollama_reported' });
+  });
+
+  it('falls back to the first streamed chunk, and to no split for a tool call that arrived whole', () => {
+    const records = step_records(
+      result({
+        steps: [
+          step(),
+          step({ index: 1, timing: { started_at: 0, duration_ms: 4000, first_chunk_ms: 3990, whole_tool_call: true } }),
+          // Durations that don't add up are not split.
+          step({ index: 2, provider_reported: { ollama: { total_duration: 1e9, load_duration: 0, eval_duration: 2e9 } } }),
+        ],
+      }),
+    )!;
+    expect(records[0]).toMatchObject({ prefill_ms: 1800, decode_ms: 3200, timing_basis: 'first_chunk' });
+    expect(records[1]).toMatchObject({ timing_basis: 'none' });
+    expect(records[1]).not.toHaveProperty('prefill_ms');
+    expect(records[2]).toMatchObject({ prefill_ms: 1800, timing_basis: 'first_chunk' });
+  });
+
+  it('counts what each tool result put into the transcript, and keeps a truncated mark', () => {
+    const [record] = step_records(
+      result({
+        steps: [
+          step({
+            truncated: true,
+            finish_reason: 'length',
+            tool_calls: [
+              call({ name: 'read_file', output: 'abcdef' }),
+              call({ name: 'bash', output: { exit_code: 0, stdout: 'ok', stderr: '' } }),
+              call({ name: 'edit_file', error: { message: 'no match' } }),
+            ],
+          }),
+        ],
+      }),
+    )!;
+    expect(record!.truncated).toBe(true);
+    expect(record!.finish_reason).toBe('length');
+    expect(record!.tool_calls).toEqual([
+      { name: 'read_file', output_chars: 6 },
+      { name: 'bash', output_chars: JSON.stringify({ exit_code: 0, stdout: 'ok', stderr: '' }).length },
+      { name: 'edit_file', output_chars: 'no match'.length },
+    ]);
+  });
+
+  it('is undefined for a result with no steps, and only the builder record carries them', () => {
+    expect(step_records(result())).toBeUndefined();
+    const stepped = result({ steps: [step()] });
+    const state = { ...initial_state(), iteration: 1 };
+    expect(accumulate(state, 'builder', stepped, 'qwen', 1).builder?.steps).toHaveLength(1);
+    expect(accumulate(state, 'critic', stepped, 'qwen', 1).critic).not.toHaveProperty('steps');
+    expect(accumulate(state, 'builder', result(), 'opus', 1).builder).not.toHaveProperty('steps');
   });
 });
