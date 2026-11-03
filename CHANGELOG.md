@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.11.0 — 2026-11-02
+
+### Added
+- **Each iteration's `summary.json` lists the builder's turns as `builder.steps` (#7).** Each turn's request size (`input_tokens`), round trip, prefill and decode times where they can be told apart (`timing_basis` says how: Ollama's own durations, derived from them on the ai_sdk transport, which leaves `prompt_eval_duration` out, or the time to the first streamed chunk), and how many characters each tool result added. It shows whether a long local session that slows down spends its time reading the prompt or generating. The README gives a `jq` line to read them.
+- **`--builder-trim-history <tokens>` trims a long tool-loop session's older tool results, off by default (#7).** Or `VOLLEY_BUILDER_TRIM_HISTORY`. Above that estimated request size, a turn sends older tool results as one-line stubs: a read of a file a later call changed says so, and any other result names its call and size. The last six turns, and every message that isn't a tool result, go as they were. The cut moves at turn boundaries every eight turns, and only once the trimmed request has grown past the size again, so a local runtime's cached prefix holds between moves. Experimental: it stays off until a long local session is shown to run faster with it on.
+
+### Fixed
+- **A Claude seat's file tools stay in the build root (#10).** The builder's allowlist passed `Write`, `Edit`, and `MultiEdit` bare, and a bare allow rule approves every path on the machine, so a `claude_cli` builder could write anywhere you can. The builder's file tools are now only `Read(/**)` and `Edit(/**)`, and the critic's only `Read(/**)`: rules anchored at the session's working directory, which is the build root. Both leave out the bare `Grep` and `Glob` entries, which only reached outside it. Claude Code matches no `Write(path)` or `MultiEdit(path)` rule, so an `Edit` rule is what covers the Write tool. Both seats also run with Claude Code's `blockWritesOutsideWorkingDirectories` and `blockReadsOutsideWorkingDirectories` settings, which refuse file tools outside the build root in every permission mode, `bypassPermissions` included. `--dry-run` names the Claude Code version and warns below 2.1.314, where the write block goes unenforced, or 2.1.257 for the read block; it never refuses. `Bash` is still unconfined.
+- **A `claude_cli` seat under `VOLLEY_AUTH_MODE=oauth` gets neither seat's key.** v0.10.1 kept `OPENROUTER_API_KEY` and `ANTHROPIC_API_KEY` from every process volley starts, but the Claude CLI under `oauth` inherits the whole environment to reach its login, so it got `OPENROUTER_API_KEY` and handed it to every command it ran. fascicle 0.17.7's `omit_env` keeps both out, and under `api_key` the configured key still reaches the CLI.
+- **The `ANTHROPIC_API_KEY` warning fires only when the CLI is handed the key.** It warned whenever the key was set, but only `VOLLEY_AUTH_MODE=api_key` passes it to the Claude CLI; under `auto` and `oauth` the CLI gets no key and stays on its login. It now warns under `api_key` when a seat runs on the Claude CLI, and `.env.example` no longer says `auto` forwards the key.
+
+### Changed
+- **Built on fascicle 0.17.7.** Besides `omit_env`, a `volley acp` thread takes its title from its first prompt, the default retry policy makes 4 attempts over 7 to 10 s before a provider failure gives up, up from 3 over 1.5 to 2.5 s, and provider errors name what to check.
+- **A `claude_cli` seat that can't authenticate on the subscription login says what to try (#9).** Claude Code says `--bare` will become `claude -p`'s default, and a bare run never reads the login, so `auto` and `oauth` seats will stop authenticating until fascicle passes the opt-out. Volley's error now names `VOLLEY_AUTH_MODE=api_key` and volley#9, and the README says what the change means.
+- **`ResolvedConfig` has `builder_trim_history`.** It's required, so SDK code that builds one by hand needs it (`null` for off).
+
+### Internal
+- **Tests drive the real engine against a stand-in `claude` that records its argv and environment**, and pin the allowlists, the settings blocks, and each auth mode's environment. The history trim runs through fascicle's real tool loop, where `assert_prefix_stable` holds between boundary moves and fails across one.
+
 ## v0.10.1 — 2026-11-01
 
 ### Fixed
