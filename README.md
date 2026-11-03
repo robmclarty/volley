@@ -80,14 +80,17 @@ prompt ──> builder (full agentic session in your workspace)
   limit, the prompt says so and asks it to run the check first. In a
   checkride workspace it's asked to run `pnpm exec checkride --digest` after
   each batch of edits and to read `.check/digest.md` when that fails, one
-  capped file for every failing slot, before any slot's raw output. It has full tools
-  (Read/Write/Edit/Bash) and runs with `--permission-mode acceptEdits` by
-  default.
+  capped file for every failing slot, before any slot's raw output. On
+  `claude_cli` it reads, writes, and edits files only inside the build root,
+  runs any command through `Bash`, and runs with `--permission-mode
+  acceptEdits` by default (see
+  [What a Claude seat can touch](#what-a-claude-seat-can-touch)).
 - **Check** is auto-detected: if the workspace uses checkride, volley runs
   `pnpm exec checkride --json --digest` and gates on the summary. Any shell
   command works too (`--check "npm test"`), or `--check none` for critic-only
   runs.
-- **Critic** is read-only (`Read`, `Grep`, `Glob` — no write path at all) and
+- **Critic** is read-only (it reads and searches the build root, with no write
+  path at all) and
   returns a schema-validated `{ verdict, feedback, unmet_criteria }`. It is told
   which files the builder changed, so it reviews a change rather than a tree.
   The harness writes the run's `feedback.md` and `verdict`; the critic
@@ -151,6 +154,19 @@ unrelated project); the binary is still `volley`:
 ```sh
 pnpm add -g @robmclarty/volley
 ```
+
+### What a Claude seat can touch
+
+A `claude_cli` seat runs in the build root (the worktree under `--worktree`).
+Its file tools stay there: the builder's allowlist names only `Read(/**)` and
+`Edit(/**)`, rules anchored at that directory (an `Edit` rule covers the Write
+tool too), and both seats run with Claude Code's
+`blockWritesOutsideWorkingDirectories` and
+`blockReadsOutsideWorkingDirectories` settings on, which refuse file tools
+outside it in every permission mode, `bypassPermissions` included. The write
+block needs Claude Code 2.1.314 and the read block 2.1.257; `--dry-run` names
+the version and warns when it is older. `Bash` is not confined: a builder's
+commands can reach anything you can.
 
 ## Usage
 

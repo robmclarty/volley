@@ -1,7 +1,8 @@
 /**
- * What a `claude_cli` seat's subprocess actually gets: its environment under
- * each auth mode. Drives the real engine against the stand-in `claude`
- * binary, which records the env it was spawned with.
+ * What a `claude_cli` seat's subprocess actually gets: the argv fascicle
+ * builds from volley's permissions, and its environment under each auth mode.
+ * Drives the real engine against the stand-in `claude` binary, which records
+ * what it was spawned with.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { run_volley } from '../../src/orchestrator.js';
@@ -34,6 +35,46 @@ async function claude_calls(auth_mode: string): Promise<FakeClaudeCall[]> {
     cleanup();
   }
 }
+
+/** Every value passed after `flag`, in order. */
+function flag_values(argv: string[], flag: string): string[] {
+  return argv.flatMap((arg, i) => (arg === flag && i + 1 < argv.length ? [argv[i + 1]!] : []));
+}
+
+const BLOCKS = {
+  permissions: {
+    blockWritesOutsideWorkingDirectories: true,
+    blockReadsOutsideWorkingDirectories: true,
+  },
+};
+
+describe('claude_cli seat argv', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('scopes both seats to the build root and turns on the settings blocks', async () => {
+    const [builder, critic] = await claude_calls('auto');
+    expect(flag_values(builder!.argv, '--allowedTools')).toEqual([
+      'Read(/**)',
+      'Edit(/**)',
+      'Bash',
+      'WebFetch',
+    ]);
+    expect(flag_values(builder!.argv, '--permission-mode')).toEqual(['acceptEdits']);
+    expect(flag_values(critic!.argv, '--allowedTools')).toEqual(['Read(/**)']);
+    expect(flag_values(critic!.argv, '--disallowedTools')).toEqual([
+      'Write,Edit,MultiEdit,NotebookEdit,Bash',
+    ]);
+    for (const call of [builder!, critic!]) {
+      const settings = flag_values(call.argv, '--settings');
+      expect(settings).toHaveLength(1);
+      expect(JSON.parse(settings[0]!)).toEqual(BLOCKS);
+      // Still on the subscription login: never bare.
+      expect(call.argv).not.toContain('--bare');
+    }
+  });
+});
 
 describe('claude_cli seat env', () => {
   afterEach(() => {

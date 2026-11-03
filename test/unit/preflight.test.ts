@@ -36,6 +36,7 @@ const ALL_GREEN: PreflightProbes = {
   worktree_creatable: () => ({ ok: true, detail: 'ws' }),
   endpoint_reachable: async () => true,
   checkride_doctor: () => true,
+  claude_version: () => '2.1.316 (Claude Code)\n',
   canary_engine: () => mock_engine(() => approve_reply()),
 };
 
@@ -93,11 +94,69 @@ describe('preflight — all-Claude path never exits 5 from containment', () => {
         toolchain_missing: () => ['pnpm'],
         worktree_creatable: () => ({ ok: false, detail: 'no repo' }),
         endpoint_reachable: async () => false,
+        claude_version: () => null,
       });
       expect(code).toBe(EXIT_SUCCESS);
     } finally {
       cleanup();
     }
+  });
+});
+
+describe('preflight — the Claude Code version behind a claude_cli seat', () => {
+  async function dry_run(
+    config: (workspace: string) => ResolvedConfig,
+    printed: string | null,
+  ): Promise<{ code: number; output: string; consulted: boolean }> {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      let consulted = false;
+      const code = await preflight(config(workspace), renderer, {}, {
+        ...ALL_GREEN,
+        claude_version: () => {
+          consulted = true;
+          return printed;
+        },
+      });
+      return { code, output: output(), consulted };
+    } finally {
+      cleanup();
+    }
+  }
+
+  it('names the version and warns about nothing on a current CLI', async () => {
+    const { code, output } = await dry_run(claude_config, '2.1.316 (Claude Code)\n');
+    expect(code).toBe(EXIT_SUCCESS);
+    expect(output).toContain('claude: 2.1.316');
+    expect(output).not.toContain('ignores the block');
+  });
+
+  it('warns, without failing, that a CLI before 2.1.314 ignores the write block', async () => {
+    const { code, output } = await dry_run(claude_config, '2.1.300 (Claude Code)\n');
+    expect(code).toBe(EXIT_SUCCESS);
+    expect(output).toContain('ignores the block on writes outside the build root (needs 2.1.314)');
+    expect(output).toContain('not under bypassPermissions');
+    expect(output).not.toContain('block on reads');
+  });
+
+  it('warns about both blocks on a CLI before 2.1.257', async () => {
+    const { code, output } = await dry_run(claude_config, '2.1.200 (Claude Code)\n');
+    expect(code).toBe(EXIT_SUCCESS);
+    expect(output).toContain('block on writes');
+    expect(output).toContain('block on reads outside the build root (needs 2.1.257)');
+  });
+
+  it('warns, without failing, when the version cannot be read', async () => {
+    const { code, output } = await dry_run(claude_config, null);
+    expect(code).toBe(EXIT_SUCCESS);
+    expect(output).toContain('could not read the Claude Code version');
+  });
+
+  it('never asks when neither seat runs on claude_cli', async () => {
+    const { consulted, output } = await dry_run((ws) => local_config(ws), '2.1.200 (Claude Code)\n');
+    expect(consulted).toBe(false);
+    expect(output).not.toContain('claude:');
   });
 });
 

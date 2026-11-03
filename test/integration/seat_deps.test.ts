@@ -20,6 +20,7 @@ import type {
   TrajectoryLogger,
 } from 'fascicle';
 import { compose_builder_system, compose_builder_system_local } from '../../src/builder.js';
+import { settings_args } from '../../src/claude_cli_permissions.js';
 import { resolve_critic_prompt } from '../../src/critic/prompt.js';
 import { run_volley } from '../../src/orchestrator.js';
 import type { OrchestratorDeps } from '../../src/orchestrator.js';
@@ -145,8 +146,8 @@ function todays_options(round: Round): { builder: Record<string, unknown>; criti
         on_chunk: renderer.builder_chunk,
         provider_options: {
           claude_cli: {
-            allowed_tools: ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep', 'Glob', 'WebFetch'],
-            extra_args: ['--permission-mode', 'acceptEdits'],
+            allowed_tools: ['Read(/**)', 'Edit(/**)', 'Bash', 'WebFetch'],
+            extra_args: ['--permission-mode', 'acceptEdits', ...settings_args()],
           },
         },
       },
@@ -160,8 +161,8 @@ function todays_options(round: Round): { builder: Record<string, unknown>; criti
         on_chunk: renderer.critic_chunk,
         provider_options: {
           claude_cli: {
-            allowed_tools: ['Read', 'Grep', 'Glob'],
-            extra_args: ['--disallowedTools', 'Write,Edit,MultiEdit,NotebookEdit,Bash'],
+            allowed_tools: ['Read(/**)'],
+            extra_args: ['--disallowedTools', 'Write,Edit,MultiEdit,NotebookEdit,Bash', ...settings_args()],
           },
         },
       },

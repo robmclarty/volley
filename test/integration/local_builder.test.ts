@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCallRecord } from 'fascicle';
-import { BUILDER_ALLOWED_TOOLS, compose_builder_system } from '../../src/builder.js';
+import { compose_builder_system } from '../../src/builder.js';
+import { BUILDER_ALLOWED_TOOLS, settings_args } from '../../src/claude_cli_permissions.js';
 import { run_volley } from '../../src/orchestrator.js';
 import type { Renderer } from '../../src/render/renderer.js';
 import { silent_renderer, temp_workspace, test_config } from '../helpers/harness.js';
@@ -345,11 +346,12 @@ describe('local builder (ollama provider)', () => {
       expect(builder?.opts.model).toBe(config.builder_model);
       // The v2 CLI builder prompt, unchanged.
       expect(builder?.opts.system).toBe(compose_builder_system());
-      // The v2 CLI confinement: allowlist + permission mode, nothing else.
+      // The CLI confinement: allowlist, permission mode, and the settings
+      // blocks, nothing else.
       expect(builder?.opts.provider_options).toEqual({
         claude_cli: {
           allowed_tools: [...BUILDER_ALLOWED_TOOLS],
-          extra_args: ['--permission-mode', config.builder_permission_mode],
+          extra_args: ['--permission-mode', config.builder_permission_mode, ...settings_args()],
         },
       });
       // None of the local tool-loop knobs leak onto the CLI arm.

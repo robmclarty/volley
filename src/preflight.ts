@@ -20,6 +20,10 @@
  * never requires Docker or a model server — so they never contribute an exit 5
  * on that path.
  *
+ * A `claude_cli` seat gets one read of `claude --version`, which only ever
+ * warns: below the version that enforces the settings blocks keeping the seat's
+ * file tools in the build root, the dry run says what goes unenforced.
+ *
  * A *local critic* additionally gets the critic-seat canary: one tiny $0
  * generate through the real critic tool wiring, run
  * whatever the builder provider is. A degradable failure warns and predicts
@@ -34,6 +38,14 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { capture_baseline } from './changes.js';
+import {
+  format_version,
+  MIN_CLAUDE_READ_BLOCK,
+  MIN_CLAUDE_WRITE_BLOCK,
+  parse_claude_version,
+  uses_claude_cli,
+  version_below,
+} from './claude_cli_permissions.js';
 import { detect_containment } from './containment.js';
 import { critic_canary } from './critic/run.js';
 import { command_env, create_volley_engine, seat_base_url, takes_seat_url } from './engine.js';
@@ -52,6 +64,8 @@ const REQUIRED_TOOLCHAIN: ReadonlyArray<string> = ['node', 'pnpm', 'git'];
 /** A short cap on the endpoint probe so a wrong/unreachable host fails fast
  * rather than hanging the preflight before the loop even starts. */
 const ENDPOINT_PROBE_TIMEOUT_MS = 3000;
+
+const CLAUDE_VERSION_TIMEOUT_MS = 10_000;
 
 /** Builders that drive their model through volley's own tool loop, local or
  * hosted, so the containment preflight applies. `claude_cli` never does. */
@@ -145,6 +159,54 @@ function worktree_creatable(workspace: string): { ok: boolean; detail: string } 
   return { ok: true, detail: repo };
 }
 
+/** What `claude --version` printed, from the binary the run will spawn, or
+ * null when it didn't run. */
+function claude_version(env: Record<string, string | undefined>): string | null {
+  const binary = env['VOLLEY_CLAUDE_BIN'];
+  const result = spawnSync(
+    binary !== undefined && binary.length > 0 ? binary : 'claude',
+    ['--version'],
+    { env: command_env(process.env), encoding: 'utf8', timeout: CLAUDE_VERSION_TIMEOUT_MS },
+  );
+  if (result.error !== undefined || result.status !== 0) return null;
+  return result.stdout;
+}
+
+/** Name the Claude Code version a `claude_cli` seat runs on, and warn when it
+ * is too old to enforce the blocks that keep the seat's file tools in the
+ * build root. Never fails the dry run. */
+function report_claude_cli(
+  config: ResolvedConfig,
+  renderer: Renderer,
+  env: Record<string, string | undefined>,
+  probe: (env: Record<string, string | undefined>) => string | null,
+): void {
+  if (!uses_claude_cli(config)) return;
+  const printed = probe(env);
+  const version = printed === null ? null : parse_claude_version(printed);
+  if (version === null) {
+    renderer.warn(
+      'claude: could not read the Claude Code version (`claude --version`), so whether it keeps ' +
+        "a claude_cli seat's file tools in the build root is unknown",
+    );
+    return;
+  }
+  renderer.info(`claude: ${format_version(version)}`);
+  if (version_below(version, MIN_CLAUDE_WRITE_BLOCK)) {
+    renderer.warn(
+      `claude: Claude Code ${format_version(version)} ignores the block on writes outside the build ` +
+        `root (needs ${format_version(MIN_CLAUDE_WRITE_BLOCK)}). Edit(/**) still keeps a builder's ` +
+        'edits there under acceptEdits, but not under bypassPermissions.',
+    );
+  }
+  if (version_below(version, MIN_CLAUDE_READ_BLOCK)) {
+    renderer.warn(
+      `claude: Claude Code ${format_version(version)} ignores the block on reads outside the build ` +
+        `root (needs ${format_version(MIN_CLAUDE_READ_BLOCK)}).`,
+    );
+  }
+}
+
 /** Reachability probe: any HTTP response (even a 404) proves the TCP connect
  * landed; a thrown error (connection refused, DNS failure, timeout) means the
  * endpoint is unreachable. */
@@ -169,6 +231,7 @@ export type PreflightProbes = {
   worktree_creatable?: (workspace: string) => { ok: boolean; detail: string };
   endpoint_reachable?: (url: string) => Promise<boolean>;
   checkride_doctor?: (workspace: string) => boolean;
+  claude_version?: (env: Record<string, string | undefined>) => string | null;
   canary_engine?: (
     config: ResolvedConfig,
     env: Record<string, string | undefined>,
@@ -302,6 +365,7 @@ export async function preflight(
   // `--worktree` without `--git` must not quietly end in a discarded build.
   report_worktree_fate(config, renderer);
   report_gate_posture(config, renderer);
+  report_claude_cli(config, renderer, env, probes.claude_version ?? claude_version);
 
   if (config.check_resolved === 'checkride') {
     const doctor = probes.checkride_doctor ?? run_checkride_doctor;

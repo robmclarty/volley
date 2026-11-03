@@ -14,6 +14,16 @@ function claude_cli_options(opts: { provider_options?: Record<string, unknown> }
   return (opts.provider_options?.['claude_cli'] ?? {}) as ClaudeCliOptions;
 }
 
+/** `--settings` turns on both blocks on file tools outside the build root. */
+function expect_blocks(settings: string | undefined): void {
+  expect(JSON.parse(settings ?? '{}')).toEqual({
+    permissions: {
+      blockWritesOutsideWorkingDirectories: true,
+      blockReadsOutsideWorkingDirectories: true,
+    },
+  });
+}
+
 describe('role permission wiring', () => {
   it('builder gets full tools + permission mode; critic is read-only with a schema', async () => {
     const { workspace, cleanup } = temp_workspace();
@@ -31,17 +41,30 @@ describe('role permission wiring', () => {
       const builder = engine.calls.find((c) => c.role === 'builder');
       const builder_cli = claude_cli_options(builder!.opts);
       expect(builder_cli.allowed_tools).toContain('Bash');
-      expect(builder_cli.allowed_tools).toContain('Write');
-      expect(builder_cli.extra_args).toEqual(['--permission-mode', 'bypassPermissions']);
+      // File tools only through path rules scoped to the build root: a bare
+      // entry would approve every path on the machine.
+      expect(builder_cli.allowed_tools).toContain('Edit(/**)');
+      expect(builder_cli.allowed_tools).toContain('Read(/**)');
+      for (const bare of ['Read', 'Write', 'Edit', 'MultiEdit', 'Grep', 'Glob']) {
+        expect(builder_cli.allowed_tools).not.toContain(bare);
+      }
+      expect(builder_cli.extra_args?.slice(0, 3)).toEqual([
+        '--permission-mode',
+        'bypassPermissions',
+        '--settings',
+      ]);
+      expect_blocks(builder_cli.extra_args?.[3]);
       expect(builder!.opts.schema).toBeUndefined();
 
       const critic = engine.calls.find((c) => c.role === 'critic');
       const critic_cli = claude_cli_options(critic!.opts);
-      expect(critic_cli.allowed_tools).toEqual(['Read', 'Grep', 'Glob']);
-      expect(critic_cli.extra_args).toEqual([
+      expect(critic_cli.allowed_tools).toEqual(['Read(/**)']);
+      expect(critic_cli.extra_args?.slice(0, 3)).toEqual([
         '--disallowedTools',
         'Write,Edit,MultiEdit,NotebookEdit,Bash',
+        '--settings',
       ]);
+      expect_blocks(critic_cli.extra_args?.[3]);
       expect(critic!.opts.schema).toBeDefined();
       expect(critic!.opts.system).toContain('read-only access');
       // Fresh context per iteration: no session_id continuation, ever.

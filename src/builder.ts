@@ -22,6 +22,7 @@ import { warn_small_local_context } from './builder/context_check.js';
 import { step_countdown } from './builder/countdown.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { CHECK_REJECTED } from './check/command.js';
+import { BUILDER_ALLOWED_TOOLS, settings_args } from './claude_cli_permissions.js';
 import { accumulate } from './cost.js';
 import { seat_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
@@ -29,17 +30,6 @@ import { config_error, phase_error } from './types.js';
 import type { CheckResult, LoopState, ResolvedConfig } from './types.js';
 import type { ToolSet } from './workspace_tools.js';
 import { build_root } from './worktree.js';
-
-export const BUILDER_ALLOWED_TOOLS = [
-  'Read',
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'Bash',
-  'Grep',
-  'Glob',
-  'WebFetch',
-] as const;
 
 export function compose_builder_system(): string {
   return [
@@ -157,11 +147,14 @@ function builder_tool_options(
   const { config } = deps;
   const bash_executor = deps.bash_executor ?? null;
   if (config.builder_provider === 'claude_cli') {
+    // The file tools stay in the build root, the session's cwd: the allowlist
+    // scopes them under `acceptEdits`, and the settings blocks hold under
+    // `bypassPermissions` too, where allow rules decide nothing.
     return {
       provider_options: {
         claude_cli: {
           allowed_tools: [...BUILDER_ALLOWED_TOOLS],
-          extra_args: ['--permission-mode', config.builder_permission_mode],
+          extra_args: ['--permission-mode', config.builder_permission_mode, ...settings_args()],
         },
       },
     };

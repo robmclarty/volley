@@ -17,6 +17,11 @@ import type {
   StreamChunk,
   Tool,
 } from 'fascicle';
+import {
+  CRITIC_ALLOWED_TOOLS,
+  CRITIC_DISALLOWED_TOOLS,
+  settings_args,
+} from '../claude_cli_permissions.js';
 import { accumulate } from '../cost.js';
 import { seat_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
@@ -26,10 +31,6 @@ import type { ToolSet } from '../workspace_tools.js';
 import { build_root } from '../worktree.js';
 import { compose_critic_prompt, resolve_critic_prompt } from './prompt.js';
 import { read_only_tools, workspace_inventory } from './tools.js';
-
-const CRITIC_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob'] as const;
-
-const CRITIC_DISALLOWED_TOOLS = 'Write,Edit,MultiEdit,NotebookEdit,Bash';
 
 /** A critic that holds tools isn't constrain-decoded, so nothing stops it
  * answering null for the feedback or the unmet list, as GLM did on approving.
@@ -73,7 +74,8 @@ export type CriticDeps = {
 };
 
 /** Read-only tool wiring per provider. The claude_cli critic is confined at
- * the CLI permission layer (allowlist + explicit disallow); every other critic,
+ * the CLI permission layer (allowlist + explicit disallow, and the settings
+ * blocks that keep its reads in the build root); every other critic,
  * local or `openrouter`, gets volley's own workspace-scoped read-only tools (or
  * the set the caller injected in their place) and no write path at all.
  *
@@ -101,7 +103,7 @@ function critic_tool_options(
       provider_options: {
         claude_cli: {
           allowed_tools: [...CRITIC_ALLOWED_TOOLS],
-          extra_args: ['--disallowedTools', CRITIC_DISALLOWED_TOOLS],
+          extra_args: ['--disallowedTools', CRITIC_DISALLOWED_TOOLS, ...settings_args()],
         },
       },
     };
