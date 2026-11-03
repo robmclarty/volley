@@ -667,8 +667,9 @@ OPENROUTER_API_KEY=sk-or-v1-... volley \
   builder runs, and volley's own git and checkride calls) gets volley's
   environment without it, or `ANTHROPIC_API_KEY`, so nothing the builder
   writes, a git filter or hook included, can read a key a seat spends. A
-  `claude_cli` seat under `VOLLEY_AUTH_MODE=oauth` still inherits the whole
-  environment, as the Claude CLI's login needs.
+  `claude_cli` seat under `VOLLEY_AUTH_MODE=oauth` inherits the rest of the
+  environment, as the Claude CLI's login needs, but not those two keys, so
+  neither reaches a command Claude runs.
 - **The URL.** `VOLLEY_OPENROUTER_URL` (default `https://openrouter.ai/api/v1`)
   points both seats at a proxy or another OpenAI-compatible gateway, and
   `--builder-url` / `--critic-url` give one seat a URL of its own, under the

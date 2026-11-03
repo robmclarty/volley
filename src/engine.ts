@@ -279,6 +279,11 @@ export function create_volley_engine(options: EngineOptions): Engine {
       default_cwd: options.workspace,
       setting_sources: ['project', 'local'],
       auth_mode,
+      // Under `oauth` the CLI inherits the whole environment to reach its
+      // login, and hands it on to every command it runs; this keeps the other
+      // seat's key out. fascicle drops these before it applies the auth mode,
+      // so a configured `api_key` still reaches the CLI.
+      omit_env: SEAT_CREDENTIAL_VARS,
       ...(binary !== undefined && binary.length > 0 ? { binary } : {}),
       ...(auth_mode === 'api_key' && env[ANTHROPIC_KEY_VAR] !== undefined
         ? { api_key: env[ANTHROPIC_KEY_VAR] }
