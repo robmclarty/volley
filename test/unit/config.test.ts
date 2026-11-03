@@ -438,6 +438,53 @@ describe('resolve_config', () => {
     }
   });
 
+  it('leaves the history trim off unless the flag or VOLLEY_BUILDER_TRIM_HISTORY sets it', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const builder_provider of ['claude_cli', 'ollama', 'lmstudio', 'openrouter'] as const) {
+        expect(
+          resolve_config(
+            { ...base(workspace), builder_provider, allow_unsandboxed_builder: true },
+            { env: { OPENROUTER_API_KEY: 'sk-or' } },
+          ).builder_trim_history,
+        ).toBeNull();
+      }
+      expect(
+        resolve_config(base(workspace), { env: { VOLLEY_BUILDER_TRIM_HISTORY: '' } }).builder_trim_history,
+      ).toBeNull();
+      const env = { VOLLEY_BUILDER_TRIM_HISTORY: '32768' };
+      expect(resolve_config(base(workspace), { env }).builder_trim_history).toBe(32768);
+      expect(
+        resolve_config({ ...base(workspace), builder_trim_history: 16384 }, { env }).builder_trim_history,
+      ).toBe(16384);
+      for (const bad of [0, -1, 2.5]) {
+        expect(() => resolve_config({ ...base(workspace), builder_trim_history: bad }, { env: {} })).toThrow(
+          '--builder-trim-history / VOLLEY_BUILDER_TRIM_HISTORY must be a positive integer',
+        );
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('preserves builder_trim_history across a persist→restore round-trip, and off as off', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const [run_id, trim] of [['trim-run', 32768], ['untrimmed-run', undefined]] as const) {
+        const original = resolve_config(
+          { ...base(workspace), ...(trim === undefined ? {} : { builder_trim_history: trim }) },
+          { run_id, env: {}, state_dir: null },
+        );
+        initialize_run_state(original);
+        write_resolved_config(original);
+        const resume = load_resume_state(workspace, run_id);
+        expect(resolve_config(resume.raw_config, { run_id, env: {} }).builder_trim_history).toBe(trim ?? null);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
   it('preserves builder_max_output_tokens across a persist→restore round-trip, and unset as unset', () => {
     const { workspace, cleanup } = temp_workspace();
     try {
@@ -1108,6 +1155,7 @@ describe('resolve_config: a critique', () => {
         [{ builder_max_steps: 5 }, '--builder-max-steps (builder_max_steps)'],
         [{ builder_max_tool_calls: 2 }, '--builder-max-tool-calls (builder_max_tool_calls)'],
         [{ builder_max_output_tokens: 8192 }, '--builder-max-output-tokens (builder_max_output_tokens)'],
+        [{ builder_trim_history: 32768 }, '--builder-trim-history (builder_trim_history)'],
         [{ builder_permission_mode: 'acceptEdits' }, '--builder-permission-mode (builder_permission_mode)'],
         [{ allow_unsandboxed_builder: true }, '--allow-unsandboxed-builder (allow_unsandboxed_builder)'],
         [{ sandbox_image: 'img:1' }, '--sandbox-image (sandbox_image)'],

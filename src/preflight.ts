@@ -344,6 +344,9 @@ export async function preflight(
     renderer.info(
       `builder output tokens per turn: ${config.builder_max_output_tokens ?? "the provider's limit"}`,
     );
+    renderer.info(
+      `builder history trim: ${config.builder_trim_history === null ? 'off' : `above ${String(config.builder_trim_history)} estimated tokens`}`,
+    );
   }
   if (tool_loop_builder) {
     const contained = detect_containment(env);

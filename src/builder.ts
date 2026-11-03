@@ -12,6 +12,7 @@ import type {
   GenerateOptions,
   GenerateResult,
   ModelCallInput,
+  PrepareStepHook,
   RunContext,
   Step,
   StreamChunk,
@@ -20,6 +21,8 @@ import type {
 } from 'fascicle';
 import { warn_small_local_context } from './builder/context_check.js';
 import { step_countdown } from './builder/countdown.js';
+import { compose_prepare_steps } from './builder/prepare_step.js';
+import { step_trim } from './builder/trim.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { CHECK_REJECTED } from './check/command.js';
 import { BUILDER_ALLOWED_TOOLS, settings_args } from './claude_cli_permissions.js';
@@ -119,6 +122,15 @@ function check_hint(config: ResolvedConfig): string {
   return "the project's tests";
 }
 
+/** The builder's `prepare_step`: the countdown, after the history trim when
+ * `--builder-trim-history` turns it on, so the countdown's note still goes
+ * last. */
+function builder_prepare_step(config: ResolvedConfig): PrepareStepHook {
+  const countdown = step_countdown(config.builder_max_steps, check_hint(config));
+  if (config.builder_trim_history === null) return countdown;
+  return compose_prepare_steps([step_trim(config.builder_trim_history), countdown]);
+}
+
 /** Per-provider tool wiring for the builder, mirroring `critic_tool_options`.
  * The `claude_cli` builder is confined at the CLI permission layer (allowlist +
  * permission mode) and brings its own built-in tools — this arm is unchanged
@@ -126,7 +138,8 @@ function check_hint(config: ResolvedConfig): string {
  * builder, local or `openrouter`, brings none, so volley supplies its whole
  * workspace tool surface (or the set the caller injected in its place, with
  * the handler that answers its approvals), the per-call loop knobs, the step
- * countdown (`./builder/countdown.ts`), the output cap when one is set, and
+ * countdown (`./builder/countdown.ts`) and the history trim when it's on
+ * (`./builder/trim.ts`), the output cap when one is set, and
  * **no** schema (it produces a workspace, not a verdict); per-call values win
  * over engine defaults. */
 function builder_tool_options(
@@ -177,7 +190,7 @@ function builder_tool_options(
     tool_error_policy: 'feed_back',
     tool_call_repair_attempts: BUILDER_TOOL_CALL_REPAIR_ATTEMPTS,
     max_tool_calls_per_step: config.builder_max_tool_calls,
-    prepare_step: step_countdown(config.builder_max_steps, check_hint(config)),
+    prepare_step: builder_prepare_step(config),
     // A capped turn that runs out before it calls a tool goes on to the next
     // step instead of ending the session; with no cap, a turn cut off at the
     // provider's own limit still ends it, as one cut off at a full context

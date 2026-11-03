@@ -170,6 +170,7 @@ const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
   ['builder_max_steps', '--builder-max-steps'],
   ['builder_max_tool_calls', '--builder-max-tool-calls'],
   ['builder_max_output_tokens', '--builder-max-output-tokens'],
+  ['builder_trim_history', '--builder-trim-history'],
   ['builder_permission_mode', '--builder-permission-mode'],
   ['allow_unsandboxed_builder', '--allow-unsandboxed-builder'],
   ['sandbox_image', '--sandbox-image'],
@@ -228,6 +229,13 @@ function builder_max_output_tokens_count(provider: BuilderProvider): BuilderCoun
     fallback: CAPPED_BY_DEFAULT.includes(provider) ? DEFAULT_BUILDER_MAX_OUTPUT_TOKENS : null,
   };
 }
+
+/** The history trim's size: off unless something sets it. */
+const BUILDER_TRIM_HISTORY: BuilderCount<null> = {
+  flag: '--builder-trim-history',
+  env_var: 'VOLLEY_BUILDER_TRIM_HISTORY',
+  fallback: null,
+};
 
 /** A builder count's flag or config value wins over its env var, which wins
  * over the default, and either must be a positive integer. Local builder
@@ -497,6 +505,11 @@ export function resolve_config(
     builder_env,
     builder_max_output_tokens_count(builder_provider),
   );
+  const builder_trim_history = resolve_builder_count(
+    raw.builder_trim_history,
+    builder_env,
+    BUILDER_TRIM_HISTORY,
+  );
 
   const critic_provider = raw.critic_provider ?? DEFAULT_CRITIC_PROVIDER;
   if (!CRITIC_PROVIDERS.includes(critic_provider)) {
@@ -593,6 +606,7 @@ export function resolve_config(
     builder_max_steps,
     builder_max_tool_calls,
     builder_max_output_tokens,
+    builder_trim_history,
     allow_unsandboxed_builder,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,

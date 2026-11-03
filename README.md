@@ -203,6 +203,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-max-steps` | `50` | Tool-loop builder step cap per iteration. Or `VOLLEY_BUILDER_MAX_STEPS`. Ignored for `claude_cli`. `--json` and `summary.json` count the sessions that hit it as `builder_max_steps_hits`. |
 | `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn, not counting reads (`read_file`, `search_files`, `list_files`); past it, fascicle runs the calls before the first one over, drops the rest, and tells the model which it dropped. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
 | `--builder-max-output-tokens` | `16384` (ollama, lmstudio), the provider's (openrouter) | Output tokens a tool-loop builder may generate per turn, reasoning included (`num_predict` on Ollama). A turn cut off at it before it calls a tool costs that step, not the session. Or `VOLLEY_BUILDER_MAX_OUTPUT_TOKENS`. Ignored for `claude_cli`. |
+| `--builder-trim-history` | off | Experimental. Above this estimated request size, in tokens, a tool-loop builder's turns send older tool results as one-line stubs (see [Local builder](#local-builder)). Or `VOLLEY_BUILDER_TRIM_HISTORY`. Ignored for `claude_cli`. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
@@ -538,6 +539,19 @@ spends its time reading the prompt or generating:
 jq -r '.builder.steps[] | [.index, .input_tokens, .duration_ms, .prefill_ms, .decode_ms] | @tsv' \
   ~/.local/state/volley/<run id>/iterations/001/summary.json
 ```
+
+`--builder-trim-history <tokens>` is an experiment against that growth, off by
+default. Once a turn's request is estimated above that many tokens, it sends
+the older tool results as one-line stubs. A read of a file a later call
+changed says so, and any other result names its call and size, so the model
+can run it again. The last six turns, and every message that isn't a tool
+result, go as they were. A local runtime reuses its cache only for the prefix
+a request shares with the last one, so the trim cuts at a turn boundary that
+moves on every eight turns, and only when the trimmed request has grown past
+the size again. Between moves each request starts with the bytes of the last,
+and each move costs one re-read of the shorter prompt. Half the model's context
+window is a place to start (`32768` for a `num_ctx` of 65,536); whether it
+makes a long session faster is what `builder.steps` will show.
 
 ```sh
 volley \

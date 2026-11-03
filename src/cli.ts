@@ -52,6 +52,7 @@ type CliFlags = {
   builderMaxSteps?: number;
   builderMaxToolCalls?: number;
   builderMaxOutputTokens?: number;
+  builderTrimHistory?: number;
   allowUnsandboxedBuilder?: boolean;
   criticModel?: string;
   criticProvider?: string;
@@ -224,6 +225,7 @@ function with_seat_options(command: Command, required = false): Command {
       .option('--builder-max-steps <n>', 'Tool-loop builder step cap per iteration, any provider but claude_cli (default: 50)')
       .option('--builder-max-tool-calls <n>', 'Tool calls a tool-loop builder may make per turn, reads aside, any provider but claude_cli (default: 1)')
       .option('--builder-max-output-tokens <n>', "Output tokens a tool-loop builder may generate per turn, reasoning included, any provider but claude_cli (default: 16384 on ollama and lmstudio, the provider's on openrouter)")
+      .option('--builder-trim-history <tokens>', "Experimental: above this estimated request size, a tool-loop builder's turns send older tool results as one-line stubs, any provider but claude_cli (default: off)")
       .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)'),
     required,
   );
@@ -239,6 +241,7 @@ const CRITIQUE_REFUSED_OPTIONS = [
   '--builder-max-steps <n>',
   '--builder-max-tool-calls <n>',
   '--builder-max-output-tokens <n>',
+  '--builder-trim-history <tokens>',
   '--builder-permission-mode <mode>',
   '--allow-unsandboxed-builder',
   '--sandbox-image <tag>',
@@ -271,6 +274,9 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
       : {}),
     ...(flags.builderMaxOutputTokens !== undefined
       ? { builder_max_output_tokens: Number(flags.builderMaxOutputTokens) }
+      : {}),
+    ...(flags.builderTrimHistory !== undefined
+      ? { builder_trim_history: Number(flags.builderTrimHistory) }
       : {}),
     ...(flags.allowUnsandboxedBuilder === true ? { allow_unsandboxed_builder: true } : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),

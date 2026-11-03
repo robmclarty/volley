@@ -75,6 +75,7 @@ export type VolleyConfig = {
   builder_max_steps?: number;
   builder_max_tool_calls?: number;
   builder_max_output_tokens?: number;
+  builder_trim_history?: number;
   allow_unsandboxed_builder?: boolean;
   critic_model?: string;
   critic_provider?: CriticProvider;
@@ -139,6 +140,11 @@ export type ResolvedConfig = {
    * one step, not the session: fascicle feeds back that it hit the limit and
    * the loop goes on. Ignored by the `claude_cli` builder. */
   builder_max_output_tokens: number | null;
+  /** The estimated request size, in tokens, above which a tool-loop builder's
+   * turns send older tool results as one-line stubs (#7), or null to send
+   * every turn whole. Null by default, until a long local session is shown
+   * to run faster with it on. Ignored by the `claude_cli` builder. */
+  builder_trim_history: number | null;
   /** Operator opt-out permitting a non-`claude_cli` builder to run without a
    * sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;

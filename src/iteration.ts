@@ -488,6 +488,10 @@ export function load_resume_state(
     ...(typeof recorded['builder_max_output_tokens'] === 'number'
       ? { builder_max_output_tokens: recorded['builder_max_output_tokens'] }
       : {}),
+    // Null (off) when the run left it unset, as any run before it was recorded did.
+    ...(typeof recorded['builder_trim_history'] === 'number'
+      ? { builder_trim_history: recorded['builder_trim_history'] }
+      : {}),
     critic_model: String(recorded['critic_model']),
     critic_provider: (recorded['critic_provider'] ?? 'claude_cli') as CriticProvider,
     ...(typeof recorded['critic_url'] === 'string' ? { critic_url: recorded['critic_url'] } : {}),

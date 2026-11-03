@@ -119,6 +119,7 @@ export function write_resolved_config(
     builder_max_steps: config.builder_max_steps,
     builder_max_tool_calls: config.builder_max_tool_calls,
     builder_max_output_tokens: config.builder_max_output_tokens,
+    builder_trim_history: config.builder_trim_history,
     critic_model: config.critic_model,
     critic_provider: config.critic_provider,
     critic_url: config.critic_url,

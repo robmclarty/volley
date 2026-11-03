@@ -203,6 +203,7 @@ describe('volley --help', () => {
       '--builder-max-steps',
       '--builder-max-tool-calls',
       '--builder-max-output-tokens',
+      '--builder-trim-history',
       '--allow-unsandboxed-builder',
       '--critic-model',
       '--critic-provider',
