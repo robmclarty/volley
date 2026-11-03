@@ -168,6 +168,17 @@ block needs Claude Code 2.1.314 and the read block 2.1.257; `--dry-run` names
 the version and warns when it is older. `Bash` is not confined: a builder's
 commands can reach anything you can.
 
+### Subscription seats and bare mode
+
+Under `VOLLEY_AUTH_MODE` `auto` (the default) or `oauth`, a `claude_cli` seat
+runs on the Claude CLI's own login, your subscription. Claude Code says `--bare`
+will become the default for `claude -p` in a future release, and a bare run
+never reads that login. Once that release ships, these seats stop
+authenticating until fascicle passes the opt-out (tracked as
+[volley#9](https://github.com/robmclarty/volley/issues/9)), and volley's error
+says what to do. `VOLLEY_AUTH_MODE=api_key` with `ANTHROPIC_API_KEY` works
+either way, billed at API rates.
+
 ## Usage
 
 ```
@@ -980,8 +991,9 @@ pnpm dlx --package=fascicle fascicle-viewer ~/.local/state/volley/<run id>/traje
 ## Environment variables
 
 See [.env.example](./.env.example): `VOLLEY_CLAUDE_BIN`, `VOLLEY_AUTH_MODE`,
-`VOLLEY_LOG_LEVEL`, `VOLLEY_NO_COLOR`, `VOLLEY_PRICING_PATH`, the
-`ANTHROPIC_API_KEY` billing-meter warning, each seat's base URL
+`VOLLEY_LOG_LEVEL`, `VOLLEY_NO_COLOR`, `VOLLEY_PRICING_PATH`,
+`ANTHROPIC_API_KEY` (which only `VOLLEY_AUTH_MODE=api_key` hands the Claude CLI,
+with a billing-meter warning), each seat's base URL
 (`VOLLEY_OLLAMA_URL`, `VOLLEY_LMSTUDIO_URL`, `VOLLEY_OPENROUTER_URL`), and
 `OPENROUTER_API_KEY` for [OpenRouter](#openrouter) seats. Every run reads
 `XDG_STATE_HOME` for its default state root, and `XDG_CONFIG_HOME` for where

@@ -17,6 +17,7 @@ import {
   resolve_config,
 } from './config.js';
 import { resolve_baseline } from './changes.js';
+import { uses_claude_cli } from './claude_cli_permissions.js';
 import { exit_code_for_error, exit_code_for_status, EXIT_SUCCESS } from './exit_codes.js';
 import { find_run_state, load_resume_state } from './iteration.js';
 import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
@@ -147,12 +148,39 @@ function make_renderer(config: ResolvedConfig, run_id: string = config.run_id): 
   });
 }
 
-function warn_api_key_meter(renderer: Renderer): void {
-  if (process.env['ANTHROPIC_API_KEY'] !== undefined) {
+/** Only `VOLLEY_AUTH_MODE=api_key` hands the claude CLI a key: under `auto`
+ * and `oauth` it gets none and stays on its own login, whatever is set. */
+export function warn_api_key_meter(
+  config: ResolvedConfig,
+  renderer: Renderer,
+  env: Record<string, string | undefined> = process.env,
+): void {
+  if (uses_claude_cli(config) && env['VOLLEY_AUTH_MODE'] === 'api_key') {
     renderer.warn(
-      'ANTHROPIC_API_KEY is set: the claude CLI will bill this run against the API key, not a subscription. Know which meter you are on.',
+      'VOLLEY_AUTH_MODE=api_key: the claude CLI bills this run to ANTHROPIC_API_KEY at API rates, not to a subscription. Know which meter you are on.',
     );
   }
+}
+
+/** What to try when a `claude_cli` seat on the subscription login can't
+ * authenticate, which is how every such seat fails once `claude -p` runs bare by
+ * default (volley#9). Null for any other error. */
+export function claude_login_hint(
+  err: unknown,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const auth_failure = [err, (err as { cause?: unknown } | null)?.cause].some(
+    (e) =>
+      error_kind(e) === 'provider_auth_error' && (e as { provider?: unknown }).provider === 'claude_cli',
+  );
+  const auth_mode = env['VOLLEY_AUTH_MODE'] ?? 'auto';
+  if (!auth_failure || auth_mode === 'api_key') return null;
+  return (
+    `a claude_cli seat on the subscription login (VOLLEY_AUTH_MODE=${auth_mode}) could not ` +
+    'authenticate. If `claude auth login` does not fix it, a Claude Code release that runs ' +
+    '`claude -p` bare by default would explain it (volley#9): set VOLLEY_AUTH_MODE=api_key with ' +
+    'ANTHROPIC_API_KEY to run on the API key meanwhile.'
+  );
 }
 
 /** One loud warning when a tool-loop builder is about to run *uncontained* on
@@ -311,6 +339,8 @@ function report_error(err: unknown): number {
       process.stderr.write(`  cause: ${cause.message}\n`);
     }
   }
+  const hint = claude_login_hint(err);
+  if (hint !== null) process.stderr.write(`  hint: ${hint}\n`);
   return exit_code_for_error(err);
 }
 
@@ -350,7 +380,7 @@ async function main(argv: string[]): Promise<number> {
       const run_id = not_a_bare_number('--run-id', flags.runId);
       const config = resolve_config(merged, run_id !== undefined ? { run_id } : {});
       const renderer = make_renderer(config);
-      warn_api_key_meter(renderer);
+      warn_api_key_meter(config, renderer);
       warn_unsandboxed_builder(config, renderer);
       if (merged.dry_run === true) {
         exit_code = await preflight(config, renderer, process.env);
@@ -395,7 +425,7 @@ async function main(argv: string[]): Promise<number> {
         );
       }
       const renderer = make_renderer(config);
-      warn_api_key_meter(renderer);
+      warn_api_key_meter(config, renderer);
       warn_unsandboxed_builder(config, renderer);
       if (resume.config_signed === false) warn_trusted_config(config, renderer);
       renderer.info(
@@ -439,7 +469,7 @@ async function main(argv: string[]): Promise<number> {
       ...(run_id !== undefined ? { run_id } : {}),
     });
     const renderer = make_renderer(config);
-    warn_api_key_meter(renderer);
+    warn_api_key_meter(config, renderer);
     if (merged.dry_run === true) {
       // A revision that isn't a commit fails the dry run as it would the critique.
       const sha = resolve_baseline(config.workspace, baseline);
@@ -484,7 +514,7 @@ async function main(argv: string[]): Promise<number> {
       // output. Matches what `default_run_combo` resolves per seat.
       const base_config = resolve_config({ ...merged, worktree: true, discard_worktree: true });
       const renderer = make_renderer(base_config, '<run id>');
-      warn_api_key_meter(renderer);
+      warn_api_key_meter(base_config, renderer);
       warn_unsandboxed_builder(base_config, renderer);
       const outcome = await run_matrix({
         base: merged,

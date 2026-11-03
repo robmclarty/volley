@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { provider_auth_error } from 'fascicle';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
   DEFAULT_BUILDER_MAX_OUTPUT_TOKENS,
@@ -24,9 +25,14 @@ import {
 } from '../../src/config.js';
 import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { detect_containment } from '../../src/containment.js';
-import { package_version, warn_unsandboxed_builder } from '../../src/cli.js';
+import {
+  claude_login_hint,
+  package_version,
+  warn_api_key_meter,
+  warn_unsandboxed_builder,
+} from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
-import { error_kind } from '../../src/types.js';
+import { error_kind, phase_error } from '../../src/types.js';
 import type { BuilderProvider, VolleyConfig } from '../../src/types.js';
 import { create_renderer } from '../../src/render/renderer.js';
 import { initialize_run_state, write_resolved_config } from '../../src/workspace.js';
@@ -1288,5 +1294,82 @@ describe('warn_unsandboxed_builder', () => {
     } finally {
       cleanup();
     }
+  });
+});
+
+describe('warn_api_key_meter', () => {
+  function capture(
+    config: Parameters<typeof warn_api_key_meter>[0],
+    env: Record<string, string | undefined>,
+  ) {
+    const out: string[] = [];
+    const renderer = create_renderer({
+      mode: 'default',
+      show_thinking: true,
+      color: false,
+      max_cost_usd: null,
+      write: (text) => out.push(text),
+    });
+    warn_api_key_meter(config, renderer, env);
+    return out.join('');
+  }
+
+  it('warns under api_key, the one mode that hands the claude CLI a key', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), { env: {} });
+      const env = { VOLLEY_AUTH_MODE: 'api_key', ANTHROPIC_API_KEY: 'sk-ant' };
+      expect(capture(config, env)).toContain('bills this run to ANTHROPIC_API_KEY');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('stays silent under auto and oauth, where the CLI gets no key, even with one set', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), { env: {} });
+      for (const mode of [undefined, 'auto', 'oauth']) {
+        expect(capture(config, { VOLLEY_AUTH_MODE: mode, ANTHROPIC_API_KEY: 'sk-ant' })).toBe('');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('stays silent when no seat runs on the claude CLI', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(
+        { ...base(workspace), builder_provider: 'ollama', critic_provider: 'ollama', allow_unsandboxed_builder: true },
+        { env: {} },
+      );
+      expect(capture(config, { VOLLEY_AUTH_MODE: 'api_key', ANTHROPIC_API_KEY: 'sk-ant' })).toBe('');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('claude_login_hint', () => {
+  const lost_login = new provider_auth_error('claude_cli', 'claude CLI reported an auth failure');
+
+  it('points a subscription seat that lost its login at api_key and volley#9', () => {
+    for (const mode of [undefined, 'auto', 'oauth']) {
+      const hint = claude_login_hint(lost_login, { VOLLEY_AUTH_MODE: mode });
+      expect(hint).toContain('VOLLEY_AUTH_MODE=api_key');
+      expect(hint).toContain('volley#9');
+    }
+  });
+
+  it('finds the auth failure under the phase error that wraps it', () => {
+    const wrapped = phase_error('builder', 1, lost_login);
+    expect(claude_login_hint(wrapped, {})).toContain('volley#9');
+  });
+
+  it('says nothing under api_key, for another provider, or for another error', () => {
+    expect(claude_login_hint(lost_login, { VOLLEY_AUTH_MODE: 'api_key' })).toBeNull();
+    expect(claude_login_hint(new provider_auth_error('openrouter', 'bad key'), {})).toBeNull();
+    expect(claude_login_hint(new Error('boom'), {})).toBeNull();
   });
 });
