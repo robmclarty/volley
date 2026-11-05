@@ -1,0 +1,42 @@
+#!/bin/sh
+# A commit that changes keyframes.md lands only once a person allows it.
+#
+# keyframes.md is the project's intent, and AGENTS.md says no agent edits it
+# unless a person asks. Claude Code's settings ask before its own edits, but
+# not another agent's, and not a write made some way they don't see. This gate
+# sits where every change has to pass, whoever made it: on macOS it asks in a
+# dialog, which a person can answer whatever ran the commit and an agent
+# can't. Where no dialog can be shown, it refuses.
+#
+# Enabled per clone with `git config core.hooksPath .githooks`. A person who
+# means to land the change without the dialog can commit with --no-verify.
+
+changed=$(git diff --cached --name-only --no-renames -- keyframes.md)
+[ -z "$changed" ] && exit 0
+
+stat=$(git diff --cached --shortstat -- keyframes.md | sed 's/^ *//')
+message="This commit changes keyframes.md, the project's intent ($stat).
+
+Review it with: git diff --cached keyframes.md
+
+Allow it to land?"
+
+if command -v osascript >/dev/null 2>&1; then
+  answer=$(osascript \
+    -e 'on run argv' \
+    -e 'display dialog (item 1 of argv) with title "volley: keyframes.md" buttons {"Refuse", "Allow"} default button "Refuse" with icon caution giving up after 90' \
+    -e 'end run' \
+    "$message" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    case "$answer" in
+      *"button returned:Allow"*) exit 0 ;;
+    esac
+    echo "pre-commit: the change to keyframes.md wasn't allowed, so nothing was committed." >&2
+    echo "pre-commit: unstage it with 'git restore --staged keyframes.md', or commit again and choose Allow." >&2
+    exit 1
+  fi
+fi
+
+echo "pre-commit: this commit changes keyframes.md, and no dialog could be shown to ask a person." >&2
+echo "pre-commit: if you mean to land it, commit it yourself with --no-verify." >&2
+exit 1
