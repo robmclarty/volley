@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.1 — 2026-11-04
+
+### Internal
+- **volley's intent is written down in `keyframes.md`.** It holds four principles, a seven-part map of `src/`, eleven constraints and eight scenarios, each linked to the test or rule that holds it, twelve decisions, one open question and five ideas not yet built. `AGENTS.md` tells agents how to treat each kind of item, and `CLAUDE.md` imports it, so Claude Code reads it.
+- **`pnpm check` checks `keyframes.md` against the repo.** A new `intent` check runs `keyframes check --strict`, from `@robmclarty/keyframes` 0.3.0 as a dev dependency. It fails when a test, rule or path the plan points at is renamed or moved, or when the plan picks up a warning. It's a gate for developing volley and never runs in a volley run.
+- **Agents ask before changing `keyframes.md`.** Claude Code asks before it edits the file or runs a shell command that names it. A pre-commit hook shows a macOS dialog before any commit that changes it can land, whichever agent made the change, and refuses where no dialog can be shown. A clone turns the hook on with `git config core.hooksPath .githooks`.
+- **The published package is unchanged.** No command, flag or output changed since v0.11.0.
+
 ## v0.11.0 — 2026-11-02
 
 ### Added
