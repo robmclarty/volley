@@ -12,7 +12,14 @@
     },
     "docs": false,
     "links": "links",
-    "spell": false
+    "spell": false,
+    "intent": {
+      "command": "pnpm",
+      "args": ["exec", "keyframes", "check", "--json", "--strict"],
+      "outputFile": "intent.json",
+      "description": "keyframes.md against the repo",
+      "note": "A gate for developing volley, not part of a volley run: it fails when a held-by test, a rule or a Map path moves out from under keyframes.md."
+    }
   },
   "timeout": 600
 }

@@ -20,7 +20,13 @@ ignorePatterns = ["examples/**"]
 # SDK, for its client). volley also declares ai-sdk-ollama's 4.3.0 floor as its
 # own optional peer, the release that streams a thinking model's reasoning
 # unasked.
-ignoreDependencies = ["@agentclientprotocol/sdk", "@ast-grep/cli", "ai", "ai-sdk-ollama"]
+ignoreDependencies = [
+  "@agentclientprotocol/sdk",
+  "@ast-grep/cli",
+  "@robmclarty/keyframes",
+  "ai",
+  "ai-sdk-ollama",
+]
 
 [rules]
 unused-exports = "error"

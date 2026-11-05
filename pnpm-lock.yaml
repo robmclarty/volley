@@ -45,6 +45,9 @@ importers:
       '@ast-grep/cli':
         specifier: 0.50.0
         version: 0.50.0
+      '@robmclarty/keyframes':
+        specifier: 0.3.0
+        version: 0.3.0
       '@tsconfig/node24':
         specifier: 24.0.5
         version: 24.0.5
@@ -541,6 +544,11 @@ packages:
 
   '@quansync/fs@1.1.0':
     resolution: {integrity: sha512-qAPG/t3HqML1TlN7sY/pTbEjzFVAKsMjNNMGheyDosro+kT4iw2KCUoHcVdmliwWjorm4elZbgNQyU2eD97eDg==}
+
+  '@robmclarty/keyframes@0.3.0':
+    resolution: {integrity: sha512-aT+K9RigYzvP5XkULXdFeDM8R/8RLmvGIqyBht7FRDA8EoIfOi6A//WZi2MlRyE+IluvH28P4S8yx2RldYm8XA==}
+    engines: {node: '>=24'}
+    hasBin: true
 
   '@rolldown/binding-android-arm-eabi@1.2.14':
     resolution: {integrity: sha512-aWR+XKH9+rW7m5fWq/5360J3mHycrx/o6xZM2DQFdJnTMdyP7/WzxPjhtLbVWdKo2y612/4U1bWqb3HQhiF7vg==}
@@ -1799,6 +1807,8 @@ snapshots:
   '@quansync/fs@1.1.0':
     dependencies:
       quansync: 1.0.0
+
+  '@robmclarty/keyframes@0.3.0': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.14':
     optional: true
