@@ -9,7 +9,7 @@
 import { aborted_error } from 'fascicle';
 import type { RunContext, StreamChunk, ToolApprovalHandler } from 'fascicle';
 import { run_builder } from './builder.js';
-import type { BuilderStep, PreviousRound } from './builder.js';
+import type { BuilderLadder, PreviousRound } from './builder.js';
 import { collect_changes } from './changes.js';
 import { run_checkride } from './check/checkride.js';
 import { CHECK_REJECTED, rejected_check, run_command_check, skipped_check } from './check/command.js';
@@ -17,6 +17,7 @@ import { run_critic } from './critic/run.js';
 import { command_env } from './engine.js';
 import type { CriticStep } from './critic/run.js';
 import { archive_iteration, run_result_from_state } from './iteration.js';
+import { climb_reason, rung_for_build } from './loop_state.js';
 import type { Renderer } from './render/renderer.js';
 import { write_run_summary } from './summary.js';
 import { error_kind, phase_error } from './types.js';
@@ -232,20 +233,32 @@ function measure_changes(deps: PhaseDeps, root: string): ChangeSet | null {
   return changes;
 }
 
-/** `build`: one builder session edits the build root, then volley measures what
- * it changed and, under `--git`, checkpoints it. */
+/** The next build counted, with the rung it runs at and why that rung is
+ * above the last build's, read off the state the last build left. */
+function climb(config: ResolvedConfig, s: LoopState, next: LoopState): LoopState {
+  const builds = s.builds + 1;
+  return {
+    ...next,
+    builds,
+    rung: rung_for_build(config.effort_ladder, builds),
+    climbed: climb_reason(config.effort_ladder, builds, s),
+  };
+}
+
+/** `build`: one builder session at the build's rung edits the build root, then
+ * volley measures what it changed and, under `--git`, checkpoints it. */
 export async function build_phase(
   deps: PhaseDeps,
-  builder: BuilderStep,
+  builders: BuilderLadder,
   s: LoopState,
   ctx: RunContext,
 ): Promise<LoopState> {
   const { config, renderer } = deps;
-  const next = next_iteration(s);
+  const next = climb(config, s, next_iteration(s));
   emit(ctx, { volley: 'round_start', round: next.iteration });
   renderer.phase_start(next.iteration, 'builder');
   const built = await run_builder(
-    { builder, config, warn: renderer.warn },
+    { builder: builders.at(next.rung), config, warn: renderer.warn },
     next,
     previous_round(config, s),
     ctx,

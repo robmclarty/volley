@@ -15,6 +15,7 @@ import {
 import { basename, join, resolve } from 'node:path';
 import { read_failing_artifacts } from './check/checkride.js';
 import type { CheckrideSummary, CheckrideSummaryCheck } from './check/checkride.js';
+import { EFFORT_RUNGS } from './config.js';
 import { EMPTY_USAGE } from './cost.js';
 import { shown } from './render/format.js';
 import { config_error } from './types.js';
@@ -23,7 +24,9 @@ import type {
   BuilderProvider,
   CheckArtifact,
   CheckResult,
+  ClimbReason,
   CriticProvider,
+  EffortRung,
   LoopState,
   PhaseRecord,
   ResolvedConfig,
@@ -89,6 +92,9 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
       : {}),
     ...(record.critic_degraded === true ? { critic_degraded: true } : {}),
     ...(record.degrade_cause !== undefined ? { degrade_cause: record.degrade_cause } : {}),
+    // The seat asked for an effort its provider drops. Emitted only when it
+    // did. Additive.
+    ...(record.effort_ignored === true ? { effort_ignored: true } : {}),
     // Model speed, where fascicle could time the turns (never `claude_cli`).
     // Emitted only when measured. Additive.
     ...(record.throughput !== undefined ? { throughput: record.throughput } : {}),
@@ -141,6 +147,12 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
     started_at: state.iteration_started_at,
     completed_at,
     duration_ms: Date.parse(completed_at) - Date.parse(state.iteration_started_at),
+    // The builds the run has started, and the effort this one ran at and why
+    // it climbed, which a resumed run reads back to pick its next rung.
+    // Additive.
+    builds: state.builds,
+    rung: state.rung,
+    climbed: state.climbed,
     builder: phase_summary(state.builder),
     check:
       check === null
@@ -301,6 +313,9 @@ function refuse_symlinks(dir: string): void {
  * back. Every field is unknown until checked, since the archive could be torn
  * or older than this volley. */
 type ArchivedRound = {
+  builds?: unknown;
+  rung?: unknown;
+  climbed?: unknown;
   builder?: unknown;
   check?: {
     ran?: unknown;
@@ -392,20 +407,35 @@ function archived_builder(recorded: unknown): PhaseRecord | null {
     : null;
 }
 
+/** An archived rung, or null for none, or one this volley doesn't know. */
+function archived_rung(recorded: unknown): EffortRung | null {
+  return (EFFORT_RUNGS as ReadonlyArray<unknown>).includes(recorded) ? (recorded as EffortRung) : null;
+}
+
+function archived_climb(recorded: unknown): ClimbReason | null {
+  return recorded === 'check_failed' || recorded === 'critic_rejected' ? recorded : null;
+}
+
 /** What the last completed iteration left for the next build: its check and
  * its builder's record, which tell the resumed run's first builder what the
  * gate said and whether the last session ran out of steps, as a run that never
- * stopped would have. Null for both before the first iteration. */
+ * stopped would have, and the builds so far with the last one's rung, which
+ * set the next build's rung. Null and none before the first iteration. An
+ * archive older than the count had one build an iteration. */
 function archived_round(
   run: StateLocation,
   completed: number,
-): Pick<LoopState, 'check' | 'builder'> {
-  if (completed === 0) return { check: null, builder: null };
+): Pick<LoopState, 'check' | 'builder' | 'builds' | 'rung' | 'climbed'> {
+  if (completed === 0) return { check: null, builder: null, builds: 0, rung: null, climbed: null };
   const dir = iteration_dir(run, completed);
   const recorded = read_json(join(dir, 'summary.json')) as ArchivedRound | null;
+  const builds = recorded?.builds;
   return {
     check: archived_check(dir, recorded?.check),
     builder: archived_builder(recorded?.builder),
+    builds: typeof builds === 'number' && Number.isInteger(builds) && builds >= 0 ? builds : completed,
+    rung: archived_rung(recorded?.rung),
+    climbed: archived_climb(recorded?.climbed),
   };
 }
 

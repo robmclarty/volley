@@ -22,6 +22,7 @@ import {
   CRITIC_DISALLOWED_TOOLS,
   settings_args,
 } from '../claude_cli_permissions.js';
+import { ignores_effort } from '../config.js';
 import { accumulate } from '../cost.js';
 import { seat_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
@@ -243,6 +244,8 @@ export type CriticStep = Step<string, CriticAnswer>;
 /** One critic call returning the validated verdict in its `GenerateResult`. */
 export type CriticCall = Step<string, GenerateResult<VerdictOutput>>;
 
+/** What both of the critic's calls share, its effort included when one is set
+ * (`critic_effort`); unset, no effort is passed, as before there was one. */
 function critic_call_config(deps: CriticDeps) {
   const { config } = deps;
   return {
@@ -252,6 +255,7 @@ function critic_call_config(deps: CriticDeps) {
     system: resolve_critic_prompt(config, deps.tool_set),
     schema: verdict_schema,
     on_chunk: deps.on_chunk,
+    ...(config.critic_effort !== null ? { effort: config.critic_effort } : {}),
   };
 }
 
@@ -492,7 +496,12 @@ export async function run_critic(
     // result's `timing` covers the attempts before it.
     const started = Date.now();
     const { result, mark } = await ctx.call(deps.critic, prompt);
-    return finalize_critic(state, result, config.critic_model, mark, Date.now() - started);
+    const critiqued = finalize_critic(state, result, config.critic_model, mark, Date.now() - started);
+    // A critic effort its provider drops (ollama, lmstudio) is said on the record.
+    if (config.critic_effort === null || !ignores_effort(config.critic_provider)) return critiqued;
+    return critiqued.critic === null
+      ? critiqued
+      : { ...critiqued, critic: { ...critiqued.critic, effort_ignored: true } };
   } catch (err) {
     throw phase_error('critic', state.iteration, err);
   }

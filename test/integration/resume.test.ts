@@ -85,6 +85,74 @@ describe('resume', () => {
     }
   });
 
+  it('reads the builds and rung back, so a resumed run climbs from where it stopped', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        run_id: 'ladder-run',
+        max_iterations: 5,
+        effort_ladder: ['low', 'medium', 'high'],
+        critic_effort: 'high',
+      });
+      // Run 1: two builds rejected, the third dies on SIGINT.
+      const engine_1 = mock_engine((call, index) => {
+        if (call.role === 'critic') return reject_reply('not yet');
+        return index < 4 ? { content: 'a pass', cost_usd: 0.1 } : { content: '', error: new aborted_error('sigint') };
+      });
+      await expect(
+        run_volley(config, { renderer: silent_renderer(), engine: engine_1, install_signal_handlers: false }),
+      ).rejects.toThrow();
+      expect(engine_1.calls.filter((c) => c.role === 'builder').map((c) => c.opts.effort)).toEqual([
+        'low',
+        'medium',
+        'high',
+      ]);
+
+      const resume = load_resume_state(workspace, 'ladder-run');
+      expect(resume.iterations_completed).toBe(2);
+      expect(resume.state).toMatchObject({ builds: 2, rung: 'medium', climbed: 'critic_rejected' });
+
+      const engine_2 = mock_engine((call) =>
+        call.role === 'builder' ? { content: 'fixed', cost_usd: 0.1 } : approve_reply(),
+      );
+      const result = await run_volley(
+        config,
+        { renderer: silent_renderer(), engine: engine_2, install_signal_handlers: false },
+        resume.state,
+      );
+      expect(result.status).toBe('success');
+      // Build 3 again, at the third rung, not back at the first.
+      expect(engine_2.calls.find((c) => c.role === 'builder')?.opts.effort).toBe('high');
+      const third = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'iterations', '003', 'summary.json'), 'utf8'),
+      ) as Record<string, unknown>;
+      expect(third).toMatchObject({ builds: 3, rung: 'high', climbed: 'critic_rejected' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('counts one build an iteration when the archive predates the count', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({ workspace, run_id: 'old-archive' });
+      initialize_run_state(config);
+      write_resolved_config(config);
+      archive_iteration(config, { ...initial_state(), iteration: 1 });
+      archive_iteration(config, { ...initial_state(), iteration: 2 });
+      const path = join(workspace, '.volley', 'iterations', '002', 'summary.json');
+      const archived = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+      delete archived['builds'];
+      archived['rung'] = 'turbo';
+      writeFileSync(path, JSON.stringify(archived));
+      const resume = load_resume_state(workspace, 'old-archive');
+      expect(resume.state).toMatchObject({ builds: 2, rung: null, climbed: null });
+    } finally {
+      cleanup();
+    }
+  });
+
   it("carries a failed command check's output into the resumed run's first builder", async () => {
     const { workspace, cleanup } = temp_workspace();
     try {

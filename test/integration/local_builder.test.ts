@@ -7,7 +7,7 @@ import { BUILDER_ALLOWED_TOOLS, settings_args } from '../../src/claude_cli_permi
 import { run_volley } from '../../src/orchestrator.js';
 import type { Renderer } from '../../src/render/renderer.js';
 import { silent_renderer, temp_workspace, test_config } from '../helpers/harness.js';
-import { mock_engine } from '../helpers/mock_engine.js';
+import { approve_reply, mock_engine, reject_reply } from '../helpers/mock_engine.js';
 
 // The injected engine answers every model call, but the Ollama prewarm and
 // context probe still make real requests. Point them at a closed port so these
@@ -413,8 +413,189 @@ describe('local builder (ollama provider)', () => {
       expect(builder?.opts.tool_call_repair_attempts).toBeUndefined();
       expect(builder?.opts.max_tool_calls_per_step).toBeUndefined();
       expect(builder?.opts.schema).toBeUndefined();
+      // No ladder and no critic effort: neither seat is sent an effort.
+      for (const call of engine.calls) expect(call.opts).not.toHaveProperty('effort');
     } finally {
       cleanup();
+    }
+  });
+
+  it('adds only the effort to either seat when a ladder is set, and nothing else', async () => {
+    /** Both seats' call options from a one-round all-Claude run on `config`. */
+    async function seat_options(overrides: Parameters<typeof test_config>[0]) {
+      const engine = mock_engine((call) =>
+        call.role === 'builder' ? { content: 'built', cost_usd: 0.1 } : approve_reply(),
+      );
+      const result = await run_volley(test_config(overrides), {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      const builder = engine.calls.find((c) => c.role === 'builder')!.opts;
+      const critic = engine.calls.find((c) => c.role === 'critic')!.opts;
+      return { builder, critic };
+    }
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const plain = await seat_options({ workspace, run_id: 'plain' });
+      const laddered = await seat_options({
+        workspace,
+        run_id: 'laddered',
+        effort_ladder: ['low', 'high'],
+        critic_effort: 'xhigh',
+      });
+      expect(laddered.builder.effort).toBe('low');
+      expect(laddered.critic.effort).toBe('xhigh');
+      for (const seat of ['builder', 'critic'] as const) {
+        expect(Object.keys(laddered[seat]).toSorted()).toEqual(
+          [...Object.keys(plain[seat]), 'effort'].toSorted(),
+        );
+        expect(laddered[seat].provider_options).toEqual(plain[seat].provider_options);
+        expect(laddered[seat].system).toBe(plain[seat].system);
+        expect(laddered[seat].model).toBe(plain[seat].model);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('the effort ladder', () => {
+  it('climbs one rung per build that did not end the run, the top rung repeating', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        max_iterations: 5,
+        effort_ladder: ['low', 'medium', 'high'],
+        critic_effort: 'high',
+      });
+      // Rejected four times, approved on the fifth build.
+      let critiques = 0;
+      const engine = mock_engine((call) => {
+        if (call.role === 'builder') return { content: 'built', cost_usd: 0.1 };
+        critiques += 1;
+        return critiques < 5 ? reject_reply('not yet') : approve_reply();
+      });
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      const builds = engine.calls.filter((c) => c.role === 'builder').map((c) => c.opts.effort);
+      // Build k runs at ladder[min(k, len) - 1].
+      expect(builds).toEqual(['low', 'medium', 'high', 'high', 'high']);
+      const critics = engine.calls.filter((c) => c.role === 'critic').map((c) => c.opts.effort);
+      expect(critics).toEqual(['high', 'high', 'high', 'high', 'high']);
+
+      const archived = [1, 2, 3, 4, 5].map(
+        (n) =>
+          JSON.parse(
+            readFileSync(join(workspace, '.volley', 'iterations', String(n).padStart(3, '0'), 'summary.json'), 'utf8'),
+          ) as Record<string, unknown>,
+      );
+      expect(archived.map((it) => it['builds'])).toEqual([1, 2, 3, 4, 5]);
+      expect(archived.map((it) => it['rung'])).toEqual(['low', 'medium', 'high', 'high', 'high']);
+      expect(archived.map((it) => it['climbed'])).toEqual([
+        null,
+        'critic_rejected',
+        'critic_rejected',
+        null,
+        null,
+      ]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('names a failed check as the reason it climbed, before the critic', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        max_iterations: 3,
+        check: 'test -f ok.txt',
+        check_resolved: 'command',
+        effort_ladder: ['low', 'max'],
+      });
+      let builds = 0;
+      const engine = mock_engine((call) => {
+        if (call.role === 'critic') return builds < 2 ? reject_reply('the check fails') : approve_reply();
+        builds += 1;
+        return {
+          content: 'built',
+          cost_usd: 0.1,
+          effect: () => {
+            if (builds === 2) writeFileSync(join(workspace, 'ok.txt'), 'ok');
+          },
+        };
+      });
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      expect(engine.calls.filter((c) => c.role === 'builder').map((c) => c.opts.effort)).toEqual(['low', 'max']);
+      const second = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'iterations', '002', 'summary.json'), 'utf8'),
+      ) as Record<string, unknown>;
+      expect(second['climbed']).toBe('check_failed');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('records effort_ignored on a seat whose provider drops effort, and only there', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        builder_provider: 'ollama',
+        builder_model: 'qwen3:8b',
+        allow_unsandboxed_builder: true,
+        critic_provider: 'lmstudio',
+        critic_model: 'qwen3:8b',
+        effort_ladder: ['low', 'high'],
+        critic_effort: 'high',
+      });
+      const engine = mock_engine((call) =>
+        call.role === 'builder' ? { content: 'built', cost_usd: 0 } : approve_reply(),
+      );
+      const result = await run_volley(config, {
+        renderer: silent_renderer(),
+        engine,
+        install_signal_handlers: false,
+      });
+      expect(result.status).toBe('success');
+      // The effort is still sent: fascicle is what drops it.
+      expect(engine.calls.map((c) => c.opts.effort)).toEqual(['low', 'high']);
+      const first = JSON.parse(
+        readFileSync(join(workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
+      ) as { builder: Record<string, unknown>; critic: Record<string, unknown> };
+      expect(first.builder['effort_ignored']).toBe(true);
+      expect(first.critic['effort_ignored']).toBe(true);
+    } finally {
+      cleanup();
+    }
+    const { workspace: claude_workspace, cleanup: claude_cleanup } = temp_workspace();
+    try {
+      const engine = mock_engine((call) =>
+        call.role === 'builder' ? { content: 'built', cost_usd: 0.1 } : approve_reply(),
+      );
+      await run_volley(
+        test_config({ workspace: claude_workspace, effort_ladder: ['low'], critic_effort: 'high' }),
+        { renderer: silent_renderer(), engine, install_signal_handlers: false },
+      );
+      const first = JSON.parse(
+        readFileSync(join(claude_workspace, '.volley', 'iterations', '001', 'summary.json'), 'utf8'),
+      ) as { builder: Record<string, unknown>; critic: Record<string, unknown> };
+      expect(first.builder).not.toHaveProperty('effort_ignored');
+      expect(first.critic).not.toHaveProperty('effort_ignored');
+    } finally {
+      claude_cleanup();
     }
   });
 });

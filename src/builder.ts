@@ -26,11 +26,12 @@ import { step_trim } from './builder/trim.js';
 import { builder_tools, type BashExecutor } from './builder/tools.js';
 import { CHECK_REJECTED } from './check/command.js';
 import { BUILDER_ALLOWED_TOOLS, settings_args } from './claude_cli_permissions.js';
+import { ignores_effort } from './config.js';
 import { accumulate } from './cost.js';
 import { seat_base_url } from './engine.js';
 import { prewarm_ollama_model } from './prewarm.js';
 import { config_error, phase_error } from './types.js';
-import type { CheckResult, LoopState, ResolvedConfig } from './types.js';
+import type { CheckResult, EffortRung, LoopState, ResolvedConfig } from './types.js';
 import type { ToolSet } from './workspace_tools.js';
 import { build_root } from './worktree.js';
 
@@ -378,10 +379,12 @@ export type BuilderDeps = {
  * phase records usage, cost, timing, and tool calls from it. */
 export type BuilderStep = Step<ModelCallInput, GenerateResult>;
 
-/** Build the builder leaf for this run. Everything but the prompt is fixed for
- * the whole run, so it is wired once here: the provider's system prompt, its
- * tool surface, and the live chunk stream to the renderer. */
-export function make_builder_step(deps: BuilderDeps): BuilderStep {
+/** Build the builder leaf for this run at `effort`. Everything but the prompt
+ * is fixed for the whole run, so it is wired once here: the provider's system
+ * prompt, its tool surface, the live chunk stream to the renderer, and the
+ * effort, which fascicle's `model_call` takes only as it's built. Null passes
+ * no effort at all, so a run with no ladder makes the call it always has. */
+export function make_builder_step(deps: BuilderDeps, effort: EffortRung | null = null): BuilderStep {
   const { config } = deps;
   return model_call({
     engine: deps.engine,
@@ -391,8 +394,36 @@ export function make_builder_step(deps: BuilderDeps): BuilderStep {
     model: config.builder_model,
     system: resolve_builder_system(config, deps.tool_set),
     on_chunk: deps.on_chunk,
+    ...(effort !== null ? { effort } : {}),
     ...builder_tool_options(deps),
   });
+}
+
+/** The builder leaf at each rung of the run's ladder: `at(rung)` is the leaf a
+ * build at that effort calls, built the first time it's asked for and reused
+ * after, and `arm` is the first build's, which the flow declares. Every leaf
+ * keeps the id `builder`, so the stream routes each the same way. */
+export type BuilderLadder = {
+  arm: BuilderStep;
+  at: (rung: EffortRung | null) => BuilderStep;
+};
+
+export function make_builder_ladder(deps: BuilderDeps): BuilderLadder {
+  const built = new Map<EffortRung | null, BuilderStep>();
+  const at = (rung: EffortRung | null): BuilderStep => {
+    const cached = built.get(rung);
+    if (cached !== undefined) return cached;
+    const leaf = make_builder_step(deps, rung);
+    built.set(rung, leaf);
+    return leaf;
+  };
+  return { arm: at(deps.config.effort_ladder?.[0] ?? null), at };
+}
+
+/** Mark the builder record as having asked for an effort its provider drops. */
+function with_effort_ignored(state: LoopState, ignored: boolean): LoopState {
+  if (!ignored || state.builder === null) return state;
+  return { ...state, builder: { ...state.builder, effort_ignored: true } };
 }
 
 export type BuilderRunDeps = {
@@ -438,7 +469,10 @@ export async function run_builder(
         previous,
       }),
     );
-    const built = accumulate(state, 'builder', result, config.builder_model);
+    const built = with_effort_ignored(
+      accumulate(state, 'builder', result, config.builder_model),
+      state.rung !== null && ignores_effort(config.builder_provider),
+    );
     // `max_steps` is a backstop, not a failure — surface it, count it, and
     // carry on.
     if (result.finish_reason !== 'max_steps') return built;

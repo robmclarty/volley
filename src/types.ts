@@ -326,6 +326,11 @@ export type PhaseRecord = {
   critic_degraded?: boolean;
   /** Why the verdict degraded, set with `critic_degraded`. Additive. */
   degrade_cause?: DegradeCause;
+  /** The seat asked for an effort its provider drops (ollama, lmstudio), so
+   * the call ran at the provider's own and a ladder there is flat. Set on a
+   * builder record that ran at a rung and a critic record that ran at
+   * `critic_effort`, when either was ignored; absent otherwise. Additive. */
+  effort_ignored?: true;
   /** Output tokens per second over the model's own turns (tool execution and
    * retry backoff excluded), from fascicle's per-step timing. `basis` is
    * `decode` when every turn streamed, `blended` when any round trip counted
@@ -378,6 +383,10 @@ export type BuilderStepRecord = {
 
 export type HaltReason = 'cost_cap' | 'gate_edit' | null;
 
+/** Why a build ran one rung up the ladder from the build before it: that
+ * build's check failed, or its check passed and the critic sent it back. */
+export type ClimbReason = 'check_failed' | 'critic_rejected';
+
 /** Carry-state threaded through the fascicle loop. */
 export type LoopState = {
   iteration: number;
@@ -400,6 +409,15 @@ export type LoopState = {
   /** How many of the run's builder sessions ended on the step limit
    * (`max_steps`) rather than calling finish. */
   builder_max_steps_hits: number;
+  /** Builder sessions the run has started, this iteration's included: build
+   * *k* runs at `effort_ladder[min(k, len) - 1]`. A resumed run reads it back
+   * from the last archived iteration. */
+  builds: number;
+  /** The effort this iteration's build ran at, or null with no ladder. */
+  rung: EffortRung | null;
+  /** Why this iteration's build ran a rung above the last one's, or null when
+   * it didn't: the first build, the top rung repeating, or no ladder. */
+  climbed: ClimbReason | null;
   iteration_cost_usd: number;
   halt: HaltReason;
   cost_warned: boolean;

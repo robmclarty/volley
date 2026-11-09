@@ -12,7 +12,10 @@ import { silent_renderer, temp_git_workspace, test_config } from '../helpers/har
 
 /** Run one all-Claude round on the fake under `auth_mode`, both seats' keys
  * set, and return each call the fake saw. */
-async function claude_calls(auth_mode: string): Promise<FakeClaudeCall[]> {
+async function claude_calls(
+  auth_mode: string,
+  overrides: Partial<Parameters<typeof test_config>[0]> = {},
+): Promise<FakeClaudeCall[]> {
   const { workspace, cleanup } = temp_git_workspace();
   const fake = install_fake_claude();
   try {
@@ -22,7 +25,7 @@ async function claude_calls(auth_mode: string): Promise<FakeClaudeCall[]> {
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-secret');
     // Inherited only when the CLI gets the whole environment.
     vi.stubEnv('VOLLEY_TEST_INHERITED', 'yes');
-    const result = await run_volley(test_config({ workspace }), {
+    const result = await run_volley(test_config({ ...overrides, workspace }), {
       renderer: silent_renderer(),
       install_signal_handlers: false,
     });
@@ -101,6 +104,29 @@ describe('claude_cli seat env', () => {
       expect(call.env).not.toHaveProperty('OPENROUTER_API_KEY');
       expect(call.env).not.toHaveProperty('ANTHROPIC_API_KEY');
       expect(call.env).not.toHaveProperty('VOLLEY_TEST_INHERITED');
+    }
+  });
+});
+
+describe('claude_cli seat effort', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("reaches each child as CLAUDE_CODE_EFFORT_LEVEL: the builder's rung, the critic's effort", async () => {
+    const [builder, critic] = await claude_calls('auto', {
+      effort_ladder: ['medium', 'max'],
+      critic_effort: 'xhigh',
+    });
+    expect(builder!.env['CLAUDE_CODE_EFFORT_LEVEL']).toBe('medium');
+    expect(critic!.env['CLAUDE_CODE_EFFORT_LEVEL']).toBe('xhigh');
+    // The transport is the variable, not a flag.
+    for (const call of [builder!, critic!]) expect(call.argv).not.toContain('--effort');
+  });
+
+  it('sets no effort variable on either child with no ladder and no critic effort', async () => {
+    for (const call of await claude_calls('oauth')) {
+      expect(call.env).not.toHaveProperty('CLAUDE_CODE_EFFORT_LEVEL');
     }
   });
 });

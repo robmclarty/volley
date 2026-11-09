@@ -33,7 +33,7 @@
  */
 import { branch, fallback, loop, pipe, retry, sequence, step } from 'fascicle';
 import type { Step } from 'fascicle';
-import { make_builder_step } from './builder.js';
+import { make_builder_ladder } from './builder.js';
 import type { BuilderDeps } from './builder.js';
 import type { BashExecutor } from './builder/tools.js';
 import { cost_cap_hit } from './cost.js';
@@ -142,7 +142,7 @@ export function build_flow(
 ): Step<RunInput, LoopOutcome> {
   const { config, renderer } = deps;
 
-  const builder = make_builder_step({
+  const builders = make_builder_ladder({
     ...deps.seats.builder,
     config,
     on_chunk: renderer.builder_chunk,
@@ -152,10 +152,11 @@ export function build_flow(
   // `build` and `critique` hand their model boundary to `ctx.call` from inside
   // the body, because the prompt comes from the carried state and the result
   // folds back into it. Each declares that boundary as its `arm`, so it shows
-  // up under the step in `describe` and the trajectory's flow structure.
-  const build = step('build', (s: LoopState, ctx) => build_phase(deps, builder, s, ctx), {
+  // up under the step in `describe` and the trajectory's flow structure. The
+  // build picks its leaf by the build's rung; the arm is the first build's.
+  const build = step('build', (s: LoopState, ctx) => build_phase(deps, builders, s, ctx), {
     description: 'open the iteration, run the builder, measure the change',
-    arm: builder,
+    arm: builders.arm,
   });
   const skip_verify = step('skip_verify', (s: LoopState) => skip_verify_phase(deps, s), {
     description: 'record the check as skipped and call no critic',
