@@ -279,6 +279,7 @@ function run_result(): RunResult {
     total_cost_usd: 0.1,
     builder_cost_usd: 0.05,
     critic_cost_usd: 0.05,
+    tester_cost_usd: 0,
     check_duration_ms: 5,
     builder_max_steps_hits: 0,
     final_verdict: 'approved',

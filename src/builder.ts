@@ -212,6 +212,13 @@ export type PreviousRound = {
   step_limit_hit: number | null;
 };
 
+/** The tester's test, as the builder hears of it: the files it wrote, and,
+ * in the iteration it opened, the check that failed on them. */
+export type TesterTest = {
+  paths: string[];
+  check: CheckResult | null;
+};
+
 export type BuilderPromptInput = {
   task: string;
   criteria: string;
@@ -219,6 +226,8 @@ export type BuilderPromptInput = {
   iteration: number;
   checkride: boolean;
   previous: PreviousRound | null;
+  /** Absent, or null, when no tester ran: the prompt is what it always was. */
+  tester?: TesterTest | null;
 };
 
 /** How much of the last check's output the builder's prompt carries: a few KB,
@@ -286,6 +295,35 @@ function previous_check_section(check: CheckResult | null): string[] {
   return lines;
 }
 
+/** The tester's test, in every build after it: its files, which the builder
+ * makes pass rather than edits, and in the build it ran before, the check
+ * that failed on them. A tester outside a git repository wrote files volley
+ * can't name, so only the check is said. */
+function tester_section(tester: TesterTest | null | undefined): string[] {
+  if (tester === null || tester === undefined) return [];
+  const lines = ['', "THE TESTER'S TEST", '-----------------'];
+  if (tester.paths.length > 0) {
+    lines.push(
+      'Before the first build, a tester wrote these tests from the acceptance',
+      'criteria:',
+      ...tester.paths.map((path) => `  ${path}`),
+      'Do the work that makes them pass. Never weaken, skip or delete one: an edit',
+      'to any of them is reported as a gate edit.',
+    );
+  } else {
+    lines.push('Before the first build, a tester wrote a test from the acceptance criteria.');
+  }
+  const check = tester.check;
+  if (check !== null && check.ran && !check.ok) {
+    const exit = check.exit_code === null ? 'no exit code' : `exit ${String(check.exit_code)}`;
+    lines.push('', `The check fails on it now, as it must (${exit}).`);
+    if (check.failing_slots.length > 0) lines.push(`Failing slots: ${check.failing_slots.join(', ')}.`);
+    const excerpt = check_excerpt(check);
+    if (excerpt.length > 0) lines.push('', excerpt);
+  }
+  return lines;
+}
+
 /** The line a later iteration's prompt carries when the last session ran out
  * of steps: it never got to verify, so this one should check first. */
 function step_limit_lines(step_limit_hit: number | null): string[] {
@@ -327,6 +365,7 @@ export function compose_builder_prompt(input: BuilderPromptInput): string {
       ...step_limit_lines(input.previous.step_limit_hit),
     );
   }
+  parts.push(...tester_section(input.tester));
   if (input.checkride) {
     parts.push(
       '',
@@ -420,6 +459,14 @@ export function make_builder_ladder(deps: BuilderDeps): BuilderLadder {
   return { arm: at(deps.config.effort_ladder?.[0] ?? null), at };
 }
 
+/** The tester's test as `state` carries it, or null when no tester ran: its
+ * files' hashes outlive the iteration it opened, its check doesn't. */
+function tester_test(state: LoopState): TesterTest | null {
+  const paths = Object.keys(state.tester_hashes).toSorted();
+  if (paths.length === 0 && state.tester_check === null) return null;
+  return { paths, check: state.tester_check };
+}
+
 /** Mark the builder record as having asked for an effort its provider drops. */
 function with_effort_ignored(state: LoopState, ignored: boolean): LoopState {
   if (!ignored || state.builder === null) return state;
@@ -467,6 +514,7 @@ export async function run_builder(
         iteration: state.iteration,
         checkride: config.check_resolved === 'checkride',
         previous,
+        tester: tester_test(state),
       }),
     );
     const built = with_effort_ignored(

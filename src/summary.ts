@@ -84,6 +84,8 @@ export type ComparisonSummary = {
   total_cost_usd: number;
   builder_cost_usd: number;
   critic_cost_usd: number;
+  /** The tester's spend; 0 with the tester off. Additive. */
+  tester_cost_usd: number;
   final_verdict: Verdict | null;
   check_trajectory: CheckTrajectoryPoint[];
   local_salvage: SalvageStats;
@@ -246,6 +248,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       total_cost_usd: result.total_cost_usd,
       builder_cost_usd: result.builder_cost_usd,
       critic_cost_usd: result.critic_cost_usd,
+      tester_cost_usd: result.tester_cost_usd,
       final_verdict: result.final_verdict,
       check_trajectory: check_trajectory(archives),
       gate_edits: all_gate_edits(archives),

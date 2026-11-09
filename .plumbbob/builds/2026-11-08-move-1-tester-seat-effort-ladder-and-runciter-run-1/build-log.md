@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 5 — feat(tester): the tester seat's config, prompt and tools
+**Current step:** 6 — feat(flow): the test phase before the first build, red check required
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -27,7 +27,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 2. feat(loop): run the builder at the iteration's rung and the critic at its effort
 - ☑ 3. feat(summary): record each iteration's rung and why it climbed
 - ☑ 4. docs(readme): the effort ladder
-- ☐ 5. feat(tester): the tester seat's config, prompt and tools
+- ☑ 5. feat(tester): the tester seat's config, prompt and tools
 - ☐ 6. feat(flow): the test phase before the first build, red check required
 - ☐ 7. feat(critic): the critic reads the tester's test
 - ☐ 8. feat(acp): the tester under `volley acp`, and its docs
@@ -192,3 +192,4 @@ folder, so it rides the branch into the PR.)*
   The proposed fold, if P1 is a blocker: a new step that builds ahead of step 5 in range 2, `fix(resume): keep the effort ladder and critic effort across a resume`, with seam `src/workspace.ts`, `src/iteration.ts`, `test/integration/resume.test.ts` and `README.md`. It's done when `config.json` records both fields, `load_resume_state` reads them back, a resume test runs build 3 at the third rung with no env var set, and the README's limit line is gone. Going first sets the pattern step 5's `tester` and `tester_model` settings need, since they'll have to survive a resume too.
 
 - 2026-11-09 — step 12 checkpointed · ad455eef6 — fix(resume): keep the effort ladder and critic effort across a resume (3m)
+- 2026-11-09 — step 5 checkpointed · 077903295 — feat(tester): the tester seat's config, prompt and tools (1 drift, 14m)

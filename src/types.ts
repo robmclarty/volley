@@ -63,6 +63,10 @@ export type RunStatus =
    * the run halts on the spot rather than iterating, because a check the builder
    * can rewrite is not evidence the work is done. */
   | 'gate_edit_blocked'
+  /** The check passed right after the tester wrote its test, before any
+   * build: the test is vacuous or the work is already done, and either way no
+   * builder is paid to find out (move 1's D6, D17). */
+  | 'tester_passed_early'
   /** A critique's other outcome: the critic requested changes, or the check
    * failed, on the one change it reviewed. A run never ends this way. */
   | 'rejected'
@@ -394,7 +398,7 @@ export type BuilderStepRecord = {
   tool_calls: Array<{ name: string; output_chars: number }>;
 };
 
-export type HaltReason = 'cost_cap' | 'gate_edit' | null;
+export type HaltReason = 'cost_cap' | 'gate_edit' | 'tester_passed_early' | null;
 
 /** Why a build ran one rung up the ladder from the build before it: that
  * build's check failed, or its check passed and the critic sent it back. */
@@ -414,10 +418,26 @@ export type LoopState = {
   changes: ChangeSet | null;
   builder: PhaseRecord | null;
   critic: PhaseRecord | null;
+  /** This iteration's tester session, or null: the tester runs in iteration 1
+   * only, before its build. */
+  tester: PhaseRecord | null;
+  /** The check run right after the tester, which must fail; null in an
+   * iteration the tester didn't open. Apart from `check`, which is the check
+   * after the build. */
+  tester_check: CheckResult | null;
+  /** What the tester wrote, measured as the builder's changes are; null in an
+   * iteration the tester didn't open, or outside a git repository. */
+  tester_changes: ChangeSet | null;
+  /** Each file the tester wrote, by its hash right after the test phase. A
+   * build that leaves one at that hash didn't edit the gate there (move 1's
+   * D22). Kept for the whole run, and read back on resume. */
+  tester_hashes: Record<string, string>;
   total_usage: UsageTotals;
   total_cost_usd: number;
   builder_cost_usd: number;
   critic_cost_usd: number;
+  /** The tester's spend, apart from the other two seats' (D21). */
+  tester_cost_usd: number;
   check_duration_ms: number;
   /** How many of the run's builder sessions ended on the step limit
    * (`max_steps`) rather than calling finish. */
@@ -451,6 +471,8 @@ export type RunResult = {
   total_cost_usd: number;
   builder_cost_usd: number;
   critic_cost_usd: number;
+  /** The tester's spend; 0 with the tester off. Additive. */
+  tester_cost_usd: number;
   check_duration_ms: number;
   /** How many of the run's builder sessions hit the step limit before they
    * called finish: work handed to the check and critic unverified. The
@@ -475,7 +497,7 @@ export type RunResult = {
   run_state_dir: string;
 };
 
-export type VolleyPhase = 'builder' | 'critic' | 'check';
+export type VolleyPhase = 'builder' | 'critic' | 'tester' | 'check';
 
 /** Recoverable domain failures surface as `kind`-tagged Error values (the
  * same discrimination style as fascicle's error taxonomy) so the top-level

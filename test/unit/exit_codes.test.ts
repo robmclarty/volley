@@ -26,6 +26,7 @@ describe('exit_code_for_status', () => {
     expect(exit_code_for_status('budget_exhausted')).toBe(EXIT_BUDGET_EXHAUSTED);
     expect(exit_code_for_status('cost_cap_reached')).toBe(EXIT_COST_CAP);
     expect(exit_code_for_status('gate_edit_blocked')).toBe(EXIT_GATE_EDIT);
+    expect(exit_code_for_status('tester_passed_early')).toBe(EXIT_BUDGET_EXHAUSTED);
     expect(exit_code_for_status('interrupted')).toBe(EXIT_INTERRUPTED);
   });
 });
@@ -43,6 +44,12 @@ describe('exit_code_for_error', () => {
     const cli_err = new claude_cli_error('binary_not_found', 'claude not found');
     expect(exit_code_for_error(phase_error('builder', 1, cli_err))).toBe(EXIT_BUILDER_ERROR);
     expect(exit_code_for_error(new provider_error('boom'))).toBe(EXIT_BUILDER_ERROR);
+  });
+
+  it("tester failures -> 3, a provider error on the critic's seat", () => {
+    expect(exit_code_for_error(phase_error('tester', 1, new provider_error('boom')))).toBe(
+      EXIT_BUILDER_ERROR,
+    );
   });
 
   it('critic failures -> 6, including schema validation', () => {

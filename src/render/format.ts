@@ -15,7 +15,7 @@ export const GLYPH_PHASE_FAIL = '✗';
 
 export const VERBOSE_TRUNCATE_CHARS = 4000;
 
-export type Role = 'builder' | 'critic' | 'check';
+export type Role = 'builder' | 'critic' | 'tester' | 'check';
 
 export function colors_enabled(
   env: Record<string, string | undefined> = process.env,
@@ -34,6 +34,8 @@ export function paint(role: Role | 'cost' | 'error', text: string, color: boolea
       return pc.cyan(text);
     case 'critic':
       return pc.yellow(text);
+    case 'tester':
+      return pc.blue(text);
     case 'check':
       return pc.green(text);
     case 'cost':

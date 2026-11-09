@@ -10,16 +10,19 @@ import { aborted_error } from 'fascicle';
 import type { RunContext, StreamChunk, ToolApprovalHandler } from 'fascicle';
 import { run_builder } from './builder.js';
 import type { BuilderLadder, PreviousRound } from './builder.js';
-import { collect_changes } from './changes.js';
+import { collect_changes, snapshot_changes, tester_written, without_tester_edits } from './changes.js';
+import type { CollectChangesOptions } from './changes.js';
 import { run_checkride } from './check/checkride.js';
 import { CHECK_REJECTED, rejected_check, run_command_check, skipped_check } from './check/command.js';
 import { run_critic } from './critic/run.js';
 import { command_env } from './engine.js';
 import type { CriticStep } from './critic/run.js';
 import { archive_iteration, run_result_from_state } from './iteration.js';
-import { climb_reason, rung_for_build } from './loop_state.js';
+import { climb_reason, rung_for_build, tester_opened } from './loop_state.js';
 import type { Renderer } from './render/renderer.js';
 import { write_run_summary } from './summary.js';
+import { run_tester } from './tester/run.js';
+import type { TesterStep } from './tester/run.js';
 import { error_kind, phase_error } from './types.js';
 import type { ChangeSet, CheckResult, LoopState, ResolvedConfig, Verdict } from './types.js';
 import { git_checkpoint, state_root_within } from './workspace.js';
@@ -201,6 +204,9 @@ function next_iteration(s: LoopState): LoopState {
     check: null,
     verdict: null,
     unmet_criteria: [],
+    tester: null,
+    tester_check: null,
+    tester_changes: null,
   };
 }
 
@@ -221,16 +227,26 @@ function previous_round(config: ResolvedConfig, s: LoopState): PreviousRound | n
  * builder's work this way after every build, and a critique measures the
  * change under review the same way, so the critic is shown one shape either
  * way. */
-function measure_changes(deps: PhaseDeps, root: string): ChangeSet | null {
+function measure_changes(
+  deps: PhaseDeps,
+  root: string,
+  tester_hashes: Readonly<Record<string, string>> = {},
+): ChangeSet | null {
   const { config, renderer } = deps;
-  const changes = collect_changes({
-    root,
-    baseline: deps.baseline,
-    gate_patterns: config.gate_paths,
-    excluded_dir: state_root_within(root, config.state_dir),
-  });
+  const changes = without_tester_edits(collect_changes(change_options(deps, root)), root, tester_hashes);
   report_changes(config, renderer, changes);
   return changes;
+}
+
+/** How the build root's changes are collected: from the run's baseline,
+ * against the gate, leaving out a state root inside it. */
+function change_options(deps: PhaseDeps, root: string): CollectChangesOptions {
+  return {
+    root,
+    baseline: deps.baseline,
+    gate_patterns: deps.config.gate_paths,
+    excluded_dir: state_root_within(root, deps.config.state_dir),
+  };
 }
 
 /** The next build counted, with the rung it runs at and why that rung is
@@ -245,8 +261,78 @@ function climb(config: ResolvedConfig, s: LoopState, next: LoopState): LoopState
   };
 }
 
+/** `test`: the tester opens iteration 1 and writes its failing test, then
+ * volley records what it wrote, by hash, and under `--git` checkpoints it, so
+ * the build that follows is measured apart from it (move 1's D9, D22). */
+export async function test_phase(
+  deps: PhaseDeps,
+  tester: TesterStep,
+  s: LoopState,
+  ctx: RunContext,
+): Promise<LoopState> {
+  const { config, renderer } = deps;
+  const next = next_iteration(s);
+  emit(ctx, { volley: 'round_start', round: next.iteration });
+  renderer.phase_start(next.iteration, 'tester');
+  const root = build_root(config.workspace, config.worktree);
+  const before = snapshot_changes(change_options(deps, root));
+  const tested = await run_tester(tester, config, next, ctx);
+  renderer.phase_end(tested.iteration, 'tester', true);
+  renderer.cost_line(tested.iteration, 'tester', tested.tester?.cost_usd ?? null, tested.total_cost_usd);
+  if (tested.cost_warned && !s.cost_warned) {
+    renderer.warn('cost unavailable for this phase; recording null (run totals sum what is known)');
+  }
+  const written = tester_written(change_options(deps, root), before);
+  if (written.changes !== null) {
+    const paths = written.changes.files.map((file) => file.path);
+    renderer.info(
+      paths.length === 0
+        ? 'tester: wrote no file'
+        : `tester: wrote ${String(paths.length)} file(s): ${paths.join(', ')}`,
+    );
+  }
+  if (config.git_checkpoints) {
+    git_checkpoint(
+      root,
+      `volley iter ${String(tested.iteration)}: test`,
+      state_root_within(root, config.state_dir),
+    );
+  }
+  return { ...tested, tester_changes: written.changes, tester_hashes: written.hashes };
+}
+
+/** `red_check`: the check right after the tester, which must fail on its
+ * test. It's recorded apart from the check after the build. A pass ends the
+ * run before any build, at the loop guard (D6). */
+export async function red_check_phase(
+  deps: PhaseDeps,
+  s: LoopState,
+  ctx: RunContext,
+): Promise<LoopState> {
+  const checked = await check_phase(deps, s, ctx);
+  const result = checked.check;
+  if (result?.ok === true) {
+    deps.renderer.warn(
+      "the check passed on the tester's test before any build: the test is vacuous, or the " +
+        'work is already done. Ending the run with no build (tester_passed_early, exit 2).',
+    );
+  } else {
+    deps.renderer.info("the check fails on the tester's test, as it must; building");
+  }
+  return { ...checked, check: null, tester_check: result };
+}
+
+/** `skip_red`: the tester alone crossed the cost cap, so the check is recorded
+ * as skipped, and the guard halts the run on the cap with no build (D21). */
+export function skip_red_phase(deps: PhaseDeps, s: LoopState): LoopState {
+  deps.renderer.warn('cost cap crossed during the tester; skipping the check, the build and the critic');
+  return { ...s, tester_check: skipped_check('cost_cap') };
+}
+
 /** `build`: one builder session at the build's rung edits the build root, then
- * volley measures what it changed and, under `--git`, checkpoints it. */
+ * volley measures what it changed, its tester's untouched test aside, and,
+ * under `--git`, checkpoints it. It opens the iteration, unless the tester
+ * already did. */
 export async function build_phase(
   deps: PhaseDeps,
   builders: BuilderLadder,
@@ -254,8 +340,9 @@ export async function build_phase(
   ctx: RunContext,
 ): Promise<LoopState> {
   const { config, renderer } = deps;
-  const next = climb(config, s, next_iteration(s));
-  emit(ctx, { volley: 'round_start', round: next.iteration });
+  const opened = tester_opened(s);
+  const next = climb(config, s, opened ? s : next_iteration(s));
+  if (!opened) emit(ctx, { volley: 'round_start', round: next.iteration });
   renderer.phase_start(next.iteration, 'builder');
   if (next.rung !== null) renderer.rung(next.iteration, next.rung, next.climbed);
   const built = await run_builder(
@@ -278,7 +365,7 @@ export async function build_phase(
   // check's verdict and the builder's reach are two independent facts about
   // the same iteration rather than one inferred from the other.
   const root = build_root(config.workspace, config.worktree);
-  const changes = measure_changes(deps, root);
+  const changes = measure_changes(deps, root, built.tester_hashes);
   if (config.git_checkpoints) {
     git_checkpoint(
       root,

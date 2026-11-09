@@ -139,22 +139,33 @@ the guard that decides when the loop stops.
 
 <!-- flow diagram: pnpm diagram -->
 ```text
-volley                                loop: one round per iteration, up to max_iterations
-├─ iteration                          sequence
-│  ├─ build                           open the iteration, run the builder, measure the change
-│  │  └─ builder                      model call: one agentic session in the build root
-│  ├─ verify                          branch: did the build alone cross the cost cap?
-│  │  ├─ then  skip_verify            record the check as skipped and call no critic
+volley                                      loop: one round per iteration, up to max_iterations
+├─ iteration                                sequence
+│  ├─ test                                  branch: does the tester open this iteration? (--tester on, the run's first)
+│  │  ├─ then  sequence
+│  │  │  ├─ write_test                      open the iteration, run the tester, record what it wrote
+│  │  │  │  └─ tester                       model call writing a failing test under the test and fixture gate paths
+│  │  │  └─ red                             branch: did the tester alone cross the cost cap?
+│  │  │     ├─ then  skip_red               record the check as skipped and build nothing
+│  │  │     └─ else  red_check              the check, which must fail on the tester's test
+│  │  └─ else  no_test                      no tester this iteration
+│  ├─ work                                  branch: did the test phase end the run: a green check, or the cost cap?
+│  │  ├─ then  hold                         build nothing, and leave the run to the guard
 │  │  └─ else  sequence
-│  │     ├─ check                     the deterministic gate: checkride, a command, or none
-│  │     └─ critique                  the read-only critic's verdict and feedback
-│  │        └─ critic                 fallback: judge without tools if a critic on any provider but claude_cli keeps dying or runs out of steps
-│  │           ├─ retry               one more try after a stream death, on any provider but claude_cli
-│  │           │  └─ critic_tools     model call with read-only workspace tools
-│  │           └─ pipe                mark the verdict degraded
-│  │              └─ critic_toolless  model call judging from the check output and a file list
-│  └─ record                          archive the iteration and rewrite the run summary
-└─ guard  gate                        stop on approval over a green check, the cost cap, or a gate edit
+│  │     ├─ build                           open the iteration unless the tester did, run the builder, measure the change
+│  │     │  └─ builder                      model call: one agentic session in the build root
+│  │     └─ verify                          branch: did the build alone cross the cost cap?
+│  │        ├─ then  skip_verify            record the check as skipped and call no critic
+│  │        └─ else  sequence
+│  │           ├─ check                     the deterministic gate: checkride, a command, or none
+│  │           └─ critique                  the read-only critic's verdict and feedback
+│  │              └─ critic                 fallback: judge without tools if a critic on any provider but claude_cli keeps dying or runs out of steps
+│  │                 ├─ retry               one more try after a stream death, on any provider but claude_cli
+│  │                 │  └─ critic_tools     model call with read-only workspace tools
+│  │                 └─ pipe                mark the verdict degraded
+│  │                    └─ critic_toolless  model call judging from the check output and a file list
+│  └─ record                                archive the iteration and rewrite the run summary
+└─ guard  gate                              stop on approval over a green check, the cost cap, a gate edit, or a green check before any build
 ```
 
 `pnpm diagram` prints the same tree from a checkout. A test holds this copy and
@@ -265,8 +276,8 @@ checkride.
 | Code | Meaning |
 |---|---|
 | 0 | Check passed and verdict approved. |
-| 2 | Max iterations reached without success; for `volley critique`, the critic asked for changes or the check failed. |
-| 3 | Builder/provider error. |
+| 2 | Max iterations reached without success; for `volley critique`, the critic asked for changes or the check failed; with `--tester on`, the check passed on the tester's test before any build (`tester_passed_early`). |
+| 3 | Builder, tester or provider error. |
 | 4 | Check pipeline error (broken pipeline, not failing checks). |
 | 5 | Configuration error. |
 | 6 | Critic error (schema validation failed after repair attempts). |
@@ -1041,6 +1052,16 @@ the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
   order, and `comparison.ladder_flat`, true when every build ran at one effort,
   an ignored effort counting as the provider's own
   ([The effort ladder](#the-effort-ladder)).
+- **The tester.** With `--tester on`, iteration 1's `summary.json` records
+  `tester` (its session, as `builder` and `critic` are), `tester_check` (the
+  check run right after it, which must fail), and `tester_changes` (what it
+  wrote, measured as `changes` is). Every iteration carries `tester_hashes`,
+  each file the tester wrote by its content hash after it ran: a build that
+  leaves one at that hash isn't counted as a gate edit there, and one that
+  changes it is. A run that passes its check before any build has a null
+  `builder` and `check`, and ends `tester_passed_early`. The run's
+  `summary.json` and its `comparison` carry `tester_cost_usd` beside the other
+  two seats' costs.
 - **Older runs.** An older volley kept the same files in the workspace's
   `.volley/`. `volley resume` still finds such a run there, and resumes it in
   place once you pass `--trust-config`, since an older volley signed nothing

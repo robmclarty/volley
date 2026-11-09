@@ -25,6 +25,9 @@ export function exit_code_for_status(status: RunStatus): number {
     case 'budget_exhausted':
     // A critique that didn't pass exits as a run that didn't converge does.
     case 'rejected':
+    // The check passed before any build: nothing converged, and nothing was
+    // built to (move 1's D17).
+    case 'tester_passed_early':
       return EXIT_BUDGET_EXHAUSTED;
     case 'cost_cap_reached':
       return EXIT_COST_CAP;

@@ -141,7 +141,7 @@ export function step_records(result: GenerateResult<unknown>): BuilderStepRecord
  * builder's record also carries its session's turns. */
 export function accumulate(
   state: LoopState,
-  role: 'builder' | 'critic',
+  role: 'builder' | 'critic' | 'tester',
   result: GenerateResult<unknown>,
   model: string,
   duration_ms?: number,
@@ -157,6 +157,7 @@ export function accumulate(
     iteration_cost_usd: state.iteration_cost_usd + cost,
     builder_cost_usd: state.builder_cost_usd + (role === 'builder' ? cost : 0),
     critic_cost_usd: state.critic_cost_usd + (role === 'critic' ? cost : 0),
+    tester_cost_usd: state.tester_cost_usd + (role === 'tester' ? cost : 0),
     cost_warned: state.cost_warned || record.cost_usd === null,
   };
 }

@@ -87,6 +87,7 @@ const PHASE_WORDS: Record<VolleyPhase, string> = {
   builder: 'the build',
   check: 'the check',
   critic: 'the critique',
+  tester: "the tester's test",
 };
 
 function rounds(count: number): string {

@@ -12,15 +12,26 @@
  * dry run's probe of it; the flow runs it.
  */
 import { model_call } from 'fascicle';
-import type { Engine, GenerateOptions, GenerateResult, Step, StreamChunk, Tool } from 'fascicle';
+import type {
+  Engine,
+  GenerateOptions,
+  GenerateResult,
+  RunContext,
+  Step,
+  StreamChunk,
+  Tool,
+} from 'fascicle';
 import {
   settings_args,
   tester_allowed_tools,
   TESTER_DISALLOWED_TOOLS,
 } from '../claude_cli_permissions.js';
+import { ignores_effort } from '../config.js';
+import { accumulate } from '../cost.js';
 import { seat_base_url } from '../engine.js';
 import { prewarm_ollama_model } from '../prewarm.js';
-import type { ResolvedConfig } from '../types.js';
+import { phase_error } from '../types.js';
+import type { LoopState, ResolvedConfig } from '../types.js';
 import { read_only_tools, workspace_inventory } from '../workspace_tools.js';
 import { build_root } from '../worktree.js';
 import { compose_tester_prompt, resolve_tester_prompt } from './prompt.js';
@@ -80,8 +91,12 @@ function tester_tool_options(
   };
 }
 
+/** The tester's model boundary: one session, its output the whole result,
+ * from which the phase records its usage, cost and timing. */
+export type TesterStep = Step<string, GenerateResult<string>>;
+
 /** The tester's one call: its system prompt, its tools, the critic's effort. */
-export function make_tester_step(deps: TesterDeps): Step<string, GenerateResult<string>> {
+export function make_tester_step(deps: TesterDeps): TesterStep {
   const { config } = deps;
   return model_call({
     engine: deps.engine,
@@ -105,6 +120,36 @@ export function tester_prompt(config: ResolvedConfig): string {
     check: config.check,
     inventory: workspace_inventory(build_root(config.workspace, config.worktree)),
   });
+}
+
+/** Run the tester's session on the iteration `state` opened, folding its
+ * record and spend into the state as `tester` (D21). A failure is a phase
+ * error of its own, which exits as a provider error does. */
+export async function run_tester(
+  tester: TesterStep,
+  config: ResolvedConfig,
+  state: LoopState,
+  ctx: RunContext,
+): Promise<LoopState> {
+  try {
+    // The cold-load guard every Ollama seat takes, on the critic's server.
+    if (config.critic_provider === 'ollama') {
+      await prewarm_ollama_model(
+        seat_base_url('ollama', config.critic_url, process.env),
+        tester_model(config),
+        ctx.abort,
+      );
+    }
+    const result = await ctx.call(tester, tester_prompt(config));
+    const tested = accumulate(state, 'tester', result, tester_model(config));
+    // An effort its provider drops (ollama, lmstudio) is said on the record.
+    if (config.critic_effort === null || !ignores_effort(config.critic_provider)) return tested;
+    return tested.tester === null
+      ? tested
+      : { ...tested, tester: { ...tested.tester, effort_ignored: true } };
+  } catch (err) {
+    throw phase_error('tester', state.iteration, err);
+  }
 }
 
 /** What the dry run learned about a local tester seat. */

@@ -21,6 +21,9 @@
  * fetch — the critic learns *where* to look, then looks.
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { command_env } from './engine.js';
 import { config_error } from './types.js';
 import type { ChangeSet, ChangeStatus, ChangedFile } from './types.js';
@@ -274,5 +277,71 @@ export function collect_changes(options: CollectChangesOptions): ChangeSet | nul
     total: sorted.length,
     files: sorted.slice(0, limit),
     truncated: sorted.length > limit,
+  };
+}
+
+/** A file's content hash under `root`, or null when it can't be read (gone,
+ * or a directory). */
+function hash_file(root: string, path: string): string | null {
+  try {
+    return createHash('sha256').update(readFileSync(join(root, path))).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/** Every changed path in `root` since the baseline, by its content hash: what
+ * the build root holds before the tester writes, so what it writes can be told
+ * from a workspace that was dirty to begin with. Empty outside a git
+ * repository, where nothing is measured. */
+export function snapshot_changes(options: CollectChangesOptions): Map<string, string | null> {
+  const changes = collect_changes({ ...options, limit: Number.POSITIVE_INFINITY });
+  return new Map((changes?.files ?? []).map((file) => [file.path, hash_file(options.root, file.path)]));
+}
+
+/** What the tester wrote: the changes since the baseline whose content isn't
+ * what the snapshot taken before it held, as a change set of their own, and
+ * each written file's hash, which a later build is measured against (move 1's
+ * D9, D22). Null and none outside a git repository. */
+export function tester_written(
+  options: CollectChangesOptions,
+  before: ReadonlyMap<string, string | null>,
+): { changes: ChangeSet | null; hashes: Record<string, string> } {
+  const after = collect_changes({ ...options, limit: Number.POSITIVE_INFINITY });
+  if (after === null) return { changes: null, hashes: {} };
+  const hashes: Record<string, string> = {};
+  const files = after.files.filter((file) => {
+    const hash = hash_file(options.root, file.path);
+    if (before.has(file.path) && before.get(file.path) === hash) return false;
+    if (hash !== null) hashes[file.path] = hash;
+    return true;
+  });
+  return {
+    changes: {
+      baseline: after.baseline,
+      gate_edits: files.filter((file) => file.gate).map((file) => file.path),
+      total: files.length,
+      files,
+      truncated: false,
+    },
+    hashes,
+  };
+}
+
+/** `changes` with the tester's files taken out of its gate edits, unless the
+ * build changed one from the hash it had after the tester: the tester editing
+ * the gate is the point, and a builder that left its test alone didn't (D9).
+ * A file the build deleted no longer hashes as it did, so it stays an edit. */
+export function without_tester_edits(
+  changes: ChangeSet | null,
+  root: string,
+  hashes: Readonly<Record<string, string>>,
+): ChangeSet | null {
+  if (changes === null || Object.keys(hashes).length === 0) return changes;
+  return {
+    ...changes,
+    gate_edits: changes.gate_edits.filter(
+      (path) => hashes[path] === undefined || hash_file(root, path) !== hashes[path],
+    ),
   };
 }

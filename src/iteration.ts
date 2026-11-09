@@ -104,6 +104,20 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
   };
 }
 
+/** A check as the iteration archive records it, its artifacts aside. */
+function check_summary(check: CheckResult | null): Record<string, unknown> | null {
+  return check === null
+    ? null
+    : {
+        ran: check.ran,
+        runner: check.runner,
+        ok: check.ok,
+        exit_code: check.exit_code,
+        duration_ms: check.duration_ms,
+        failing_slots: check.failing_slots,
+      };
+}
+
 /** Archive one completed iteration: verdict files, check artifacts, and the
  * per-iteration summary. */
 export function archive_iteration(config: ResolvedConfig, state: LoopState): void {
@@ -157,18 +171,17 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
     // it ran at the provider's own whatever its rung. Additive.
     effort_ignored: state.builder?.effort_ignored === true,
     builder: phase_summary(state.builder),
-    check:
-      check === null
-        ? null
-        : {
-            ran: check.ran,
-            runner: check.runner,
-            ok: check.ok,
-            exit_code: check.exit_code,
-            duration_ms: check.duration_ms,
-            failing_slots: check.failing_slots,
-          },
+    check: check_summary(check),
     critic: phase_summary(state.critic),
+    // The tester's session, the check right after it, which had to fail, and
+    // what it wrote, in the iteration it opened; null in every other. Its
+    // files' hashes ride in every iteration, since a resume reads them back
+    // to tell a builder's edit to the tester's test from the test itself.
+    // Additive.
+    tester: phase_summary(state.tester),
+    tester_check: check_summary(state.tester_check),
+    tester_changes: state.tester_changes,
+    tester_hashes: state.tester_hashes,
     // What the builder reached for this iteration (`src/changes.ts`), archived
     // beside the check's verdict so the two can be read against each other after
     // the fact: green + a gate edit is a different result from green alone.
@@ -200,6 +213,7 @@ export function run_result_from_state(
     total_cost_usd: state.total_cost_usd,
     builder_cost_usd: state.builder_cost_usd,
     critic_cost_usd: state.critic_cost_usd,
+    tester_cost_usd: state.tester_cost_usd,
     check_duration_ms: state.check_duration_ms,
     builder_max_steps_hits: state.builder_max_steps_hits,
     final_verdict: state.verdict,
@@ -320,6 +334,7 @@ type ArchivedRound = {
   rung?: unknown;
   climbed?: unknown;
   builder?: unknown;
+  tester_hashes?: unknown;
   check?: {
     ran?: unknown;
     runner?: unknown;
@@ -415,6 +430,15 @@ function archived_rung(recorded: unknown): EffortRung | null {
   return (EFFORT_RUNGS as ReadonlyArray<unknown>).includes(recorded) ? (recorded as EffortRung) : null;
 }
 
+/** Archived tester hashes, path to hash; anything else in the record is
+ * dropped, and an archive older than them has none. */
+function archived_hashes(recorded: unknown): Record<string, string> {
+  if (typeof recorded !== 'object' || recorded === null) return {};
+  return Object.fromEntries(
+    Object.entries(recorded).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+}
+
 function archived_climb(recorded: unknown): ClimbReason | null {
   return recorded === 'check_failed' || recorded === 'critic_rejected' ? recorded : null;
 }
@@ -428,8 +452,10 @@ function archived_climb(recorded: unknown): ClimbReason | null {
 function archived_round(
   run: StateLocation,
   completed: number,
-): Pick<LoopState, 'check' | 'builder' | 'builds' | 'rung' | 'climbed'> {
-  if (completed === 0) return { check: null, builder: null, builds: 0, rung: null, climbed: null };
+): Pick<LoopState, 'check' | 'builder' | 'builds' | 'rung' | 'climbed' | 'tester_hashes'> {
+  if (completed === 0) {
+    return { check: null, builder: null, builds: 0, rung: null, climbed: null, tester_hashes: {} };
+  }
   const dir = iteration_dir(run, completed);
   const recorded = read_json(join(dir, 'summary.json')) as ArchivedRound | null;
   const builds = recorded?.builds;
@@ -439,6 +465,7 @@ function archived_round(
     builds: typeof builds === 'number' && Number.isInteger(builds) && builds >= 0 ? builds : completed,
     rung: archived_rung(recorded?.rung),
     climbed: archived_climb(recorded?.climbed),
+    tester_hashes: archived_hashes(recorded?.tester_hashes),
   };
 }
 
@@ -576,10 +603,16 @@ export function load_resume_state(
     // captured at resume — a resumed run reports what it changes from there.
     changes: null,
     critic: null,
+    // The tester ran in iteration 1, which a resume past it never repeats.
+    tester: null,
+    tester_check: null,
+    tester_changes: null,
     total_usage: summary?.total_usage ?? EMPTY_USAGE,
     total_cost_usd: summary?.total_cost_usd ?? 0,
     builder_cost_usd: summary?.builder_cost_usd ?? 0,
     critic_cost_usd: summary?.critic_cost_usd ?? 0,
+    // An older volley's summary has none.
+    tester_cost_usd: summary?.tester_cost_usd ?? 0,
     check_duration_ms: summary?.check_duration_ms ?? 0,
     // An older volley's summary has no count.
     builder_max_steps_hits: summary?.builder_max_steps_hits ?? 0,

@@ -66,6 +66,7 @@ function run_result(overrides: Partial<RunResult> = {}): RunResult {
     total_cost_usd: 0.42,
     builder_cost_usd: 0.3,
     critic_cost_usd: 0.12,
+    tester_cost_usd: 0,
     check_duration_ms: 4200,
     builder_max_steps_hits: 0,
     final_verdict: 'approved',

@@ -40,6 +40,7 @@ export type RendererOptions = {
 export type Renderer = {
   builder_chunk: (chunk: StreamChunk) => void;
   critic_chunk: (chunk: StreamChunk) => void;
+  tester_chunk: (chunk: StreamChunk) => void;
   phase_start: (iteration: number, phase: Role) => void;
   phase_end: (iteration: number, phase: Role, ok: boolean, detail?: string) => void;
   /** The effort this iteration's build runs at, one line per build when a
@@ -117,6 +118,7 @@ export function create_renderer(options: RendererOptions): Renderer {
   return {
     builder_chunk: chunk_renderer('builder'),
     critic_chunk: chunk_renderer('critic'),
+    tester_chunk: chunk_renderer('tester'),
     phase_start: (iteration, phase) => {
       if (mode === 'json') return;
       line(paint(phase, `${GLYPH_PHASE_START} [iter ${String(iteration)}] ${phase}`, color));
@@ -165,7 +167,8 @@ export function create_renderer(options: RendererOptions): Renderer {
       line(
         paint(
           'cost',
-          `${GLYPH_COST} total: ${format_usd(result.total_cost_usd)} (builder ${format_usd(result.builder_cost_usd)}, critic ${format_usd(result.critic_cost_usd)})`,
+          `${GLYPH_COST} total: ${format_usd(result.total_cost_usd)} (builder ${format_usd(result.builder_cost_usd)}, critic ${format_usd(result.critic_cost_usd)}` +
+            `${result.tester_cost_usd > 0 ? `, tester ${format_usd(result.tester_cost_usd)}` : ''})`,
           color,
         ),
       );
