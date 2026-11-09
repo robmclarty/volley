@@ -35,6 +35,38 @@ export const CRITIC_ALLOWED_TOOLS = ['Read(/**)'] as const;
 
 export const CRITIC_DISALLOWED_TOOLS = 'Write,Edit,MultiEdit,NotebookEdit,Bash';
 
+/** A gate pattern an `Edit(...)` rule can carry: one with no space, comma or
+ * parenthesis, which the CLI would read as the rule list's own syntax. One
+ * that can't be carried is left out, so the tester can write less, never
+ * more. */
+function rule_safe(pattern: string): boolean {
+  return !/[\s,()]/.test(pattern);
+}
+
+/** A `claude_cli` tester's allowlist (move 1's D19): reads anywhere in the
+ * build root, and one `Edit` rule per writable gate pattern
+ * (`writable_gate_patterns`), anchored at the build root. The tester runs in
+ * the CLI's default permission mode, where an edit no rule allows is refused,
+ * since `-p` has no one to ask. */
+export function tester_allowed_tools(writable: ReadonlyArray<string>): string[] {
+  return [
+    'Read(/**)',
+    ...writable.filter(rule_safe).map((pattern) => `Edit(/${pattern.replace(/^\/+/, '')})`),
+  ];
+}
+
+/** What a `claude_cli` tester is refused outright: a shell and notebooks, and
+ * an edit to the files the gate patterns cover that configure the check rather
+ * than test the work (D20). A deny rule wins over the allowlist in every
+ * permission mode. */
+export const TESTER_DISALLOWED_TOOLS = [
+  'Bash',
+  'NotebookEdit',
+  'Edit(/**/package.json)',
+  'Edit(/**/*.config.*)',
+  'Edit(/**/.github/**)',
+].join(',');
+
 const PERMISSION_BLOCKS = {
   permissions: {
     blockWritesOutsideWorkingDirectories: true,

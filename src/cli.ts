@@ -35,6 +35,7 @@ import type {
   EffortRung,
   ResolvedConfig,
   RunResult,
+  TesterSetting,
   VolleyConfig,
 } from './types.js';
 import { default_state_root, state_path } from './workspace.js';
@@ -61,6 +62,8 @@ export type CliFlags = {
   criticProvider?: string;
   criticUrl?: string;
   criticEffort?: string;
+  tester?: string;
+  testerModel?: string;
   builderPermissionMode?: string;
   critic?: string;
   maxIterations?: number;
@@ -262,6 +265,8 @@ const CRITIQUE_REFUSED_OPTIONS = [
   '--builder-max-output-tokens <n>',
   '--builder-trim-history <tokens>',
   '--effort-ladder <rungs>',
+  '--tester <on|off>',
+  '--tester-model <model>',
   '--builder-permission-mode <mode>',
   '--allow-unsandboxed-builder',
   '--sandbox-image <tag>',
@@ -310,6 +315,8 @@ export function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
       : {}),
     ...(flags.criticUrl !== undefined ? { critic_url: flags.criticUrl } : {}),
     ...(flags.criticEffort !== undefined ? { critic_effort: flags.criticEffort as EffortRung } : {}),
+    ...(flags.tester !== undefined ? { tester: String(flags.tester) as TesterSetting } : {}),
+    ...(flags.testerModel !== undefined ? { tester_model: String(flags.testerModel) } : {}),
     ...(flags.builderPermissionMode !== undefined
       ? { builder_permission_mode: flags.builderPermissionMode as BuilderPermissionMode }
       : {}),
@@ -390,6 +397,8 @@ async function main(argv: string[]): Promise<number> {
   with_seat_options(run_command)
     .option('--builder-permission-mode <mode>', 'acceptEdits | bypassPermissions')
     .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
+    .option('--tester <on|off>', "Before the first build, a tester on the critic's seat writes a failing test from the criteria under the test and fixture gate paths; needs a check (default: off)")
+    .option('--tester-model <model>', "The tester's model, with --tester on (default: the critic's)")
     .option('--max-iterations <n>', 'Iteration cap')
     .option('--max-cost-usd <usd>', 'Hard USD ceiling, enforced in the loop guard')
     .option('--git', 'Auto-commit after each phase (workspace must be a git repo)')

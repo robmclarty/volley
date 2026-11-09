@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 12 — fix(resume): keep the effort ladder and critic effort across a resume
+**Current step:** 5 — feat(tester): the tester seat's config, prompt and tools
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -34,7 +34,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☐ 9. feat(protocol): the runciter.run/1 schemas and the input mapping
 - ☐ 10. feat(cli): `volley run --protocol runciter.run/1`
 - ☐ 11. docs(protocol): the protocol mode and its conformance fixture
-- ☐ 12. fix(resume): keep the effort ladder and critic effort across a resume
+- ☑ 12. fix(resume): keep the effort ladder and critic effort across a resume
 
 ## Park list
 
@@ -190,3 +190,5 @@ folder, so it rides the branch into the PR.)*
   `effort_ladder` and `critic_effort` aren't written to `config.json` (`src/workspace.ts`), and `load_resume_state` doesn't read them back, so `volley resume` on a laddered run sends no effort unless `VOLLEY_EFFORT_LADDER` is set again. The rung count does survive (item 4), so setting the variable puts the run back on the right rung. That's parked as P1. The README's Resume section says so, because T4 (truthful-docs) wants limits stated.
 
   The proposed fold, if P1 is a blocker: a new step that builds ahead of step 5 in range 2, `fix(resume): keep the effort ladder and critic effort across a resume`, with seam `src/workspace.ts`, `src/iteration.ts`, `test/integration/resume.test.ts` and `README.md`. It's done when `config.json` records both fields, `load_resume_state` reads them back, a resume test runs build 3 at the third rung with no env var set, and the README's limit line is gone. Going first sets the pattern step 5's `tester` and `tester_model` settings need, since they'll have to survive a resume too.
+
+- 2026-11-09 — step 12 checkpointed · ad455eef6 — fix(resume): keep the effort ladder and critic effort across a resume (3m)

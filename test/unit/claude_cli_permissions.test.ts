@@ -7,8 +7,12 @@ import {
   MIN_CLAUDE_WRITE_BLOCK,
   parse_claude_version,
   settings_args,
+  tester_allowed_tools,
+  TESTER_DISALLOWED_TOOLS,
   version_below,
 } from '../../src/claude_cli_permissions.js';
+import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
+import { writable_gate_patterns } from '../../src/tester/tools.js';
 
 describe('claude_cli seat permissions', () => {
   it("scopes the builder's file tools to the build root, and lists no bare file tool", () => {
@@ -18,6 +22,35 @@ describe('claude_cli seat permissions', () => {
   it('gives the critic scoped reads and disallows every write and Bash', () => {
     expect(CRITIC_ALLOWED_TOOLS).toEqual(['Read(/**)']);
     expect(CRITIC_DISALLOWED_TOOLS).toBe('Write,Edit,MultiEdit,NotebookEdit,Bash');
+  });
+
+  it("gives the tester scoped reads and one Edit rule per writable gate pattern, and no Bash", () => {
+    expect(tester_allowed_tools(writable_gate_patterns(DEFAULT_GATE_PATTERNS))).toEqual([
+      'Read(/**)',
+      'Edit(/**/*.test.*)',
+      'Edit(/**/*.spec.*)',
+      'Edit(/**/*_test.*)',
+      'Edit(/**/test/**)',
+      'Edit(/**/tests/**)',
+      'Edit(/**/__tests__/**)',
+      'Edit(/**/spec/**)',
+      'Edit(/**/fixtures/**)',
+    ]);
+    const disallowed = TESTER_DISALLOWED_TOOLS.split(',');
+    expect(disallowed).toContain('Bash');
+    expect(disallowed).toContain('NotebookEdit');
+    // The files a test pattern can reach that configure the check (D20).
+    expect(disallowed).toEqual(
+      expect.arrayContaining(['Edit(/**/package.json)', 'Edit(/**/*.config.*)', 'Edit(/**/.github/**)']),
+    );
+  });
+
+  it("leaves out a tester pattern a rule can't carry, so the tester writes less, not more", () => {
+    expect(tester_allowed_tools(['test/**', 'odd dir/**', 'a,b/**', 'x(y)/**', '/spec/**'])).toEqual([
+      'Read(/**)',
+      'Edit(/test/**)',
+      'Edit(/spec/**)',
+    ]);
   });
 
   it('turns on both blocks through --settings', () => {

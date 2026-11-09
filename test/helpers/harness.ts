@@ -82,6 +82,8 @@ export function test_config(overrides: Partial<ResolvedConfig> & { workspace: st
     critic_provider: 'claude_cli',
     critic_url: null,
     critic_effort: null,
+    tester: false,
+    tester_model: null,
     builder_permission_mode: 'acceptEdits',
     critic_preset: 'reviewer',
     critic_prompt_path: null,

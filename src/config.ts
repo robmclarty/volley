@@ -11,9 +11,11 @@ import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_check_runner } from './check/detect.js';
 import { detect_containment } from './containment.js';
 import { openrouter_api_key, SEAT_URL_PROVIDERS, takes_seat_url } from './engine.js';
+import { writable_gate_patterns } from './tester/tools.js';
 import { config_error } from './types.js';
 import { default_state_root, RUN_ID_PATTERN } from './workspace.js';
 import type {
+  CheckRunnerKind,
   RunMode,
   BuilderPermissionMode,
   BuilderProvider,
@@ -190,6 +192,8 @@ const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
   ['builder_max_output_tokens', '--builder-max-output-tokens'],
   ['builder_trim_history', '--builder-trim-history'],
   ['effort_ladder', '--effort-ladder'],
+  ['tester', '--tester'],
+  ['tester_model', '--tester-model'],
   ['builder_permission_mode', '--builder-permission-mode'],
   ['allow_unsandboxed_builder', '--allow-unsandboxed-builder'],
   ['sandbox_image', '--sandbox-image'],
@@ -203,7 +207,7 @@ const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
 
 function refuse_builder_settings(raw: VolleyConfig): void {
   for (const [field, flag] of CRITIQUE_REFUSED) {
-    if (raw[field] !== undefined && raw[field] !== false) {
+    if (raw[field] !== undefined && raw[field] !== false && raw[field] !== 'off') {
       throw config_error(
         `volley critique refuses ${flag} (${field}): a critique runs no builder and no loop`,
       );
@@ -352,6 +356,74 @@ function resolve_critic_effort(
   const given = value ?? (env_value === '' ? undefined : env_value);
   if (given !== undefined && given !== null) return effort_rung(given, CRITIC_EFFORT);
   return ladder === null ? null : DEFAULT_LADDER_CRITIC_EFFORT;
+}
+
+/** `--tester` (`tester`) wins over `VOLLEY_TESTER`, and takes `on` or `off`;
+ * an empty variable counts as unset, and unset is off (move 1's D8). */
+function resolve_tester(value: unknown, env: Record<string, string | undefined>): boolean {
+  const env_value = env['VOLLEY_TESTER'];
+  const given = value ?? (env_value === '' ? undefined : env_value);
+  if (given === undefined || given === null) return false;
+  const setting = typeof given === 'string' ? given.trim() : given;
+  if (setting === 'on' || setting === 'off') return setting === 'on';
+  throw config_error(`--tester (tester) / VOLLEY_TESTER takes on or off; got: ${JSON.stringify(given)}`);
+}
+
+/** The tester's model with the tester on: `--tester-model` (`tester_model`),
+ * else `VOLLEY_TESTER_MODEL`, else the critic's. With it off, null, and a
+ * model named by flag or config is refused rather than ignored; the variable,
+ * which may be set for every run, is left unread. */
+function resolve_tester_model(
+  tester: boolean,
+  value: unknown,
+  env: Record<string, string | undefined>,
+  critic_model: string,
+): string | null {
+  const named = typeof value === 'string' ? value.trim() : value;
+  if (!tester) {
+    if (named === undefined || named === null || named === '') return null;
+    throw config_error('--tester-model (tester_model) applies only with --tester on');
+  }
+  if (named !== undefined && named !== null && named !== '') {
+    if (typeof named !== 'string') {
+      throw config_error(`--tester-model (tester_model) must be a model name; got a ${typeof named}`);
+    }
+    return named;
+  }
+  const env_value = env['VOLLEY_TESTER_MODEL']?.trim();
+  return env_value === undefined || env_value === '' ? critic_model : env_value;
+}
+
+/** Refuse a tester that can't do its job, or can't be contained, before any
+ * spend (P1). It needs a check to go red (D18), a test or fixture gate pattern
+ * to write under, and, on any provider but `claude_cli`, the containment a
+ * builder needs, since the check runs what it writes (D14). Under acp, where
+ * a person approves each edit, a local tester isn't refused here. */
+function refuse_unready_tester(
+  check_resolved: CheckRunnerKind,
+  gate_paths: ReadonlyArray<string>,
+  critic_provider: CriticProvider,
+  guarded: boolean,
+): void {
+  if (check_resolved === 'none') {
+    throw config_error(
+      '--tester on needs a check for its test to fail: set --check to a command, or to auto ' +
+        'in a workspace with checkride, rather than none',
+    );
+  }
+  if (writable_gate_patterns(gate_paths).length === 0) {
+    throw config_error(
+      '--tester on needs a test or fixture gate pattern to write under; gate_paths names none',
+    );
+  }
+  if (critic_provider !== 'claude_cli' && !guarded) {
+    throw config_error(
+      `a tester on '${critic_provider}' writes tests the check then runs, so it is contained as a ` +
+        `builder is: launch volley inside its sandbox container (VOLLEY_CONTAINED=1), or pass ` +
+        `--allow-unsandboxed-builder (VOLLEY_ALLOW_UNSANDBOXED_BUILDER=1). A claude_cli builder ` +
+        `stays on the host, so with one, the opt-out is the only way.`,
+    );
+  }
 }
 
 /** `--sandbox-image` (a merged flag/config value) wins over the
@@ -672,6 +744,20 @@ export function resolve_config(
     throw config_error('gate_paths must be an array of glob strings');
   }
 
+  const check = raw.check ?? DEFAULT_CHECK;
+  const check_resolved = resolve_check_runner(check, workspace);
+  const tester = resolve_tester(raw.tester, builder_env);
+  if (tester) {
+    refuse_unready_tester(
+      check_resolved,
+      gate_paths,
+      critic_provider,
+      options.uncontained_builder === 'ask' || !unguarded_builder(raw, builder_env),
+    );
+  }
+  const critic_model = raw.critic_model ?? DEFAULT_CRITIC_MODEL;
+  const tester_model = resolve_tester_model(tester, raw.tester_model, builder_env, critic_model);
+
   const sandbox_image = resolve_sandbox_image(raw, builder_env);
   const state_dir =
     options.state_dir !== undefined ? options.state_dir : resolve_state_dir(raw.state_dir, cwd, env);
@@ -683,7 +769,6 @@ export function resolve_config(
   const run_id = resolve_run_id(options.run_id);
   // A legacy `.volley/` lives in the workspace, already checked writable.
   if (state_dir !== null) validate_run_state_dir(join(state_dir, run_id), contained);
-  const check = raw.check ?? DEFAULT_CHECK;
 
   return {
     version: 2,
@@ -693,7 +778,7 @@ export function resolve_config(
     prompt,
     criteria,
     check,
-    check_resolved: resolve_check_runner(check, workspace),
+    check_resolved,
     builder_model: raw.builder_model ?? DEFAULT_BUILDER_MODEL,
     builder_provider,
     builder_url,
@@ -703,10 +788,12 @@ export function resolve_config(
     builder_trim_history,
     effort_ladder,
     allow_unsandboxed_builder,
-    critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
+    critic_model,
     critic_provider,
     critic_url,
     critic_effort,
+    tester,
+    tester_model,
     builder_permission_mode,
     critic_preset,
     critic_prompt_path,

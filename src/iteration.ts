@@ -538,6 +538,13 @@ export function load_resume_state(
     ...(typeof recorded['critic_effort'] === 'string'
       ? { critic_effort: recorded['critic_effort'] as EffortRung }
       : {}),
+    // Off when the run left it off, as any run before it was recorded did,
+    // whatever VOLLEY_TESTER says now: a resume interrupted in iteration 1 runs
+    // the tester again only if the run had one.
+    tester: recorded['tester'] === true ? 'on' : 'off',
+    ...(recorded['tester'] === true && typeof recorded['tester_model'] === 'string'
+      ? { tester_model: recorded['tester_model'] }
+      : {}),
     builder_permission_mode: recorded['builder_permission_mode'] as BuilderPermissionMode,
     critic:
       recorded['critic_preset'] === 'custom'

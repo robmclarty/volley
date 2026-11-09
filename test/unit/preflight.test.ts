@@ -646,6 +646,108 @@ describe('preflight — critic-seat canary', () => {
   });
 });
 
+describe('preflight — the tester seat', () => {
+  /** A claude_cli builder and a local tester, opted out of the sandbox, with a
+   * check for the test to fail. `lmstudio` skips the ollama-only prewarm. */
+  function tester_config(workspace: string, extra: Record<string, unknown> = {}): ResolvedConfig {
+    return resolve_config(
+      {
+        ...base(workspace),
+        check: 'node --test',
+        critic_provider: 'lmstudio',
+        critic_model: 'local-critic',
+        tester: 'on',
+        allow_unsandboxed_builder: true,
+        ...extra,
+      },
+      { env: {} },
+    );
+  }
+
+  /** The critic's canary carries the verdict schema; the tester's doesn't. */
+  function seat_reply(tester: MockReply): (call: MockCall) => MockReply {
+    return (call) => (call.opts.schema === undefined ? tester : approve_reply());
+  }
+
+  it('names the seat and where it writes, and probes a local tester through read tools only', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const engines: ReturnType<typeof mock_engine>[] = [];
+      const code = await preflight(tester_config(workspace), renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => {
+          const engine = mock_engine(seat_reply({ content: 'canary' }));
+          engines.push(engine);
+          return engine;
+        },
+      });
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(output()).toContain('tester model: local-critic (provider: lmstudio');
+      expect(output()).toContain('tester writes: **/*.test.*, **/*.spec.*');
+      expect(output()).toContain('(not package.json, *.config.* or .github/)');
+      expect(output()).toContain('critic and tester model endpoint: reachable');
+      expect(output()).toContain("tester canary: ok (model 'local-critic' in the tester seat");
+      const tester_calls = engines.flatMap((engine) => engine.calls).filter((call) => call.opts.schema === undefined);
+      expect(tester_calls).toHaveLength(1);
+      expect(tester_calls[0]?.opts.tools?.map((tool) => tool.name)).toEqual([
+        'read_file',
+        'search_files',
+        'list_files',
+      ]);
+      expect(prompt_text(tester_calls[0])).toContain('Write nothing');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('exits 5 naming the tester seat when its canary fails', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      const code = await preflight(tester_config(workspace, { tester_model: 'tiny' }), renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => mock_engine(seat_reply({ content: null, error: new Error('model not found') })),
+      });
+      expect(code).toBe(EXIT_CONFIG_ERROR);
+      expect(output()).toContain(
+        "preflight: tester canary failed — model 'tiny' in the tester seat (provider: lmstudio): model not found",
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('names a claude_cli tester without a canary, and says when the tester is off', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const { renderer, output } = capturing_renderer();
+      let consulted = false;
+      const claude = resolve_config(
+        { ...base(workspace), check: 'node --test', tester: 'on', tester_model: 'haiku' },
+        { env: {} },
+      );
+      const code = await preflight(claude, renderer, {}, {
+        ...ALL_GREEN,
+        canary_engine: () => {
+          consulted = true;
+          return mock_engine(() => approve_reply());
+        },
+      });
+      expect(code).toBe(EXIT_SUCCESS);
+      expect(consulted).toBe(false);
+      expect(output()).toContain('tester model: haiku (provider: claude_cli)');
+      expect(output()).not.toContain('tester canary');
+
+      const off = capturing_renderer();
+      await preflight(claude_config(workspace), off.renderer, {}, ALL_GREEN);
+      expect(off.output()).toContain('tester: off');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('preflight — gate posture', () => {
   it('says the default posture: watched, reported, not refused', async () => {
     const { workspace, cleanup } = temp_workspace();

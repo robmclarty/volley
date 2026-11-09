@@ -1263,6 +1263,164 @@ describe('resolve_config: the effort ladder and the critic effort', () => {
   });
 });
 
+describe('resolve_config: the tester', () => {
+  /** A run with a check for the tester's test to fail. */
+  function checked(workspace: string) {
+    return { ...base(workspace), check: 'node --test' };
+  }
+
+  it('is off by default, with no model', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), { env: {} });
+      expect(config.tester).toBe(false);
+      expect(config.tester_model).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("takes the critic's model, unless --tester-model or VOLLEY_TESTER_MODEL names one", () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const on = merge_flags(checked(workspace), { tester: 'on', criticModel: 'sonnet' });
+      expect(resolve_config(on, { env: {} })).toMatchObject({ tester: true, tester_model: 'sonnet' });
+      expect(resolve_config(on, { env: { VOLLEY_TESTER_MODEL: 'haiku' } }).tester_model).toBe('haiku');
+      const named = merge_flags(on, { testerModel: 'opus' });
+      expect(resolve_config(named, { env: { VOLLEY_TESTER_MODEL: 'haiku' } }).tester_model).toBe('opus');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads VOLLEY_TESTER and a config file, the flag winning, and refuses anything but on or off', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(resolve_config(checked(workspace), { env: { VOLLEY_TESTER: 'on' } }).tester).toBe(true);
+      expect(resolve_config(checked(workspace), { env: { VOLLEY_TESTER: '' } }).tester).toBe(false);
+      const off = merge_flags(checked(workspace), { tester: 'off' });
+      expect(resolve_config(off, { env: { VOLLEY_TESTER: 'on' } }).tester).toBe(false);
+      expect(() =>
+        resolve_config(merge_flags(checked(workspace), { tester: 'yes' }), { env: {} }),
+      ).toThrow('--tester (tester) / VOLLEY_TESTER takes on or off; got: "yes"');
+
+      const path = join(workspace, 'volley.config.ts');
+      writeFileSync(
+        path,
+        `export default { prompt: 'p', workspace: '.', criteria: 'c', check: 'node --test', tester: 'on' };\n`,
+      );
+      expect(resolve_config(await load_config_file(path), { cwd: workspace, env: {} }).tester).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses --tester-model with the tester off, but leaves VOLLEY_TESTER_MODEL unread', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config(merge_flags(checked(workspace), { testerModel: 'opus' }), { env: {} }),
+      ).toThrow('--tester-model (tester_model) applies only with --tester on');
+      expect(
+        resolve_config(checked(workspace), { env: { VOLLEY_TESTER_MODEL: 'opus' } }).tester_model,
+      ).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses the tester with no check, naming --check, whether none or an auto that finds nothing', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const check of ['none', 'auto']) {
+        expect(() =>
+          resolve_config({ ...base(workspace), check, tester: 'on' }, { env: {} }),
+        ).toThrow('--tester on needs a check for its test to fail: set --check');
+      }
+      writeFileSync(join(workspace, 'checkride.config.json'), '{}\n');
+      expect(resolve_config({ ...base(workspace), check: 'auto', tester: 'on' }, { env: {} }).tester).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses the tester when no gate pattern names a test or fixture path', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      expect(() =>
+        resolve_config(
+          { ...checked(workspace), tester: 'on', gate_paths: ['**/package.json'] },
+          { env: {} },
+        ),
+      ).toThrow('--tester on needs a test or fixture gate pattern to write under');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a local tester uncontained and not opted out, a claude_cli builder included', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const critic_provider of ['ollama', 'lmstudio'] as const) {
+        const raw = { ...checked(workspace), tester: 'on' as const, critic_provider, critic_model: 'qwen3:8b' };
+        expect(() => resolve_config(raw, { env: {} })).toThrow(
+          `a tester on '${critic_provider}' writes tests the check then runs, so it is contained as a builder is`,
+        );
+        // The opt-out is the only way beside a claude_cli builder, which stays on the host.
+        expect(resolve_config({ ...raw, allow_unsandboxed_builder: true }, { env: {} }).tester).toBe(true);
+        expect(
+          resolve_config(raw, { env: { VOLLEY_ALLOW_UNSANDBOXED_BUILDER: '1' } }).tester,
+        ).toBe(true);
+        // Under acp a person approves each of its edits instead.
+        expect(resolve_config(raw, { env: {}, uncontained_builder: 'ask' }).tester).toBe(true);
+      }
+      // Contained, with a local builder too, it runs.
+      const contained = {
+        ...checked(workspace),
+        tester: 'on' as const,
+        builder_provider: 'ollama' as const,
+        critic_provider: 'ollama' as const,
+      };
+      expect(resolve_config(contained, { env: { VOLLEY_CONTAINED: '1' } }).tester).toBe(true);
+      // A claude_cli tester runs under its own permission list, on the host.
+      expect(resolve_config({ ...checked(workspace), tester: 'on' }, { env: {} }).tester).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('keeps the tester and its model across a resume, and a run without one stays without', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const run_id = 'tester-run';
+      const config = resolve_config(
+        merge_flags(checked(workspace), { tester: 'on', testerModel: 'haiku' }),
+        { run_id, state_dir: null, env: {} },
+      );
+      initialize_run_state(config);
+      write_resolved_config(config);
+      const restored = resolve_config(load_resume_state(workspace, run_id).raw_config, {
+        run_id,
+        state_dir: null,
+        env: {},
+      });
+      expect(restored).toMatchObject({ tester: true, tester_model: 'haiku' });
+
+      const plain = resolve_config(checked(workspace), { run_id: 'plain-run', state_dir: null, env: {} });
+      initialize_run_state(plain);
+      write_resolved_config(plain);
+      const resumed = resolve_config(load_resume_state(workspace, 'plain-run').raw_config, {
+        run_id: 'plain-run',
+        state_dir: null,
+        env: { VOLLEY_TESTER: 'on' },
+      });
+      expect(resumed.tester).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('gate paths', () => {
   it('defaults to the shipped gate patterns, off by default as a refusal', () => {
     const { workspace, cleanup } = temp_workspace();
@@ -1365,6 +1523,8 @@ describe('resolve_config: a critique', () => {
         [{ builder_max_output_tokens: 8192 }, '--builder-max-output-tokens (builder_max_output_tokens)'],
         [{ builder_trim_history: 32768 }, '--builder-trim-history (builder_trim_history)'],
         [{ effort_ladder: ['low'] }, '--effort-ladder (effort_ladder)'],
+        [{ tester: 'on' }, '--tester (tester)'],
+        [{ tester_model: 'haiku' }, '--tester-model (tester_model)'],
         [{ builder_permission_mode: 'acceptEdits' }, '--builder-permission-mode (builder_permission_mode)'],
         [{ allow_unsandboxed_builder: true }, '--allow-unsandboxed-builder (allow_unsandboxed_builder)'],
         [{ sandbox_image: 'img:1' }, '--sandbox-image (sandbox_image)'],

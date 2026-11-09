@@ -33,9 +33,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { lookup as dns_lookup } from 'node:dns';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { LookupFunction } from 'node:net';
-import { dirname } from 'node:path';
 import { Readability } from '@mozilla/readability';
 import ipaddr from 'ipaddr.js';
 import { parseHTML } from 'linkedom';
@@ -44,9 +42,9 @@ import { Agent, buildConnector, interceptors, request } from 'undici';
 import { z } from 'zod';
 import type { Tool, ToolExecContext } from 'fascicle';
 import { command_env } from '../engine.js';
-import { contain, read_only_tools } from '../workspace_tools.js';
+import { read_only_tools, write_tools } from '../workspace_tools.js';
 
-export const WRITE_FILE_MAX_BYTES = 1_000_000;
+export { WRITE_FILE_MAX_BYTES } from '../workspace_tools.js';
 
 // Sized to fit a workspace `pnpm check`: volley's own checkride timeout is
 // 600s, so a shorter budget would kill the builder's self-verify
@@ -138,20 +136,6 @@ export type BuilderToolOptions = {
   fetch_lookup?: LookupFunction;
 };
 
-const write_file_input = z.object({
-  path: z.string().describe('Workspace-relative path to write. Parent directories are created.'),
-  content: z.string().describe('Full UTF-8 content of the file. Overwrites any existing content.'),
-});
-
-const edit_file_input = z.object({
-  path: z.string().describe('Workspace-relative path of the file to edit.'),
-  old_str: z
-    .string()
-    .min(1)
-    .describe('Exact text to replace. Must occur exactly once in the file.'),
-  new_str: z.string().describe('Replacement text.'),
-});
-
 const bash_input = z.object({
   command: z.string().describe('Shell command to run in the workspace directory.'),
 });
@@ -175,10 +159,6 @@ const fetch_input = z.object({
     .optional()
     .describe('Character offset into the extracted markdown to start from, for paging a long page. Default 0.'),
 });
-
-function count_occurrences(haystack: string, needle: string): number {
-  return haystack.split(needle).length - 1;
-}
 
 /** Truncate `text` to at most `max` bytes, appending a marker when clipped.
  * Byte-based to honor the byte cap; a split multibyte char at the boundary
@@ -479,58 +459,6 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
   const bash_max_output_bytes = options.bash_max_output_bytes ?? BASH_MAX_OUTPUT_BYTES;
   const bash_executor = options.bash_executor ?? host_bash_executor(workspace);
 
-  const write_file: Tool = {
-    name: 'write_file',
-    description:
-      'Write a UTF-8 text file in the workspace, creating parent directories ' +
-      'and overwriting any existing content. Rejects content over ' +
-      `${String(WRITE_FILE_MAX_BYTES)} bytes.`,
-    input_schema: write_file_input,
-    execute: (raw) => {
-      const input = write_file_input.parse(raw);
-      const abs = contain(workspace, input.path);
-      const bytes = Buffer.byteLength(input.content, 'utf8');
-      if (bytes > WRITE_FILE_MAX_BYTES) {
-        throw new Error(
-          `content is ${String(bytes)} bytes, over the ${String(WRITE_FILE_MAX_BYTES)}-byte write cap`,
-        );
-      }
-      mkdirSync(dirname(abs), { recursive: true });
-      writeFileSync(abs, input.content, 'utf8');
-      return `wrote ${String(bytes)} bytes to ${input.path}`;
-    },
-  };
-
-  const edit_file: Tool = {
-    name: 'edit_file',
-    description:
-      'Replace one exact occurrence of old_str with new_str in a workspace ' +
-      'file. old_str must match the file content exactly once — on 0 or ' +
-      'multiple matches nothing is changed and an error is returned; read ' +
-      'the file and retry with a longer, unique old_str.',
-    input_schema: edit_file_input,
-    execute: (raw) => {
-      const input = edit_file_input.parse(raw);
-      const abs = contain(workspace, input.path);
-      const content = readFileSync(abs, 'utf8');
-      const matches = count_occurrences(content, input.old_str);
-      if (matches === 0) {
-        return (
-          `error: old_str not found in ${input.path} (0 matches). ` +
-          'No change made. Read the file and retry with an exact excerpt of its current content.'
-        );
-      }
-      if (matches > 1) {
-        return (
-          `error: old_str matches ${String(matches)} times in ${input.path}. ` +
-          'No change made. Include more surrounding context to make old_str unique.'
-        );
-      }
-      writeFileSync(abs, content.replace(input.old_str, input.new_str), 'utf8');
-      return `edit applied to ${input.path}`;
-    },
-  };
-
   const bash: Tool = {
     name: 'bash',
     description:
@@ -588,7 +516,7 @@ export function builder_tools(workspace: string, options: BuilderToolOptions = {
       }),
   };
 
-  return [...read_only_tools(workspace), write_file, edit_file, bash, fetch, finish_tool()];
+  return [...read_only_tools(workspace), ...write_tools(workspace), bash, fetch, finish_tool()];
 }
 
 /** The terminal `finish` tool, on its own for a builder set that brings its

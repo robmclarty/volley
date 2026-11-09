@@ -113,7 +113,7 @@ The repo's `keyframes.md` holds these; they are repeated here by their slugs so 
     - seam: `README.md`, `test/fixtures/runciter_run_input.json`
     - model: sonnet (prose from the decisions)
 
-12. [ ] fix(resume): keep the effort ladder and critic effort across a resume, **done when:** `write_resolved_config` records `effort_ladder` and `critic_effort` in `config.json`, `load_resume_state` reads both back into the raw config (absent in an older config, which resumes with none) ([D29 (resume-keeps-ladder)](#d29)); a resume integration test interrupts a laddered run after two builds and sees build 3 run at the third rung, and the critic at its effort, with neither `VOLLEY_EFFORT_LADDER` nor `VOLLEY_CRITIC_EFFORT` set; the README's Resume section loses the line saying the ladder isn't recorded with the run; `pnpm check` green.
+12. [x] fix(resume): keep the effort ladder and critic effort across a resume, **done when:** `write_resolved_config` records `effort_ladder` and `critic_effort` in `config.json`, `load_resume_state` reads both back into the raw config (absent in an older config, which resumes with none) ([D29 (resume-keeps-ladder)](#d29)); a resume integration test interrupts a laddered run after two builds and sees build 3 run at the third rung, and the critic at its effort, with neither `VOLLEY_EFFORT_LADDER` nor `VOLLEY_CRITIC_EFFORT` set; the README's Resume section loses the line saying the ladder isn't recorded with the run; `pnpm check` green.
     - seam: `src/workspace.ts`, `src/iteration.ts`, `test/integration/resume.test.ts`, `README.md`
     - model: sonnet (two fields through an existing round-trip)
 

@@ -125,6 +125,8 @@ export function write_resolved_config(
     critic_provider: config.critic_provider,
     critic_url: config.critic_url,
     critic_effort: config.critic_effort,
+    tester: config.tester,
+    tester_model: config.tester_model,
     builder_permission_mode: config.builder_permission_mode,
     critic_preset: config.critic_preset,
     critic_prompt_path: config.critic_prompt_path,

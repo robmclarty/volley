@@ -17,6 +17,10 @@ export type EffortRung = Exclude<EffortLevel, 'none'>;
 
 export type CriticPreset = 'reviewer' | 'optimizer' | 'researcher';
 
+/** `--tester`: whether a tester writes a failing test from the criteria
+ * before the first build. */
+export type TesterSetting = 'on' | 'off';
+
 /** Transport for the critic role. The critic is read-only + schema-constrained,
  * so it has always been able to run on a local model. `openrouter` reaches a
  * hosted model over one API key and takes the local critic's tools and
@@ -88,6 +92,8 @@ export type VolleyConfig = {
   critic_provider?: CriticProvider;
   critic_url?: string;
   critic_effort?: EffortRung;
+  tester?: TesterSetting;
+  tester_model?: string;
   builder_permission_mode?: BuilderPermissionMode;
   critic?: CriticPreset | (string & {});
   max_iterations?: number;
@@ -172,6 +178,13 @@ export type ResolvedConfig = {
    * the critic is what makes a cheap build safe, else null, which passes no
    * effort, as before there was a ladder. */
   critic_effort: EffortRung | null;
+  /** Whether a tester runs before the first build (`--tester on`), writing a
+   * failing test from the criteria under the test and fixture gate paths. Off
+   * by default. It takes the critic's provider, URL and effort. */
+  tester: boolean;
+  /** The tester's model: `--tester-model`, else the critic's. Null with the
+   * tester off. */
+  tester_model: string | null;
   builder_permission_mode: BuilderPermissionMode;
   critic_preset: CriticPreset | 'custom';
   critic_prompt_path: string | null;

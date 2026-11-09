@@ -31,6 +31,11 @@
  * model missing) exits 5. The `claude_cli` and `openrouter` critic paths never
  * run it: a canary that costs nothing on a local model costs money there.
  *
+ * With `--tester on`, the tester seat is named, and a local tester gets a
+ * canary of its own: one $0 call with its model and system prompt that must
+ * make a read, through read tools only, so a dry run writes nothing. It has no
+ * fallback to predict, so a failure exits 5.
+ *
  * The probes are injectable so the exit-code contract is unit-testable without
  * a daemon, a git repo, or a live model endpoint.
  */
@@ -48,6 +53,8 @@ import {
 } from './claude_cli_permissions.js';
 import { detect_containment } from './containment.js';
 import { critic_canary } from './critic/run.js';
+import { tester_canary, tester_model } from './tester/run.js';
+import { writable_gate_patterns } from './tester/tools.js';
 import { command_env, create_volley_engine, seat_base_url, takes_seat_url } from './engine.js';
 import type { Engine } from './engine.js';
 import { EXIT_CONFIG_ERROR, EXIT_SUCCESS } from './exit_codes.js';
@@ -102,12 +109,14 @@ function seat_endpoints(
   const critic = takes_seat_url(config.critic_provider)
     ? seat_base_url(config.critic_provider, config.critic_url, env)
     : null;
+  // The tester sits on the critic's server.
+  const critic_seats = config.tester ? 'critic and tester' : 'critic';
   if (builder !== null && builder === critic) {
-    return [{ seats: 'builder and critic', url: builder }];
+    return [{ seats: config.tester ? 'builder, critic and tester' : 'builder and critic', url: builder }];
   }
   return [
     ...(builder === null ? [] : [{ seats: 'builder', url: builder }]),
-    ...(critic === null ? [] : [{ seats: 'critic', url: critic }]),
+    ...(critic === null ? [] : [{ seats: critic_seats, url: critic }]),
   ];
 }
 
@@ -257,7 +266,7 @@ function default_canary_engine(
 /** A seat's info line: its model and provider, and the endpoint a seat on a
  * URL-taking provider will reach. */
 function seat_line(
-  seat: 'builder' | 'critic',
+  seat: 'builder' | 'critic' | 'tester',
   model: string,
   provider: BuilderProvider | CriticProvider,
   url: string | null,
@@ -302,6 +311,49 @@ function report_gate_posture(config: ResolvedConfig, renderer: Renderer): void {
         ? ' — a builder edit to any of them halts the run (--fail-on-gate-edit, exit 8).'
         : ' — edits are reported to the critic and recorded in the summary, not refused.'),
   );
+}
+
+/** The tester seat, when it's on: its model and provider (the critic's), and
+ * where it may write. */
+function report_tester(
+  config: ResolvedConfig,
+  renderer: Renderer,
+  env: Record<string, string | undefined>,
+): void {
+  if (!config.tester) {
+    if (config.mode !== 'critique') renderer.info('tester: off');
+    return;
+  }
+  renderer.info(
+    seat_line('tester', tester_model(config), config.critic_provider, config.critic_url, env),
+  );
+  renderer.info(
+    `tester writes: ${writable_gate_patterns(config.gate_paths).join(', ')} ` +
+      '(not package.json, *.config.* or .github/)',
+  );
+}
+
+/** The local tester's canary, on the engine the critic's uses. False, after
+ * naming the seat, when it failed. */
+async function probe_tester(
+  config: ResolvedConfig,
+  renderer: Renderer,
+  env: Record<string, string | undefined>,
+  probes: PreflightProbes,
+): Promise<boolean> {
+  const engine = (probes.canary_engine ?? default_canary_engine)(config, env);
+  const seat = `model '${tester_model(config)}' in the tester seat (provider: ${config.critic_provider})`;
+  try {
+    const canary = await tester_canary(engine, config, env);
+    if (canary.outcome === 'failed') {
+      renderer.error(`preflight: tester canary failed — ${seat}: ${canary.detail}`);
+      return false;
+    }
+    renderer.info(`tester canary: ok (${seat} answered through its read tools)`);
+    return true;
+  } finally {
+    await engine.dispose();
+  }
 }
 
 function run_checkride_doctor(workspace: string): boolean {
@@ -363,6 +415,7 @@ export async function preflight(
   renderer.info(
     seat_line('critic', config.critic_model, config.critic_provider, config.critic_url, env),
   );
+  report_tester(config, renderer, env);
   // What a successful run does with its effects, predicted here for any
   // builder provider — the worktree's fate is not a containment concern, and
   // `--worktree` without `--git` must not quietly end in a discarded build.
@@ -433,6 +486,10 @@ export async function preflight(
     } finally {
       await engine.dispose();
     }
+  }
+
+  if (config.tester && is_local_critic(config.critic_provider)) {
+    if (!(await probe_tester(config, renderer, env, probes))) return EXIT_CONFIG_ERROR;
   }
 
   return EXIT_SUCCESS;

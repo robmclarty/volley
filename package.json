@@ -55,6 +55,7 @@
     "dist",
     "src/builder/presets",
     "src/critic/presets",
+    "src/tester/presets",
     "CHANGELOG.md"
   ],
   "scripts": {

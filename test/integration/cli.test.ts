@@ -212,6 +212,8 @@ describe('volley --help', () => {
       '--critic-effort',
       '--builder-permission-mode',
       '--critic',
+      '--tester',
+      '--tester-model',
       '--max-iterations',
       '--max-cost-usd',
       '--git',
