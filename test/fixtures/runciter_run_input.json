@@ -1,0 +1,46 @@
+{
+  "protocol": "runciter.run/1",
+  "run_id": "01JCZ7Q3V8M2K4T6R9X0B5N1HD",
+  "task": {
+    "id": "t-42",
+    "title": "Show each task's total cost",
+    "body": "The task card shows each run's cost but not the task's total. Add the total under the title.",
+    "criteria": "- The card shows the sum of every run's cost_usd under the title\n- A task with no runs shows no total\n- pnpm check is green",
+    "labels": ["ui", "cost"],
+    "priority": 2,
+    "repo_path": "/repos/app"
+  },
+  "pipeline": { "id": "default", "hash": "sha256:9f2c61d4" },
+  "stage": {
+    "id": "build",
+    "label": "Build",
+    "gate": "auto",
+    "workspace": "worktree",
+    "verify": "auto"
+  },
+  "agent": {
+    "id": "volley",
+    "hash": "sha256:4be0a7c1",
+    "runner": "process",
+    "config": {
+      "label": "Volley",
+      "runner": "process",
+      "command": ["volley", "run", "--protocol", "runciter.run/1"]
+    },
+    "prompt": "You are the build stage. Make the change the task asks for, and leave the tests green."
+  },
+  "workspace": {
+    "kind": "worktree",
+    "path": "/data/runciter/worktrees/t-42",
+    "branch": "runciter/t-42",
+    "base_branch": "main",
+    "base_commit": "3d1f0a9c2b7e"
+  },
+  "run_dir": "/data/runciter/runs/01JCZ7Q3V8M2K4T6R9X0B5N1HD",
+  "context": {
+    "markdown_path": "/data/runciter/runs/01JCZ7Q3V8M2K4T6R9X0B5N1HD/context.md",
+    "pack_path": "/data/runciter/runs/01JCZ7Q3V8M2K4T6R9X0B5N1HD/context-pack.json"
+  },
+  "feedback": "The total counted a killed run's cost twice.",
+  "budget": { "max_cost_usd": 5, "timeout_ms": 1800000 }
+}

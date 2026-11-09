@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 8 — feat(acp): the tester under `volley acp`, and its docs
+**Current step:** 9 — feat(protocol): the runciter.run/1 schemas and the input mapping
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -30,7 +30,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 5. feat(tester): the tester seat's config, prompt and tools
 - ☑ 6. feat(flow): the test phase before the first build, red check required
 - ☑ 7. feat(critic): the critic reads the tester's test
-- ☐ 8. feat(acp): the tester under `volley acp`, and its docs
+- ☑ 8. feat(acp): the tester under `volley acp`, and its docs
 - ☐ 9. feat(protocol): the runciter.run/1 schemas and the input mapping
 - ☐ 10. feat(cli): `volley run --protocol runciter.run/1`
 - ☐ 11. docs(protocol): the protocol mode and its conformance fixture
@@ -43,6 +43,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 > Capture is one line (`/plumbbob:park` composes it). Harvest happens only at the boundary.
 
 - [x] effort_ladder and critic_effort aren't written to config.json (workspace.ts) or read back by load_resume_state (iteration.ts), so a resumed run loses its ladder unless VOLLEY_EFFORT_LADDER is set; step 2's resume work needs both, and its seam lacks workspace.ts
+- [ ] resolve_config reads a prompt or criteria starting with '@' as a file path (expand_at_file), so a RunInput whose task.criteria or agent.prompt opens with '@' would fail or read the wrong file; protocol mode should hand them over as <run_dir>/prompt.md and criteria.md @-paths, as runciter's volley kind does
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -195,3 +196,147 @@ folder, so it rides the branch into the PR.)*
 - 2026-11-09 — step 5 checkpointed · 077903295 — feat(tester): the tester seat's config, prompt and tools (1 drift, 14m)
 - 2026-11-09 — step 6 checkpointed · d06383a7f — feat(flow): the test phase before the first build, red check required (1 drift, 11m)
 - 2026-11-09 — step 7 checkpointed · 4b8287fe8 — feat(critic): the critic reads the tester's test (1 drift, 3m)
+- 2026-11-09 — step 8 checkpointed · d0492144a — feat(acp): the tester under `volley acp`, and its docs (1 drift, 593m)
+
+  **Summary**: Under `volley acp` the tester now takes fascicle's reads and its two writes, held to the test and fixture paths, so each test write asks with its diff as the builder's edits do, and a write it may not make is refused before anyone is asked. Its work shows as **Round 1: the tester's test**, then **Round 1: the build**. A `claude_cli` tester is refused at startup, by flag or by `VOLLEY_TESTER`, and the README gains The tester seat, with its containment, the Usage rows and the acp notes. The loose ends are closed too: `keyframes.md`'s C2 now names the tester, as you asked.
+
+  1. The tester's acp writes wrap fascicle's, so a refused path never reaches a prompt
+  2. The round the tester opens has two lines, and a tester failure names its phase
+  3. `--check auto` with the tester can't be judged at acp startup, so each prompt judges it
+  4. The loose ends: C2 names the tester, the state root holds only your runs, and the acp gap is closed
+  5. Beyond the seam, to make the seat reachable
+
+  **Readout**:
+
+  ```text
+  check        green: 1 of 1 checks
+  done-when    met
+  decisions    honored:
+               - D14 (tester-contained), D17 (tester-first-iteration)
+               - D19 (tester-claude-permissions), D20 (tester-tests-and-fixtures)
+  constraints  9 of 9 honored
+  seam         strayed: 12 paths outside the seam
+               - keyframes.md
+               - src/cli.ts
+               - src/flow.ts
+               - src/orchestrator.ts
+               - src/phases.ts
+               - src/tester/prompt.ts
+               - src/tester/run.ts
+               - src/tester/tools.ts
+               - test/integration/acp_cli.test.ts
+               - test/integration/acp_turn.test.ts
+               - test/unit/acp_progress.test.ts
+               - test/unit/acp_tools.test.ts
+  diff         +444 -45 across 16 files
+               - README.md +58 -3
+               - keyframes.md +5 -4
+               - src/acp.ts +34 -5
+               - src/acp_progress.ts +17 -6
+               - src/acp_tools.ts +47 -2
+               - src/cli.ts +2 -0
+               - src/flow.ts +4 -3
+               - and 9 more
+  spent        9h 53m · 3 turns · 17s gate · green first run
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Approve it. The tester is reachable everywhere it should be and refused where D19 says it must be, and the acp turn test drives the whole path through the SDK client, which is the strongest evidence short of Zed. `looks good` lands step 8, which completes range 2, so its stop card follows. That stop is yours to run: the tester on two real tasks, one on checkride and one on a shell command, then its default.
+
+  **1.** The tester's acp writes wrap fascicle's, so a refused path never reaches a prompt
+
+  `acp_seat_tools` gains a `tester` seat: `read_file`, `list_files` and `search`, plus `write_file` and `edit_file` wrapped by `confined()`. For a path the tester may not write (outside the gate's test and fixture patterns, `package.json`, a `*.config.*` file, `.github/`, an escape, or a symlink), `needs_approval` answers no and `execute` throws the same message volley's own writers give, so Zed never asks about a write that can't land. Every other call goes through the original `needs_approval`, which is how fascicle knows the call as its own and draws the edit card with its diff. The check uses one function, `tester_refusal`, for this path and volley's own tester tools, so the two can't drift. The tester's system prompt names fascicle's tool set and says a declined write isn't made, and its approvals go through `session.approve`, as the builder's do. The end-to-end turn test shows the test write asking first with its diff, a write to `src/` refused with no prompt, and the tester's reply kept out of the thread, as the critic's is.
+
+  **2.** The round the tester opens has two lines, and a tester failure names its phase
+
+  `test_phase` now emits a `test_start` event, and the build in that round still emits `round_start`, marked `after_test`. So acp shows **Round 1: the tester's test**, the tester's cards, the red check, then **Round 1: the build**. In step 6 the tester had emitted iteration 1's `round_start` and the build none. That changes the CLI trajectory too, with one more event in a tester run's first round, and a reader counting `round_start` still sees one per round. `follow_rounds` counts `test_start`, so a tester that dies reads as failed in round 1, during the tester's test. A run stopped by `tester_passed_early` ends with its own line.
+
+  **3.** `--check auto` with the tester can't be judged at acp startup, so each prompt judges it
+
+  The startup check resolves the whole config against the temp directory, where `--check auto` finds nothing, and the tester's need for a check (D18) would refuse every `--tester on --check auto` before any folder was open. So the startup check stands a command in for `auto`. Each prompt's run resolves the real check against the session's folder, and a folder with no check fails that prompt with the reason. `--check none` with the tester is still refused at startup. This is a judgment call the plan didn't spell out, and the README says how it behaves.
+
+  **4.** The loose ends: C2 names the tester, the state root holds only your runs, and the acp gap is closed
+
+  `keyframes.md`'s C2 reads "A builder other than `claude_cli`, and a tester on any provider but `claude_cli`, runs only inside the sandbox…", its because adds that the check runs what a tester writes, and its held-by gains `config.test.ts#"refuses a local tester uncontained and not opted out"`. `keyframes check` reports no findings. The test setup already points `XDG_STATE_HOME` at a temp folder, so only a test that passes `env: {}` to a run could reach your real state root, and the two that do now pin `state_dir: null`. `~/.local/state/volley` holds your five older runs and nothing else. The `VOLLEY_TESTER=on` gap under acp is what this step closes.
+
+  **5.** Beyond the seam, to make the seat reachable
+
+  - `src/tester/`: `tester_refusal`, the acp tools paragraph, `tool_set` and `on_tool_approval` on the tester's call.
+  - `src/flow.ts` and `src/orchestrator.ts`: the tester seat type, and the seat passed through.
+  - `src/phases.ts`: the two events.
+  - `src/cli.ts`: `--tester` and `--tester-model` on `volley acp`.
+  - `keyframes.md` and the tests.
+- 2026-11-09 — range 2 of 3's stop recorded — run the tester on two real tasks, one on checkride and one on a shell command, and decide its default: on wherever a check exists, or off
+
+  **Summary**: The tester seat is built end to end, and it's off by default. With `--tester on`, the run's first iteration opens with a tester on the critic's seat writing a failing test under the test and fixture gate paths, and then the check, which must fail. A red check goes on to the build, whose prompt names the tester's files and shows the failure. A green check ends the run as `tester_passed_early` (exit 2) with no build, and a tester that crosses the cost cap ends it before the check. The tester's spend, writes and file hashes are recorded apart, so its test isn't a builder gate edit unless a build changes it. The critic judges the test too, as `test_findings`. Under `volley acp` its writes ask as the builder's do, in a round of their own, and a `claude_cli` tester is refused. First, step 12 made a resume keep the effort ladder and the critic's effort. The README documents all of it, and `keyframes.md`'s C2 now names the tester.
+
+  1. Step 5 confined the tester further than the plan named
+  2. Every run now passes through two branches, the tester off included
+  3. The reviewer preset's tester paragraph reaches every reviewer run
+  4. Under `volley acp`, the tester's need for a check is judged per prompt
+  5. The real runs will test the red-check rule unevenly
+
+  **Readout**:
+
+  ```text
+  steps        5 of 5 landed
+               - 12 ad455ee · 5 0779032 · 6 d06383a · 7 4b8287f · 8 d049214
+  check        green: 1 of 1 checks, 5 landings
+  done-when    met
+  decisions    honored:
+               - D29 (resume-keeps-ladder), D8 (tester-off-by-default)
+               - D7 (tester-at-critic-effort), D15 (tester-model-override)
+               - D14 (tester-contained), D18 (tester-needs-check)
+               - D19 (tester-claude-permissions), D20 (tester-tests-and-fixtures)
+               - D6 (red-before-green), D17 (tester-first-iteration)
+               - D9 (tester-changes-apart), D21 (tester-cost-apart)
+               - D22 (tester-hashes)
+  constraints  9 of 9 honored
+  seam         strayed: 38 paths outside 4 steps' seams
+               - step 5: package.json and 8 others
+               - step 6: src/acp_progress.ts and 9 others
+               - step 7: README.md and 6 others
+               - step 8: keyframes.md and 11 others
+  diff         +2816 -224 across 53 files
+               - README.md +106 -29
+               - keyframes.md +5 -4
+               - package.json +1 -0
+               - src/acp.ts +34 -5
+               - src/acp_progress.ts +18 -6
+               - src/acp_tools.ts +47 -2
+               - src/builder.ts +48 -0
+               - and 46 more
+  spent        10h 25m · green first run at every landing · 4 drift warnings
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Recommendation**: Keep the tester off by default for now, and decide after both runs. "On wherever a check exists" would spend a seat's session on every run, and on a gate that starts red, such as reckon's, it proves little. Rebuild first, then run the shell-command task on reckon with the tester on:
+
+  ```sh
+  cd ~/Projects/volley/code/volley && pnpm build
+  cd ~/Projects/volley/code/reckon && node ../volley/dist/cli.js --config volley/volley.config.ts --builder-provider claude_cli --builder-model sonnet --critic-provider claude_cli --critic-model sonnet --tester on
+  ```
+
+  For the checkride task, pick a small feature in a checkride workspace whose check is green now, run it with `--tester on --worktree`, and read `iterations/001/summary.json`: `tester_check.ok` should be false, `tester_changes` should list only test files, and `critic.test_findings` says what the critic thought of the test.
+
+  **1.** Step 5 confined the tester further than the plan named
+
+  Three refusals beyond the done-when, each in the spirit of a decision already made. A write through a symbolic link is refused, since `contain()` is lexical and `test/` linked to `src/` would otherwise let an allowed write land in the source. `--tester on` with no test or fixture gate pattern is refused at config, as D18 refuses a missing check, under P1. And `config.json` records `tester` and `tester_model`, which a resume reads back, a recorded off staying off whatever `VOLLEY_TESTER` says, following D29's pattern. To serve the tester, `write_file` and `edit_file` moved into `src/workspace_tools.ts`, since the import rule bars `src/tester/` from `../builder/tools.js`; the builder's tools are unchanged, and C4's test holds.
+
+  **2.** Every run now passes through two branches, the tester off included
+
+  Step 6 put the test phase in the flow's own topology (C9): a `test` branch opens each iteration, and a `work` branch holds it with no build when the test phase ended the run. With the tester off, both pass straight through to today's build and verify, so the builder's and the critic's calls are unchanged, but a default run's trajectory carries two more spans per iteration, and the diagram in `flow.ts` and the README shows them. A tester failure exits 3, which the README's row now words "Builder, tester or provider error"; nothing in C6's table changes meaning.
+
+  **3.** The reviewer preset's tester paragraph reaches every reviewer run
+
+  Step 7's done-when puts the guidance on a vacuous test in `reviewer.md`, so every reviewer critic's system prompt gains it, tester or not. It opens "When your prompt names a tester's test", and the critic's prompt names one only in a run with a tester, whose prompt is otherwise byte-for-byte what it was. If you want the reviewer's system prompt untouched for comparisons with older runs, the paragraph could move into the tester section of the critic's prompt instead.
+
+  **4.** Under `volley acp`, the tester's need for a check is judged per prompt
+
+  The acp startup check resolves the config against the temp directory, where `--check auto` finds nothing, so it stands a command in for `auto` there; each prompt resolves the real check against its session's folder, and a folder with no check fails that prompt with the reason. `--check none` with the tester is still refused at startup. This was a judgment call, and the README says how it behaves.
+
+  **5.** The real runs will test the red-check rule unevenly
+
+  On reckon the gate is red before anyone writes, since its 29 tests are stubbed red, so the tester's check goes red whatever it writes, and `tester_passed_early` can't fire there. That run shows the tester's cost and whether its tests are sharper than the ones already in place, not whether red-before-green earns its keep. A checkride workspace whose check is green at the start, with a small new feature as the task, is where the red check proves the tester wrote a real test.
