@@ -19,6 +19,7 @@ import type {
   BuilderProvider,
   CriticPreset,
   CriticProvider,
+  EffortRung,
   ResolvedConfig,
   VolleyConfig,
 } from './types.js';
@@ -73,6 +74,23 @@ const PERMISSION_MODES: ReadonlyArray<BuilderPermissionMode> = [
   'acceptEdits',
   'bypassPermissions',
 ];
+
+/** The efforts a rung or the critic may take, lowest first. */
+export const EFFORT_RUNGS: ReadonlyArray<EffortRung> = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/** The critic's effort when a ladder is set and nothing names one: reading a
+ * diff costs far less than writing it, and the critic is what makes a cheap
+ * build safe. */
+const DEFAULT_LADDER_CRITIC_EFFORT: EffortRung = 'high';
+
+/** Builder providers whose fascicle transport drops `effort` and records
+ * `effort_ignored`, so every rung of a ladder runs the same there. */
+const EFFORT_IGNORED_PROVIDERS: ReadonlyArray<BuilderProvider> = ['ollama', 'lmstudio'];
+
+/** Whether a builder on `provider` ignores the effort a rung sets. */
+export function ignores_effort(provider: BuilderProvider): boolean {
+  return EFFORT_IGNORED_PROVIDERS.includes(provider);
+}
 
 /** `@path/to/file` reads the file; any other string passes through. */
 export function expand_at_file(value: string, cwd: string): string {
@@ -171,6 +189,7 @@ const CRITIQUE_REFUSED: ReadonlyArray<readonly [keyof VolleyConfig, string]> = [
   ['builder_max_tool_calls', '--builder-max-tool-calls'],
   ['builder_max_output_tokens', '--builder-max-output-tokens'],
   ['builder_trim_history', '--builder-trim-history'],
+  ['effort_ladder', '--effort-ladder'],
   ['builder_permission_mode', '--builder-permission-mode'],
   ['allow_unsandboxed_builder', '--allow-unsandboxed-builder'],
   ['sandbox_image', '--sandbox-image'],
@@ -264,6 +283,75 @@ function positive_count(
     );
   }
   return value;
+}
+
+/** An effort setting's flag, config key and env var, for its errors. */
+type EffortSetting = { flag: string; field: string; env_var: string };
+
+const EFFORT_LADDER: EffortSetting = {
+  flag: '--effort-ladder',
+  field: 'effort_ladder',
+  env_var: 'VOLLEY_EFFORT_LADDER',
+};
+
+const CRITIC_EFFORT: EffortSetting = {
+  flag: '--critic-effort',
+  field: 'critic_effort',
+  env_var: 'VOLLEY_CRITIC_EFFORT',
+};
+
+/** One effort, held to the five from `low` to `max`. `none` gets its own
+ * reason, since it's fascicle's level and the likeliest to be tried. */
+function effort_rung(value: unknown, setting: EffortSetting): EffortRung {
+  const rung = typeof value === 'string' ? value.trim() : value;
+  if ((EFFORT_RUNGS as ReadonlyArray<unknown>).includes(rung)) return rung as EffortRung;
+  const why =
+    rung === 'none' ? " (none sets no effort, and on claude_cli leaves Claude Code at its own default)" : '';
+  throw config_error(
+    `${setting.flag} (${setting.field}) / ${setting.env_var} takes ${EFFORT_RUNGS.join(', ')}; ` +
+      `got: ${String(value)}${why}`,
+  );
+}
+
+/** `--effort-ladder` (`effort_ladder`), as a list or the flag's comma-separated
+ * form, wins over `VOLLEY_EFFORT_LADDER`; an empty variable counts as unset.
+ * Unset is null, which passes no effort. A value that names no rung is refused
+ * rather than read as unset, since it was asked for. */
+function resolve_effort_ladder(
+  value: unknown,
+  env: Record<string, string | undefined>,
+): EffortRung[] | null {
+  const env_value = env[EFFORT_LADDER.env_var];
+  const given = value ?? (env_value === '' ? undefined : env_value);
+  if (given === undefined || given === null) return null;
+  const items = typeof given === 'string' ? given.split(',') : given;
+  if (!Array.isArray(items)) {
+    throw config_error(
+      `${EFFORT_LADDER.flag} (${EFFORT_LADDER.field}) must be a list of rungs; got a ${typeof given}`,
+    );
+  }
+  const named = items.filter((item) => typeof item !== 'string' || item.trim() !== '');
+  if (named.length === 0) {
+    throw config_error(
+      `${EFFORT_LADDER.flag} (${EFFORT_LADDER.field}) / ${EFFORT_LADDER.env_var} names no rung; ` +
+        `give one or more of ${EFFORT_RUNGS.join(', ')}, comma-separated`,
+    );
+  }
+  return named.map((item) => effort_rung(item, EFFORT_LADDER));
+}
+
+/** `--critic-effort` (`critic_effort`) wins over `VOLLEY_CRITIC_EFFORT`; an
+ * empty variable counts as unset. Unset is `high` when a ladder is set, else
+ * null, so a run without a ladder sends the critic what it always has. */
+function resolve_critic_effort(
+  value: unknown,
+  env: Record<string, string | undefined>,
+  ladder: EffortRung[] | null,
+): EffortRung | null {
+  const env_value = env[CRITIC_EFFORT.env_var];
+  const given = value ?? (env_value === '' ? undefined : env_value);
+  if (given !== undefined && given !== null) return effort_rung(given, CRITIC_EFFORT);
+  return ladder === null ? null : DEFAULT_LADDER_CRITIC_EFFORT;
 }
 
 /** `--sandbox-image` (a merged flag/config value) wins over the
@@ -521,6 +609,12 @@ export function resolve_config(
   const builder_url = resolve_seat_url('builder', raw.builder_url, builder_provider);
   const critic_url = resolve_seat_url('critic', raw.critic_url, critic_provider);
 
+  // The builder's ladder and the critic's effort are set apart: a critique has
+  // no builder, so it reads no ladder, but its critic takes an effort as a
+  // run's does.
+  const effort_ladder = resolve_effort_ladder(raw.effort_ladder, builder_env);
+  const critic_effort = resolve_critic_effort(raw.critic_effort, env, effort_ladder);
+
   // An openrouter seat sends `OPENROUTER_API_KEY`, so an unset key is refused
   // here, naming the variable, before any work rather than at the first call.
   if (builder_provider === 'openrouter' || critic_provider === 'openrouter') {
@@ -607,10 +701,12 @@ export function resolve_config(
     builder_max_tool_calls,
     builder_max_output_tokens,
     builder_trim_history,
+    effort_ladder,
     allow_unsandboxed_builder,
     critic_model: raw.critic_model ?? DEFAULT_CRITIC_MODEL,
     critic_provider,
     critic_url,
+    critic_effort,
     builder_permission_mode,
     critic_preset,
     critic_prompt_path,

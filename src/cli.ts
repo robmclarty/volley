@@ -13,6 +13,7 @@ import { ACP_MAX_ITERATIONS, acp_base_config, acp_serve_config } from './acp.js'
 import {
   DEFAULT_CHECK,
   DEFAULT_SANDBOX_IMAGE,
+  ignores_effort,
   load_config_file,
   resolve_config,
 } from './config.js';
@@ -31,6 +32,7 @@ import type {
   BuilderPermissionMode,
   BuilderProvider,
   CriticProvider,
+  EffortRung,
   ResolvedConfig,
   RunResult,
   VolleyConfig,
@@ -41,7 +43,7 @@ import { default_state_root, state_path } from './workspace.js';
 const STATE_DIR_HELP =
   "Keep each run's state under <path>/<run id>/ (default: $XDG_STATE_HOME/volley, else ~/.local/state/volley)";
 
-type CliFlags = {
+export type CliFlags = {
   prompt?: string;
   workspace?: string;
   criteria?: string;
@@ -53,10 +55,12 @@ type CliFlags = {
   builderMaxToolCalls?: number;
   builderMaxOutputTokens?: number;
   builderTrimHistory?: number;
+  effortLadder?: string;
   allowUnsandboxedBuilder?: boolean;
   criticModel?: string;
   criticProvider?: string;
   criticUrl?: string;
+  criticEffort?: string;
   builderPermissionMode?: string;
   critic?: string;
   maxIterations?: number;
@@ -199,6 +203,19 @@ export function warn_unsandboxed_builder(config: ResolvedConfig, renderer: Rende
   }
 }
 
+/** One warning when a ladder is set on a builder whose provider drops effort
+ * (ollama, lmstudio): every build there runs at the same effort, so the ladder
+ * is flat, and the run goes on rather than refusing a setting that does no
+ * harm. */
+export function warn_flat_ladder(config: ResolvedConfig, renderer: Renderer): void {
+  if (config.effort_ladder !== null && ignores_effort(config.builder_provider)) {
+    renderer.warn(
+      `--effort-ladder ${config.effort_ladder.join(',')}: the ${config.builder_provider} provider ` +
+        'ignores effort, so every build runs at the same effort and the ladder is flat.',
+    );
+  }
+}
+
 /** The critic seat's options: its model, provider, and URL. `required` marks
  * the model and provider as having no default, as under `acp`. */
 function with_critic_options(command: Command, required = false): Command {
@@ -207,7 +224,8 @@ function with_critic_options(command: Command, required = false): Command {
   return command
     .option('--critic-model <model>', `Critic model${model_note}`)
     .option('--critic-provider <name>', `claude_cli | ollama | lmstudio | openrouter (${provider_note})`)
-    .option('--critic-url <url>', "Critic's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)");
+    .option('--critic-url <url>', "Critic's model server base URL, ollama, lmstudio, or openrouter only (default: VOLLEY_OLLAMA_URL / VOLLEY_LMSTUDIO_URL / VOLLEY_OPENROUTER_URL)")
+    .option('--critic-effort <effort>', "Critic's effort on every call: low | medium | high | xhigh | max (default: high with --effort-ladder, else the provider's)");
 }
 
 /** The seat options, declared once for every command that runs seats: each
@@ -226,6 +244,7 @@ function with_seat_options(command: Command, required = false): Command {
       .option('--builder-max-tool-calls <n>', 'Tool calls a tool-loop builder may make per turn, reads aside, any provider but claude_cli (default: 1)')
       .option('--builder-max-output-tokens <n>', "Output tokens a tool-loop builder may generate per turn, reasoning included, any provider but claude_cli (default: 16384 on ollama and lmstudio, the provider's on openrouter)")
       .option('--builder-trim-history <tokens>', "Experimental: above this estimated request size, a tool-loop builder's turns send older tool results as one-line stubs, any provider but claude_cli (default: off)")
+      .option('--effort-ladder <rungs>', "Comma-separated builder efforts from low | medium | high | xhigh | max, one rung further up each build, the last repeating; ignored on ollama and lmstudio (default: off, the provider's effort)")
       .option('--allow-unsandboxed-builder', 'Permit a builder other than claude_cli to run without a sandbox (real host bash + write)'),
     required,
   );
@@ -242,6 +261,7 @@ const CRITIQUE_REFUSED_OPTIONS = [
   '--builder-max-tool-calls <n>',
   '--builder-max-output-tokens <n>',
   '--builder-trim-history <tokens>',
+  '--effort-ladder <rungs>',
   '--builder-permission-mode <mode>',
   '--allow-unsandboxed-builder',
   '--sandbox-image <tag>',
@@ -254,7 +274,9 @@ const CRITIQUE_REFUSED_OPTIONS = [
   '--config <path>',
 ];
 
-function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
+/** The flags a command was given, over its config file's values: each flag
+ * as `VolleyConfig` names it, a comma-separated list split into its items. */
+export function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
   return {
     ...base,
     ...(flags.prompt !== undefined ? { prompt: flags.prompt } : {}),
@@ -278,12 +300,16 @@ function merge_flags(base: VolleyConfig, flags: CliFlags): VolleyConfig {
     ...(flags.builderTrimHistory !== undefined
       ? { builder_trim_history: Number(flags.builderTrimHistory) }
       : {}),
+    ...(flags.effortLadder !== undefined
+      ? { effort_ladder: String(flags.effortLadder).split(',') as EffortRung[] }
+      : {}),
     ...(flags.allowUnsandboxedBuilder === true ? { allow_unsandboxed_builder: true } : {}),
     ...(flags.criticModel !== undefined ? { critic_model: flags.criticModel } : {}),
     ...(flags.criticProvider !== undefined
       ? { critic_provider: flags.criticProvider as CriticProvider }
       : {}),
     ...(flags.criticUrl !== undefined ? { critic_url: flags.criticUrl } : {}),
+    ...(flags.criticEffort !== undefined ? { critic_effort: flags.criticEffort as EffortRung } : {}),
     ...(flags.builderPermissionMode !== undefined
       ? { builder_permission_mode: flags.builderPermissionMode as BuilderPermissionMode }
       : {}),
@@ -388,6 +414,7 @@ async function main(argv: string[]): Promise<number> {
       const renderer = make_renderer(config);
       warn_api_key_meter(config, renderer);
       warn_unsandboxed_builder(config, renderer);
+      warn_flat_ladder(config, renderer);
       if (merged.dry_run === true) {
         exit_code = await preflight(config, renderer, process.env);
         return;
@@ -433,6 +460,7 @@ async function main(argv: string[]): Promise<number> {
       const renderer = make_renderer(config);
       warn_api_key_meter(config, renderer);
       warn_unsandboxed_builder(config, renderer);
+      warn_flat_ladder(config, renderer);
       if (resume.config_signed === false) warn_trusted_config(config, renderer);
       renderer.info(
         `resuming run ${run_id} at iteration ${String(resume.iterations_completed + 1)}`,
@@ -522,6 +550,7 @@ async function main(argv: string[]): Promise<number> {
       const renderer = make_renderer(base_config, '<run id>');
       warn_api_key_meter(base_config, renderer);
       warn_unsandboxed_builder(base_config, renderer);
+      warn_flat_ladder(base_config, renderer);
       const outcome = await run_matrix({
         base: merged,
         builders,

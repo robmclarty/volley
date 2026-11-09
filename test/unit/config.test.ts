@@ -18,6 +18,7 @@ import {
   DEFAULT_BUILDER_MODEL,
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_SANDBOX_IMAGE,
+  EFFORT_RUNGS,
   expand_at_file,
   load_config_file,
   resolve_config,
@@ -27,8 +28,10 @@ import { DEFAULT_GATE_PATTERNS } from '../../src/changes.js';
 import { detect_containment } from '../../src/containment.js';
 import {
   claude_login_hint,
+  merge_flags,
   package_version,
   warn_api_key_meter,
+  warn_flat_ladder,
   warn_unsandboxed_builder,
 } from '../../src/cli.js';
 import { load_resume_state } from '../../src/iteration.js';
@@ -1055,6 +1058,211 @@ describe('resolve_config: the run id', () => {
   );
 });
 
+describe('resolve_config: the effort ladder and the critic effort', () => {
+  /** The five levels every refusal names, in order. */
+  const FIVE = 'takes low, medium, high, xhigh, max';
+
+  it('leaves both unset by default, so no effort is passed', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = resolve_config(base(workspace), { env: {} });
+      expect(config.effort_ladder).toBeNull();
+      expect(config.critic_effort).toBeNull();
+      expect(EFFORT_RUNGS).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('resolves --effort-ladder low,medium,high to the list, and the critic to high', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const raw = merge_flags(base(workspace), { effortLadder: 'low,medium,high' });
+      const config = resolve_config(raw, { env: {} });
+      expect(config.effort_ladder).toEqual(['low', 'medium', 'high']);
+      expect(config.critic_effort).toBe('high');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('resolves a single value to a ladder of one', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const raw = merge_flags(base(workspace), { effortLadder: 'xhigh' });
+      expect(resolve_config(raw, { env: {} }).effort_ladder).toEqual(['xhigh']);
+      expect(
+        resolve_config(base(workspace), { env: { VOLLEY_EFFORT_LADDER: 'max' } }).effort_ladder,
+      ).toEqual(['max']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('trims each rung and skips empty ones in the comma-separated form', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const raw = merge_flags(base(workspace), { effortLadder: ' low, ,high ' });
+      expect(resolve_config(raw, { env: {} }).effort_ladder).toEqual(['low', 'high']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses none and an unknown rung, naming the five levels', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const ladder of ['none', 'low,none,high', 'low,turbo', 'LOW']) {
+        const raw = merge_flags(base(workspace), { effortLadder: ladder });
+        try {
+          resolve_config(raw, { env: {} });
+          expect.unreachable(`should have refused ${ladder}`);
+        } catch (err) {
+          expect(error_kind(err)).toBe('config_error');
+          expect((err as Error).message).toContain(`--effort-ladder (effort_ladder) / VOLLEY_EFFORT_LADDER ${FIVE}`);
+        }
+      }
+      expect(() =>
+        resolve_config(merge_flags(base(workspace), { effortLadder: 'none' }), { env: {} }),
+      ).toThrow('got: none (none sets no effort, and on claude_cli leaves Claude Code at its own default)');
+      expect(() =>
+        resolve_config(base(workspace), { env: { VOLLEY_EFFORT_LADDER: 'low,none' } }),
+      ).toThrow(FIVE);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a ladder that names no rung rather than reading it as unset', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const raw of [
+        merge_flags(base(workspace), { effortLadder: ',' }),
+        { ...base(workspace), effort_ladder: [] },
+      ]) {
+        expect(() => resolve_config(raw, { env: {} })).toThrow(
+          '--effort-ladder (effort_ladder) / VOLLEY_EFFORT_LADDER names no rung',
+        );
+      }
+      expect(() =>
+        resolve_config({ ...base(workspace), effort_ladder: 3 as never }, { env: {} }),
+      ).toThrow('must be a list of rungs; got a number');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('takes the same five levels for --critic-effort, and refuses none or an unknown one', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const effort of EFFORT_RUNGS) {
+        const raw = merge_flags(base(workspace), { criticEffort: effort });
+        expect(resolve_config(raw, { env: {} }).critic_effort).toBe(effort);
+      }
+      for (const effort of ['none', 'turbo', '']) {
+        const raw = merge_flags(base(workspace), { criticEffort: effort });
+        expect(() => resolve_config(raw, { env: {} })).toThrow(
+          `--critic-effort (critic_effort) / VOLLEY_CRITIC_EFFORT ${FIVE}`,
+        );
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('applies an explicit critic effort with no ladder, and leaves the ladder unset', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const raw = merge_flags(base(workspace), { criticEffort: 'low' });
+      const config = resolve_config(raw, { env: {} });
+      expect(config.effort_ladder).toBeNull();
+      expect(config.critic_effort).toBe('low');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('lets an explicit critic effort win over the ladder default', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const raw = merge_flags(base(workspace), { effortLadder: 'low,high', criticEffort: 'medium' });
+      expect(resolve_config(raw, { env: {} }).critic_effort).toBe('medium');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads VOLLEY_EFFORT_LADDER and VOLLEY_CRITIC_EFFORT, the flag winning, an empty one unset', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const env = { VOLLEY_EFFORT_LADDER: 'low,high', VOLLEY_CRITIC_EFFORT: 'max' };
+      const from_env = resolve_config(base(workspace), { env });
+      expect(from_env.effort_ladder).toEqual(['low', 'high']);
+      expect(from_env.critic_effort).toBe('max');
+
+      const raw = merge_flags(base(workspace), { effortLadder: 'medium', criticEffort: 'xhigh' });
+      const from_flags = resolve_config(raw, { env });
+      expect(from_flags.effort_ladder).toEqual(['medium']);
+      expect(from_flags.critic_effort).toBe('xhigh');
+
+      const empty = resolve_config(base(workspace), {
+        env: { VOLLEY_EFFORT_LADDER: '', VOLLEY_CRITIC_EFFORT: '' },
+      });
+      expect(empty.effort_ladder).toBeNull();
+      expect(empty.critic_effort).toBeNull();
+
+      // The ladder from the environment still sets the critic's default.
+      const ladder_only = resolve_config(base(workspace), { env: { VOLLEY_EFFORT_LADDER: 'low' } });
+      expect(ladder_only.critic_effort).toBe('high');
+      expect(() =>
+        resolve_config(base(workspace), { env: { VOLLEY_CRITIC_EFFORT: 'none' } }),
+      ).toThrow(FIVE);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads both from a config file, its flags winning over it', async () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const path = join(workspace, 'volley.config.ts');
+      writeFileSync(
+        path,
+        `export default { prompt: 'p', workspace: '.', criteria: 'c', ` +
+          `effort_ladder: ['low', 'medium'], critic_effort: 'xhigh' };\n`,
+      );
+      const loaded = await load_config_file(path);
+      const config = resolve_config(loaded, { cwd: workspace, env: {} });
+      expect(config.effort_ladder).toEqual(['low', 'medium']);
+      expect(config.critic_effort).toBe('xhigh');
+
+      const flagged = resolve_config(merge_flags(loaded, { effortLadder: 'max' }), {
+        cwd: workspace,
+        env: { VOLLEY_EFFORT_LADDER: 'high' },
+      });
+      expect(flagged.effort_ladder).toEqual(['max']);
+      // The file's value wins over the environment, as a flag does.
+      expect(resolve_config(loaded, { cwd: workspace, env: { VOLLEY_EFFORT_LADDER: 'high' } }).effort_ladder).toEqual(['low', 'medium']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reads no ladder for a critique, but gives its critic an effort', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const env = { VOLLEY_EFFORT_LADDER: 'low,high', VOLLEY_CRITIC_EFFORT: 'medium' };
+      const config = resolve_config(base(workspace), { mode: 'critique', env });
+      expect(config.effort_ladder).toBeNull();
+      expect(config.critic_effort).toBe('medium');
+      const unset = resolve_config(base(workspace), { mode: 'critique', env: {} });
+      expect(unset.critic_effort).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe('gate paths', () => {
   it('defaults to the shipped gate patterns, off by default as a refusal', () => {
     const { workspace, cleanup } = temp_workspace();
@@ -1156,6 +1364,7 @@ describe('resolve_config: a critique', () => {
         [{ builder_max_tool_calls: 2 }, '--builder-max-tool-calls (builder_max_tool_calls)'],
         [{ builder_max_output_tokens: 8192 }, '--builder-max-output-tokens (builder_max_output_tokens)'],
         [{ builder_trim_history: 32768 }, '--builder-trim-history (builder_trim_history)'],
+        [{ effort_ladder: ['low'] }, '--effort-ladder (effort_ladder)'],
         [{ builder_permission_mode: 'acceptEdits' }, '--builder-permission-mode (builder_permission_mode)'],
         [{ allow_unsandboxed_builder: true }, '--allow-unsandboxed-builder (allow_unsandboxed_builder)'],
         [{ sandbox_image: 'img:1' }, '--sandbox-image (sandbox_image)'],
@@ -1339,6 +1548,69 @@ describe('warn_unsandboxed_builder', () => {
     try {
       const config = resolve_config(base(workspace), { env: {} });
       expect(capture(config)).toBe('');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('warn_flat_ladder', () => {
+  function capture(config: Parameters<typeof warn_flat_ladder>[0]) {
+    const out: string[] = [];
+    const renderer = create_renderer({
+      mode: 'default',
+      show_thinking: true,
+      color: false,
+      max_cost_usd: null,
+      write: (text) => out.push(text),
+    });
+    warn_flat_ladder(config, renderer);
+    return out.join('');
+  }
+
+  it('warns once that ollama and lmstudio ignore effort when a ladder is set', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      for (const provider of ['ollama', 'lmstudio'] as const) {
+        const config = resolve_config(
+          {
+            ...base(workspace),
+            builder_provider: provider,
+            allow_unsandboxed_builder: true,
+            effort_ladder: ['low', 'high'],
+          },
+          { env: {} },
+        );
+        const output = capture(config);
+        expect(output).toContain(`--effort-ladder low,high: the ${provider} provider ignores effort`);
+        expect(output).toContain('the ladder is flat');
+        expect(output.match(/warning:/g)).toHaveLength(1);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('stays silent with no ladder, and on a builder that takes effort', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const local = resolve_config(
+        { ...base(workspace), builder_provider: 'ollama', allow_unsandboxed_builder: true },
+        { env: {} },
+      );
+      expect(capture(local)).toBe('');
+      const claude = resolve_config({ ...base(workspace), effort_ladder: ['low', 'high'] }, { env: {} });
+      expect(capture(claude)).toBe('');
+      const openrouter = resolve_config(
+        {
+          ...base(workspace),
+          builder_provider: 'openrouter',
+          allow_unsandboxed_builder: true,
+          effort_ladder: ['low', 'high'],
+        },
+        { env: { OPENROUTER_API_KEY: 'sk-or' } },
+      );
+      expect(capture(openrouter)).toBe('');
     } finally {
       cleanup();
     }

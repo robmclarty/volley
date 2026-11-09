@@ -5,9 +5,15 @@
  * Fascicle's usage/cost types are used verbatim so summaries carry the
  * substrate's shapes, not a re-derivation.
  */
-import type { FinishReason, Throughput, UsageTotals } from 'fascicle';
+import type { EffortLevel, FinishReason, Throughput, UsageTotals } from 'fascicle';
 
 export type Verdict = 'approved' | 'changes_requested';
+
+/** One rung of the effort ladder, and the critic's effort: fascicle's
+ * per-call `effort` levels less `none`, which on `claude_cli` sets nothing and
+ * leaves Claude Code at its own default, possibly above `low`, so it can't
+ * stand on a ladder that climbs. */
+export type EffortRung = Exclude<EffortLevel, 'none'>;
 
 export type CriticPreset = 'reviewer' | 'optimizer' | 'researcher';
 
@@ -76,10 +82,12 @@ export type VolleyConfig = {
   builder_max_tool_calls?: number;
   builder_max_output_tokens?: number;
   builder_trim_history?: number;
+  effort_ladder?: EffortRung[];
   allow_unsandboxed_builder?: boolean;
   critic_model?: string;
   critic_provider?: CriticProvider;
   critic_url?: string;
+  critic_effort?: EffortRung;
   builder_permission_mode?: BuilderPermissionMode;
   critic?: CriticPreset | (string & {});
   max_iterations?: number;
@@ -145,6 +153,12 @@ export type ResolvedConfig = {
    * every turn whole. Null by default, until a long local session is shown
    * to run faster with it on. Ignored by the `claude_cli` builder. */
   builder_trim_history: number | null;
+  /** The efforts the builder climbs (`--effort-ladder`): each build runs one
+   * rung further up than the last, and the top rung repeats. Null, the
+   * default, passes no effort at all, so the builder's call is today's. On
+   * `ollama` and `lmstudio`, whose transports drop effort, every rung is the
+   * same and the ladder is flat. */
+  effort_ladder: EffortRung[] | null;
   /** Operator opt-out permitting a non-`claude_cli` builder to run without a
    * sandbox — it gets a real host bash. Refused by default. */
   allow_unsandboxed_builder: boolean;
@@ -153,6 +167,11 @@ export type ResolvedConfig = {
   /** The critic seat's own model server base URL (`--critic-url`), as given;
    * resolved like `builder_url`, and null never falls back to the builder's. */
   critic_url: string | null;
+  /** The critic's effort on every call (`--critic-effort`), apart from the
+   * builder's ladder: `high` when a ladder is set and nothing names one, since
+   * the critic is what makes a cheap build safe, else null, which passes no
+   * effort, as before there was a ladder. */
+  critic_effort: EffortRung | null;
   builder_permission_mode: BuilderPermissionMode;
   critic_preset: CriticPreset | 'custom';
   critic_prompt_path: string | null;
