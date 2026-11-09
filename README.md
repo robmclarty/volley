@@ -274,7 +274,10 @@ volley matrix --builders <models> --critics <models> --config <path>
 volley critique --criteria <criteria> [--baseline <rev>] [options]
 volley acp --builder-provider <name> --builder-model <model> \
   --critic-provider <name> --critic-model <model> [options]
+volley run --protocol runciter.run/1 [options] < run-input.json
 ```
+
+`volley run` is another name for `volley`, with the same options.
 
 | Flag | Default | Description |
 |---|---|---|
@@ -315,6 +318,7 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--verbose` | off | Full tool inputs/outputs (truncated at 4000 chars). |
 | `--quiet` | off | Phase transitions, cost lines, and the final summary only. |
 | `--no-thinking` | off | Hide reasoning chunks (still recorded in the trajectory). |
+| `--protocol` | off | `runciter.run/1`: read one `RunInput` on stdin, write one `RunOutput` on stdout, and exit by the protocol's codes (see [Run volley from runciter](#run-volley-from-runciter)). |
 
 Human-readable progress goes to **stderr**; stdout carries machine output
 only, so volley composes under bigger harnesses the same way it composes
@@ -333,6 +337,9 @@ checkride.
 | 7 | Cost cap reached. |
 | 8 | The builder edited the gate and `--fail-on-gate-edit` was set. |
 | 130 | Interrupted (SIGINT); resumable. |
+
+Under `--protocol runciter.run/1` volley exits by the protocol's own table
+instead (see [Run volley from runciter](#run-volley-from-runciter)).
 
 ### Config file
 
@@ -1024,6 +1031,107 @@ otherwise:
 Two more round it out. Ask it to run `echo "key=$OPENROUTER_API_KEY"`, and the
 output should be `key=` with nothing after it. And the repository should hold no
 `.volley`.
+
+## Run volley from runciter
+
+`volley run --protocol runciter.run/1` makes volley a run child of runciter,
+the scheduler that runs tasks through pipelines of agents, over the protocol
+runciter's spec defines in its §5.4: one `RunInput` on stdin, exactly one
+`RunOutput` on stdout and nothing else, progress on stderr, and the exit code as
+the verdict. runciter's `process` kind runs it as it would any child that speaks
+the protocol, so runciter needs no adapter of its own for volley. Name the
+command in an agent file's frontmatter:
+
+```markdown
+---
+label: Volley
+runner: process
+command: [volley, run, --protocol, runciter.run/1, --builder-model, sonnet, --max-iterations, "5"]
+---
+You are the build stage. Make the change the task asks for, and leave the tests green.
+```
+
+Only the flag turns protocol mode on. runciter sets `RUNCITER_PROTOCOL` for
+every process under a run, a check that runs `volley` included, so volley
+ignores the variable.
+
+### What it reads
+
+The `RunInput` sets the task. Every other flag in the agent's argv, the seats,
+`--max-iterations`, `--critic`, `--tester` and `--config` among them, applies
+as it does on the command line.
+
+| From the `RunInput` | Becomes |
+|---|---|
+| `agent.prompt`, then the text of `context.md` | The prompt. `context.md` carries the task and, on a retry, the feedback on the last attempt, so a retried task knows why it failed. |
+| `task.criteria` | The criteria. |
+| `workspace.path` | The workspace. |
+| `stage.verify` | The check, read as runciter's own verify reads it, so volley converges on the gate runciter checks afterwards: `none` and a command as they are, and `auto` as `pnpm check` when `package.json` has a `check` script, else no check. A `--check` in the argv wins. |
+| `budget.max_cost_usd` | The cost cap, over any `--max-cost-usd` in the argv, which stands when runciter gives no budget. |
+| `run_dir` and `run_id` | The run's state, at `<run_dir>/volley/<run_id>/`, outside the workspace runciter diffs and verifies. A `--state-dir` or `--run-id` in the argv wins. |
+| `budget.timeout_ms` | Nothing: runciter stops the run itself, with SIGTERM. |
+
+### What it writes
+
+On stdout, one `RunOutput`:
+
+- **`status`** is `passed` when the run succeeded, else `failed`, with a
+  `fail_reason`: `iterations_exhausted` when it ran out of iterations,
+  `cost_cap`, `gate_edit_blocked`, `interrupted`, `builder_error` for a builder's
+  or a tester's error, `check_error`, `critic_error`, and `not_passed` for any
+  other outcome, `tester_passed_early` among them.
+- **`summary`** is a status line, then the critic's last feedback, cut to 4,000
+  characters. **`detail`** is the error's message, when the run ended on one.
+- **`usage`** is the run's totals, its cost marked `estimated`, as Claude Code's
+  cost is.
+- **`data`** is the run's `summary.json` whole, which runciter keeps as the
+  run's `data.json`.
+- **`artifacts`** names `critic-feedback.md`, the critic's last `feedback.md`,
+  which volley copies into `<run_dir>/artifacts/`, following no link in either
+  file's place. **`lessons`** is empty.
+
+On stderr, the run's progress without color, with runciter's typed lines among
+it: a `runciter.progress` line as each phase starts and ends
+(`iteration 2: check failing: test`, with `done` and `total` counting
+iterations), and a `runciter.usage` line as each iteration ends, the run's
+spend so far, and once more after the run, with its tokens.
+
+### Exit codes in protocol mode
+
+The protocol's own table, apart from the [one above](#exit-codes):
+
+| Code | Meaning |
+|---|---|
+| 0 | One `RunOutput` on stdout, whatever the run's outcome, a builder, check or critic error included, so its summary and `data` reach runciter's drawer. |
+| 1 | volley failed and had no `RunOutput` to write. runciter records a `runner_error`. |
+| 2 | Bad input on stdin, a refused flag, or a config error. runciter records a `contract_violation`. |
+
+On 1 and 2, stdout is empty and the last line on stderr is a `StdioFailure`,
+`{ "error": …, "stage"?: … }`, the shape fascicle's `run_stdio` writes, which
+runciter takes as the failure's detail.
+
+### Refusals
+
+Each exits 2 before stdin is read:
+
+| Refused | Why |
+|---|---|
+| `--worktree` | runciter owns the workspace. |
+| `--git` | runciter owns the workspace and what's committed to it. |
+| `--json` | Stdout carries the `RunOutput`. |
+| a positional prompt | The `RunInput` gives the prompt. |
+
+### Conformance
+
+[`test/fixtures/runciter_run_input.json`](test/fixtures/runciter_run_input.json)
+is a complete `RunInput`, every field §5.4 names, and the conformance input
+runciter's planned `runciter-run conform <command>` will drive volley with. Its
+paths are placeholders: a driver points `workspace.path`, `run_dir` and
+`context` at real ones, as volley's own tests do, which parse it
+(`test/unit/protocol.test.ts`) and run it through the CLI
+(`test/integration/protocol_cli.test.ts`). volley's schemas in `src/protocol/`
+are its own copy of runciter's, with no dependency on runciter, so that test
+is what checks the two agree.
 
 ## What the builder changed
 

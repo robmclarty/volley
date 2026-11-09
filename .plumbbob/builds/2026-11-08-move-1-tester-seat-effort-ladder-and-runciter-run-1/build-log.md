@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 10 — feat(cli): `volley run --protocol runciter.run/1`
+**Current step:** 11 — docs(protocol): the protocol mode and its conformance fixture
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -32,7 +32,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 7. feat(critic): the critic reads the tester's test
 - ☑ 8. feat(acp): the tester under `volley acp`, and its docs
 - ☑ 9. feat(protocol): the runciter.run/1 schemas and the input mapping
-- ☐ 10. feat(cli): `volley run --protocol runciter.run/1`
+- ☑ 10. feat(cli): `volley run --protocol runciter.run/1`
 - ☐ 11. docs(protocol): the protocol mode and its conformance fixture
 - ☑ 12. fix(resume): keep the effort ladder and critic effort across a resume
 
@@ -343,3 +343,4 @@ folder, so it rides the branch into the PR.)*
   On reckon the gate is red before anyone writes, since its 29 tests are stubbed red, so the tester's check goes red whatever it writes, and `tester_passed_early` can't fire there. That run shows the tester's cost and whether its tests are sharper than the ones already in place, not whether red-before-green earns its keep. A checkride workspace whose check is green at the start, with a small new feature as the task, is where the red check proves the tester wrote a real test.
 
 - 2026-11-09 — step 9 checkpointed · 7bd7c075e — feat(protocol): the runciter.run/1 schemas and the input mapping (5m)
+- 2026-11-09 — step 10 checkpointed · f2dbc0a79 — feat(cli): `volley run --protocol runciter.run/1` (1 drift, 11m)
