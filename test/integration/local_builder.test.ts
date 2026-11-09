@@ -478,12 +478,21 @@ describe('the effort ladder', () => {
         critiques += 1;
         return critiques < 5 ? reject_reply('not yet') : approve_reply();
       });
-      const result = await run_volley(config, {
-        renderer: silent_renderer(),
-        engine,
-        install_signal_handlers: false,
-      });
+      const rung_lines: string[] = [];
+      const renderer: Renderer = {
+        ...silent_renderer(),
+        rung: (iteration, rung, climbed) => rung_lines.push(`${String(iteration)} ${rung} ${String(climbed)}`),
+      };
+      const result = await run_volley(config, { renderer, engine, install_signal_handlers: false });
       expect(result.status).toBe('success');
+      // One rung line a build, as the build opens.
+      expect(rung_lines).toEqual([
+        '1 low null',
+        '2 medium critic_rejected',
+        '3 high critic_rejected',
+        '4 high null',
+        '5 high null',
+      ]);
       const builds = engine.calls.filter((c) => c.role === 'builder').map((c) => c.opts.effort);
       // Build k runs at ladder[min(k, len) - 1].
       expect(builds).toEqual(['low', 'medium', 'high', 'high', 'high']);

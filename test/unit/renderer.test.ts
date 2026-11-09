@@ -75,6 +75,21 @@ describe('renderer', () => {
     expect(text).toContain('✓ [iter 1] builder');
   });
 
+  it("prints one line for each build's rung, and why it climbed when it did", () => {
+    const { renderer, output } = capture('quiet');
+    renderer.rung(1, 'low', null);
+    renderer.rung(2, 'medium', 'check_failed');
+    renderer.rung(3, 'high', 'critic_rejected');
+    expect(output()).toBe(
+      '  [iter 1] rung low\n' +
+        '  [iter 2] rung medium (climbed: check_failed)\n' +
+        '  [iter 3] rung high (climbed: critic_rejected)\n',
+    );
+    const json = capture('json');
+    json.renderer.rung(1, 'low', null);
+    expect(json.output()).toBe('');
+  });
+
   it('json mode emits nothing except errors', () => {
     const { renderer, output } = capture('json');
     for (const chunk of CHUNKS) renderer.builder_chunk(chunk);

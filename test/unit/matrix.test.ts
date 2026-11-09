@@ -71,6 +71,8 @@ function stub_summary(fields: {
       critic_degraded: fields.critic_degraded ?? false,
       critic_degrade_causes:
         fields.critic_degrade_causes ?? (fields.critic_degraded === true ? ['stream_error'] : []),
+      rungs: [],
+      ladder_flat: true,
     },
   };
 }

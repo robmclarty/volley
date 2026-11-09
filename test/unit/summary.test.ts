@@ -2,12 +2,15 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_USAGE } from '../../src/cost.js';
+import { archive_iteration } from '../../src/iteration.js';
+import { initial_state } from '../../src/loop_state.js';
 import {
   build_run_summary,
   transport_of,
   write_run_summary,
 } from '../../src/summary.js';
-import type { RunResult, RunStatus } from '../../src/types.js';
+import type { ClimbReason, EffortRung, RunResult, RunStatus } from '../../src/types.js';
+import { initialize_run_state } from '../../src/workspace.js';
 import { test_config, temp_workspace } from '../helpers/harness.js';
 
 /** Write a per-iteration archive the way `archive_iteration` does, so the
@@ -22,6 +25,9 @@ function archive(
     check_ok?: boolean;
     failing_slots?: string[];
     gate_edits?: string[];
+    rung?: EffortRung | null;
+    climbed?: ClimbReason | null;
+    effort_ignored?: boolean;
   },
 ): void {
   const dir = join(workspace, '.volley', 'iterations', String(iteration).padStart(3, '0'));
@@ -30,6 +36,9 @@ function archive(
     join(dir, 'summary.json'),
     JSON.stringify({
       iteration,
+      ...(fields.rung !== undefined ? { rung: fields.rung } : {}),
+      ...(fields.climbed !== undefined ? { climbed: fields.climbed } : {}),
+      ...(fields.effort_ignored !== undefined ? { effort_ignored: fields.effort_ignored } : {}),
       builder:
         fields.tool_calls === undefined
           ? null
@@ -176,6 +185,101 @@ describe('comparison.gate_edits', () => {
       archive(workspace, 1, { check_ran: true, check_ok: true });
       const summary = build_run_summary(test_config({ workspace }), run_result());
       expect(summary.comparison.gate_edits).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('the effort ladder in the summaries', () => {
+  it("archives each iteration's rung, why it climbed, and whether its effort was ignored", () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({ workspace, effort_ladder: ['low', 'medium'] });
+      initialize_run_state(config);
+      const built = {
+        provider: 'ollama',
+        model: 'qwen3:8b',
+        session_id: null,
+        duration_ms: 1,
+        usage: EMPTY_USAGE,
+        cost_usd: 0,
+        cost_source: 'engine_derived' as const,
+        finish_reason: 'stop' as const,
+        tool_calls: 0,
+        salvaged_tool_calls: 0,
+      };
+      archive_iteration(config, { ...initial_state(), iteration: 1, builds: 1, rung: 'low', builder: built });
+      archive_iteration(config, {
+        ...initial_state(),
+        iteration: 2,
+        builds: 2,
+        rung: 'medium',
+        climbed: 'check_failed',
+        builder: { ...built, effort_ignored: true },
+      });
+      const read = (n: string) =>
+        JSON.parse(readFileSync(join(workspace, '.volley', 'iterations', n, 'summary.json'), 'utf8')) as Record<
+          string,
+          unknown
+        >;
+      expect(read('001')).toMatchObject({ rung: 'low', climbed: null, effort_ignored: false });
+      expect(read('002')).toMatchObject({ rung: 'medium', climbed: 'check_failed', effort_ignored: true });
+      expect((read('002')['builder'] as Record<string, unknown>)['effort_ignored']).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('lists the rungs in run order and calls a climbing ladder not flat', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      archive(workspace, 1, { rung: 'low', climbed: null });
+      archive(workspace, 2, { rung: 'medium', climbed: 'check_failed' });
+      archive(workspace, 3, { rung: 'high', climbed: 'critic_rejected' });
+      const { comparison } = build_run_summary(test_config({ workspace }), run_result());
+      expect(comparison.rungs).toEqual(['low', 'medium', 'high']);
+      expect(comparison.ladder_flat).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('calls the ladder flat when every build ran at one effort', () => {
+    const cases: Array<[string, Parameters<typeof archive>[2][], Array<EffortRung | null>]> = [
+      ['one rung repeated', [{ rung: 'high' }, { rung: 'high' }], ['high', 'high']],
+      ['converged on the first build', [{ rung: 'low' }], ['low']],
+      ['no ladder', [{ rung: null }, { rung: null }], [null, null]],
+      ['an archive older than the rung', [{}, {}], [null, null]],
+      [
+        'a provider that ignored every rung',
+        [
+          { rung: 'low', effort_ignored: true },
+          { rung: 'high', effort_ignored: true },
+        ],
+        ['low', 'high'],
+      ],
+    ];
+    for (const [name, archives, rungs] of cases) {
+      const { workspace, cleanup } = temp_workspace();
+      try {
+        archives.forEach((fields, index) => archive(workspace, index + 1, fields));
+        const { comparison } = build_run_summary(test_config({ workspace }), run_result());
+        expect(comparison.rungs, name).toEqual(rungs);
+        expect(comparison.ladder_flat, name).toBe(true);
+      } finally {
+        cleanup();
+      }
+    }
+  });
+
+  it('records no rungs for a critique, which builds nothing', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      archive(workspace, 1, { rung: null, check_ran: true, check_ok: true });
+      const { comparison } = build_run_summary(test_config({ workspace, mode: 'critique' }), run_result());
+      expect(comparison.rungs).toEqual([]);
+      expect(comparison.ladder_flat).toBe(true);
     } finally {
       cleanup();
     }

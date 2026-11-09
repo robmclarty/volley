@@ -5,7 +5,7 @@
  * jsonl is the durable record.
  */
 import type { StreamChunk } from 'fascicle';
-import type { RunResult } from '../types.js';
+import type { ClimbReason, EffortRung, RunResult } from '../types.js';
 import {
   GLYPH_COST,
   GLYPH_ERR,
@@ -16,6 +16,7 @@ import {
   GLYPH_TOOL,
   VERBOSE_TRUNCATE_CHARS,
   dim,
+  format_rung,
   format_usd,
   paint,
   summarize_value,
@@ -41,6 +42,9 @@ export type Renderer = {
   critic_chunk: (chunk: StreamChunk) => void;
   phase_start: (iteration: number, phase: Role) => void;
   phase_end: (iteration: number, phase: Role, ok: boolean, detail?: string) => void;
+  /** The effort this iteration's build runs at, one line per build when a
+   * ladder is set. */
+  rung: (iteration: number, rung: EffortRung, climbed: ClimbReason | null) => void;
   cost_line: (iteration: number, phase: Role, phase_cost: number | null, run_total: number) => void;
   info: (message: string) => void;
   warn: (message: string) => void;
@@ -122,6 +126,9 @@ export function create_renderer(options: RendererOptions): Renderer {
       const glyph = ok ? GLYPH_PHASE_OK : GLYPH_PHASE_FAIL;
       const suffix = detail !== undefined ? ` — ${detail}` : '';
       line(paint(phase, `${glyph} [iter ${String(iteration)}] ${phase}${suffix}`, color));
+    },
+    rung: (iteration, rung, climbed) => {
+      line(paint('builder', `  [iter ${String(iteration)}] ${format_rung(rung, climbed)}`, color));
     },
     cost_line: (iteration, phase, phase_cost, run_total) => {
       if (mode === 'json') return;

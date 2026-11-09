@@ -257,6 +257,7 @@ export async function build_phase(
   const next = climb(config, s, next_iteration(s));
   emit(ctx, { volley: 'round_start', round: next.iteration });
   renderer.phase_start(next.iteration, 'builder');
+  if (next.rung !== null) renderer.rung(next.iteration, next.rung, next.climbed);
   const built = await run_builder(
     { builder: builders.at(next.rung), config, warn: renderer.warn },
     next,

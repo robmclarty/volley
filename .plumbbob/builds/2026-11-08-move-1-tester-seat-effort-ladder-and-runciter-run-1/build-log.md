@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 2 — feat(loop): run the builder at the iteration's rung and the critic at its effort
+**Current step:** 3 — feat(summary): record each iteration's rung and why it climbed
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -24,7 +24,7 @@ line above. Only ONE step is in flight; a step is done only after a checkpoint:
 check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 
 - ☑ 1. feat(config): parse the effort ladder and the critic's effort
-- ☐ 2. feat(loop): run the builder at the iteration's rung and the critic at its effort
+- ☑ 2. feat(loop): run the builder at the iteration's rung and the critic at its effort
 - ☐ 3. feat(summary): record each iteration's rung and why it climbed
 - ☐ 4. docs(readme): the effort ladder
 - ☐ 5. feat(tester): the tester seat's config, prompt and tools
@@ -110,3 +110,5 @@ folder, so it rides the branch into the PR.)*
   **3.** The protocol's exit table and C6 (Q2, steps 10–11)
 
   C6 says each exit code keeps the meaning the README's table gives it, and its held-by test maps run statuses to exit codes. Protocol mode needs 0/1/2 with runciter's meanings, where 2 is budget exhausted on the plain CLI. D11 keeps the tables apart and Q2 asks the human whether that reading of C6 is theirs. It costs nothing to settle now and would cost a reworked step 10 later.
+
+- 2026-11-09 — step 2 checkpointed · da206c503 — feat(loop): run the builder at the iteration's rung and the critic at its effort (1 drift, 6m)

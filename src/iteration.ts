@@ -153,6 +153,9 @@ export function archive_iteration(config: ResolvedConfig, state: LoopState): voi
     builds: state.builds,
     rung: state.rung,
     climbed: state.climbed,
+    // This build asked for an effort its provider drops (ollama, lmstudio), so
+    // it ran at the provider's own whatever its rung. Additive.
+    effort_ignored: state.builder?.effort_ignored === true,
     builder: phase_summary(state.builder),
     check:
       check === null

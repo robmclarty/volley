@@ -330,6 +330,8 @@ function run_summary(
       unmet_criteria: [],
       critic_degraded: false,
       critic_degrade_causes: [],
+      rungs: [null],
+      ladder_flat: true,
       ...comparison,
     },
   };

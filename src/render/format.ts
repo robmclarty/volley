@@ -3,6 +3,7 @@
  * All human output goes to stderr; these helpers only build strings.
  */
 import pc from 'picocolors';
+import type { ClimbReason, EffortRung } from '../types.js';
 
 export const GLYPH_TOOL = '🔧';
 export const GLYPH_OK = '✅';
@@ -66,6 +67,12 @@ export function shown(value: string): string {
     UNSAFE_CHARACTERS,
     (character) => `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`,
   );
+}
+
+/** The rung a build runs at, and why it's above the last build's when it is:
+ * `rung medium (climbed: check_failed)`. */
+export function format_rung(rung: EffortRung, climbed: ClimbReason | null): string {
+  return `rung ${rung}${climbed === null ? '' : ` (climbed: ${climbed})`}`;
 }
 
 export function format_usd(value: number | null): string {

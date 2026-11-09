@@ -17,10 +17,12 @@
  * the run's `iterations/`, so the trajectory grows as the run does.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { EFFORT_RUNGS } from './config.js';
 import type {
   BuilderProvider,
   CriticProvider,
   DegradeCause,
+  EffortRung,
   ResolvedConfig,
   RunResult,
   Verdict,
@@ -106,6 +108,15 @@ export type ComparisonSummary = {
   /** Why the degraded verdicts degraded, each cause once, in the order the
    * iterations first hit it. Empty when no verdict degraded. Additive. */
   critic_degrade_causes: DegradeCause[];
+  /** Each iteration's build effort, in run order: its rung on the ladder, or
+   * null for a build with none. Empty for a critique, which builds nothing.
+   * Additive. */
+  rungs: Array<EffortRung | null>;
+  /** Every build ran at one effort, counting a build whose provider ignored
+   * its effort as running at the provider's own: the ladder never climbed, or
+   * climbed on a seat where it changes nothing, or there was no ladder.
+   * Additive. */
+  ladder_flat: boolean;
 };
 
 /** `RunResult` plus the comparison block; the run's `summary.json` mirrors this. */
@@ -116,6 +127,8 @@ export type RunSummary = RunResult & { comparison: ComparisonSummary };
  * half-written or older archive degrades to zeros/empties rather than throwing. */
 type IterationArchive = {
   iteration?: number;
+  rung?: unknown;
+  effort_ignored?: boolean;
   builder?: { tool_calls?: number; salvaged_tool_calls?: number } | null;
   check?: { ran?: boolean; ok?: boolean; failing_slots?: string[] } | null;
   changes?: { gate_edits?: string[] } | null;
@@ -183,6 +196,22 @@ function all_gate_edits(archives: IterationArchive[]): string[] {
   return [...edits].toSorted();
 }
 
+/** An archived build's rung, or null for none, or one this volley doesn't
+ * know. */
+function archived_rung(archive: IterationArchive): EffortRung | null {
+  const rung = archive.rung;
+  return (EFFORT_RUNGS as ReadonlyArray<unknown>).includes(rung) ? (rung as EffortRung) : null;
+}
+
+/** Whether every build ran at one effort: each build's rung, or the provider's
+ * own where the provider ignored it, taking one value across the run. */
+function ladder_flat(archives: IterationArchive[]): boolean {
+  const efforts = archives.map((archive) =>
+    archive.effort_ignored === true ? 'ignored' : archived_rung(archive),
+  );
+  return new Set(efforts).size <= 1;
+}
+
 function salvage_stats(archives: IterationArchive[]): SalvageStats {
   let tool_calls = 0;
   let salvaged_tool_calls = 0;
@@ -224,6 +253,8 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       local_salvage: salvage_stats(archives),
       critic_degraded: any_critic_degraded(archives),
       critic_degrade_causes: critic_degrade_causes(archives),
+      rungs: config.mode === 'critique' ? [] : archives.map(archived_rung),
+      ladder_flat: config.mode === 'critique' || ladder_flat(archives),
     },
   };
 }
