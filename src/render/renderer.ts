@@ -24,13 +24,20 @@ import {
 } from './format.js';
 import type { Role } from './format.js';
 
-export type RenderMode = 'default' | 'verbose' | 'quiet' | 'json';
+/** `protocol` is `volley run --protocol runciter.run/1`: the quiet mode's
+ * human lines, with runciter's typed lines (`runciter.progress` for each
+ * phase, `runciter.usage` for each iteration) in place of the phase and cost
+ * lines. */
+export type RenderMode = 'default' | 'verbose' | 'quiet' | 'json' | 'protocol';
 
 export type RendererOptions = {
   mode: RenderMode;
   show_thinking: boolean;
   color: boolean;
   max_cost_usd: number | null;
+  /** The run's iteration cap, the `total` of each `runciter.progress` line in
+   * protocol mode. */
+  max_iterations?: number;
   /** Where the run's trajectory is written, named when verbose output is cut
    * short (default: "the run's trajectory.jsonl"). */
   trajectory_path?: string;
@@ -59,15 +66,36 @@ export function create_renderer(options: RendererOptions): Renderer {
   const see_trajectory = `see ${options.trajectory_path ?? "the run's trajectory.jsonl"}`;
   const silent = mode === 'json';
   const streaming = mode === 'default' || mode === 'verbose';
+  const protocol = mode === 'protocol';
 
   // Tracks whether streamed prose left the cursor mid-line, so glyph lines
   // start on their own line.
   let mid_line = false;
 
+  // In protocol mode, the iteration the phases are in and the run's spend so
+  // far, for the `runciter.usage` line each iteration ends on.
+  let current_iteration = 0;
+  let run_spend = 0;
+
   const line = (text: string): void => {
     if (silent) return;
     write(`${mid_line ? '\n' : ''}${text}\n`);
     mid_line = false;
+  };
+
+  /** One of runciter's typed stderr lines (its spec §5.4), which it reads into
+   * the run's live state. */
+  const typed = (value: Record<string, unknown>): void => {
+    line(JSON.stringify(value));
+  };
+
+  const progress = (n: number, message: string): void => {
+    typed({
+      type: 'runciter.progress',
+      message: `iteration ${String(n)}: ${message}`,
+      done: n - 1,
+      ...(options.max_iterations !== undefined ? { total: options.max_iterations } : {}),
+    });
   };
 
   const chunk_renderer = (role: Role) => (chunk: StreamChunk): void => {
@@ -119,21 +147,38 @@ export function create_renderer(options: RendererOptions): Renderer {
     builder_chunk: chunk_renderer('builder'),
     critic_chunk: chunk_renderer('critic'),
     tester_chunk: chunk_renderer('tester'),
-    phase_start: (iteration, phase) => {
+    phase_start: (n, phase) => {
       if (mode === 'json') return;
-      line(paint(phase, `${GLYPH_PHASE_START} [iter ${String(iteration)}] ${phase}`, color));
+      if (protocol) {
+        // A phase of the next iteration: the last one has ended, with its spend.
+        if (n > current_iteration && current_iteration > 0) {
+          typed({ type: 'runciter.usage', cost_usd: run_spend });
+        }
+        current_iteration = Math.max(current_iteration, n);
+        progress(n, phase);
+        return;
+      }
+      line(paint(phase, `${GLYPH_PHASE_START} [iter ${String(n)}] ${phase}`, color));
     },
-    phase_end: (iteration, phase, ok, detail) => {
+    phase_end: (n, phase, ok, detail) => {
       if (mode === 'json') return;
+      if (protocol) {
+        progress(n, `${phase} ${detail ?? (ok ? 'done' : 'failed')}`);
+        return;
+      }
       const glyph = ok ? GLYPH_PHASE_OK : GLYPH_PHASE_FAIL;
       const suffix = detail !== undefined ? ` — ${detail}` : '';
-      line(paint(phase, `${glyph} [iter ${String(iteration)}] ${phase}${suffix}`, color));
+      line(paint(phase, `${glyph} [iter ${String(n)}] ${phase}${suffix}`, color));
     },
     rung: (iteration, rung, climbed) => {
       line(paint('builder', `  [iter ${String(iteration)}] ${format_rung(rung, climbed)}`, color));
     },
     cost_line: (iteration, phase, phase_cost, run_total) => {
       if (mode === 'json') return;
+      if (protocol) {
+        run_spend = run_total;
+        return;
+      }
       const cap = options.max_cost_usd !== null ? ` / ${format_usd(options.max_cost_usd)}` : '';
       line(
         paint(
@@ -159,6 +204,15 @@ export function create_renderer(options: RendererOptions): Renderer {
     },
     final_summary: (result) => {
       if (silent) return;
+      if (protocol) {
+        // The last iteration's end, with the run's tokens beside its spend.
+        typed({
+          type: 'runciter.usage',
+          cost_usd: result.total_cost_usd,
+          input_tokens: result.total_usage.input_tokens,
+          output_tokens: result.total_usage.output_tokens,
+        });
+      }
       line('');
       line(`run ${result.run_id}: ${result.status}`);
       line(

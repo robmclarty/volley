@@ -24,6 +24,7 @@ import { find_run_state, load_resume_state } from './iteration.js';
 import { EXIT_MATRIX_INCOMPLETE, parse_model_list, parse_repeat, run_matrix } from './matrix.js';
 import { run_critique, run_volley } from './orchestrator.js';
 import { preflight } from './preflight.js';
+import { process_io, RUN_PROTOCOL, serve_protocol } from './protocol/index.js';
 import { colors_enabled, shown } from './render/format.js';
 import { create_renderer } from './render/renderer.js';
 import type { Renderer, RenderMode } from './render/renderer.js';
@@ -86,6 +87,8 @@ export type CliFlags = {
   verbose?: boolean;
   quiet?: boolean;
   thinking?: boolean;
+  /** `runciter.run/1`: read one RunInput on stdin, write one RunOutput. */
+  protocol?: string;
 };
 
 type MatrixFlags = {
@@ -153,6 +156,19 @@ function make_renderer(config: ResolvedConfig, run_id: string = config.run_id): 
     color: colors_enabled(),
     max_cost_usd: config.max_cost_usd,
     trajectory_path: state_path({ ...config, run_id }, 'trajectory.jsonl'),
+  });
+}
+
+/** Protocol mode's renderer: human lines without color, and runciter's typed
+ * progress and usage lines, all on stderr. */
+function protocol_renderer(config: ResolvedConfig): Renderer {
+  return create_renderer({
+    mode: 'protocol',
+    show_thinking: false,
+    color: false,
+    max_cost_usd: config.max_cost_usd,
+    max_iterations: config.max_iterations,
+    trajectory_path: state_path(config, 'trajectory.jsonl'),
   });
 }
 
@@ -388,8 +404,12 @@ async function main(argv: string[]): Promise<number> {
 
   let exit_code = EXIT_SUCCESS;
 
+  // `volley run` is the same command, the spelling a host's argv names it by.
+  // It takes no positional words; they're declared only so that protocol mode
+  // can refuse them its own way.
   const run_command = cli
-    .command('', 'Run the builder/critic loop')
+    .command('[...words]', 'Run the builder/critic loop')
+    .alias('run')
     .option('--prompt <prompt>', 'Task prompt (string or @file)')
     .option('--workspace <path>', 'Workspace directory (must exist and be writable)')
     .option('--criteria <criteria>', 'Acceptance criteria (string or @file)')
@@ -415,7 +435,35 @@ async function main(argv: string[]): Promise<number> {
     .option('--verbose', 'Show full tool inputs/outputs (truncated at 4000 chars)')
     .option('--quiet', 'Only phase transitions, cost updates, and the final summary')
     .option('--no-thinking', 'Hide reasoning chunks (still recorded in the trajectory)')
-    .action(async (flags: CliFlags) => {
+    .option('--protocol <name>', `Run as a host's child: ${RUN_PROTOCOL} reads one RunInput on stdin and writes one RunOutput on stdout, with exit codes of its own`)
+    .action(async (words: string[], flags: CliFlags) => {
+      if (flags.protocol !== undefined) {
+        if (flags.protocol !== RUN_PROTOCOL) {
+          throw config_error(`--protocol takes ${RUN_PROTOCOL}; got: ${String(flags.protocol)}`);
+        }
+        exit_code = await serve_protocol(
+          {
+            read_flags: async () => {
+              const base = flags.config !== undefined ? await load_config_file(flags.config) : ({} as VolleyConfig);
+              const run_id = not_a_bare_number('--run-id', flags.runId);
+              return { ...merge_flags(base, flags), ...(run_id !== undefined ? { run_id } : {}) };
+            },
+            positionals: words,
+          },
+          process_io(),
+          {
+            renderer_for: protocol_renderer,
+            before_run: (config, renderer) => {
+              warn_api_key_meter(config, renderer);
+              warn_unsandboxed_builder(config, renderer);
+              warn_flat_ladder(config, renderer);
+            },
+          },
+        );
+        return;
+      }
+      // As cac words it for a command that declares none.
+      if (words.length > 0) throw new Error(`Unused args: ${words.map((word) => `\`${word}\``).join(', ')}`);
       const base = flags.config !== undefined ? await load_config_file(flags.config) : ({} as VolleyConfig);
       const merged = merge_flags(base, flags);
       const run_id = not_a_bare_number('--run-id', flags.runId);

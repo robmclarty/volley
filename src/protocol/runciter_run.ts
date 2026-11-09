@@ -34,7 +34,7 @@ import type { RunStatus, VolleyConfig } from '../types.js';
 
 /** The protocol's name and version; every `RunInput` and `RunOutput` carries
  * it. */
-const RUN_PROTOCOL = 'runciter.run/1';
+export const RUN_PROTOCOL = 'runciter.run/1';
 
 /** The fail reasons a runner may report (runciter's `RUNNER_FAIL_REASONS`).
  * runciter assigns the rest of its vocabulary itself. */

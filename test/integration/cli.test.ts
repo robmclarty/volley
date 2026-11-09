@@ -230,6 +230,7 @@ describe('volley --help', () => {
       '--verbose',
       '--quiet',
       '--no-thinking',
+      '--protocol',
       '--help',
       '--version',
     ]);

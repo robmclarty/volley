@@ -18,6 +18,15 @@ export const EXIT_COST_CAP = 7;
 export const EXIT_GATE_EDIT = 8;
 export const EXIT_INTERRUPTED = 130;
 
+/** `volley run --protocol runciter.run/1` exits by the protocol's table, not
+ * the one above (move 1's D11): 0 with one `RunOutput` on stdout, whatever the
+ * run's outcome, a builder, check or critic error included (D28); 1 when
+ * volley failed with no `RunOutput` to write; 2 for bad input or a config
+ * error, which runciter records as a contract violation. */
+export const PROTOCOL_EXIT_OUTPUT = 0;
+export const PROTOCOL_EXIT_RUNNER_ERROR = 1;
+export const PROTOCOL_EXIT_CONTRACT_VIOLATION = 2;
+
 export function exit_code_for_status(status: RunStatus): number {
   switch (status) {
     case 'success':
