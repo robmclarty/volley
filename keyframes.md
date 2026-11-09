@@ -37,10 +37,12 @@ autonomy.
 ## Map
 
 - **M1 (cli)**: The ways in: the `volley` CLI and its subcommands, `volley acp` for editors,
-  config resolution, exit codes, the `--dry-run` preflight, live progress on stderr, and the
-  public API a parent harness embeds.
+  `volley run --protocol runciter.run/1` for a host that speaks runciter's run protocol, config
+  resolution, exit codes, the `--dry-run` preflight, live progress on stderr, and the public API
+  a parent harness embeds.
   - paths: src/cli.ts, src/acp.ts, src/acp_progress.ts, src/acp_tools.ts, src/config.ts,
-    src/exit_codes.ts, src/matrix.ts, src/preflight.ts, src/render/, src/index.ts, src/types.ts
+    src/exit_codes.ts, src/matrix.ts, src/preflight.ts, src/protocol/, src/render/, src/index.ts,
+    src/types.ts
 - **M2 (loop)**: One run as a fascicle flow: its topology, the step bodies, the stopping rule,
   cost accounting, each iteration's archive and the run summary, and the flow drawn as a diagram.
   - paths: src/flow.ts, src/phases.ts, src/orchestrator.ts, src/loop_state.ts, src/iteration.ts,

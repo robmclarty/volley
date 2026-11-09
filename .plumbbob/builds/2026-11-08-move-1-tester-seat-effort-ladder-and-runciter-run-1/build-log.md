@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 11 — docs(protocol): the protocol mode and its conformance fixture
+**Current step:** none (at the boundary)
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -33,7 +33,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 8. feat(acp): the tester under `volley acp`, and its docs
 - ☑ 9. feat(protocol): the runciter.run/1 schemas and the input mapping
 - ☑ 10. feat(cli): `volley run --protocol runciter.run/1`
-- ☐ 11. docs(protocol): the protocol mode and its conformance fixture
+- ☑ 11. docs(protocol): the protocol mode and its conformance fixture
 - ☑ 12. fix(resume): keep the effort ladder and critic effort across a resume
 
 ## Park list
@@ -43,8 +43,8 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 > Capture is one line (`/plumbbob:park` composes it). Harvest happens only at the boundary.
 
 - [x] effort_ladder and critic_effort aren't written to config.json (workspace.ts) or read back by load_resume_state (iteration.ts), so a resumed run loses its ladder unless VOLLEY_EFFORT_LADDER is set; step 2's resume work needs both, and its seam lacks workspace.ts
-- [ ] resolve_config reads a prompt or criteria starting with '@' as a file path (expand_at_file), so a RunInput whose task.criteria or agent.prompt opens with '@' would fail or read the wrong file; protocol mode should hand them over as <run_dir>/prompt.md and criteria.md @-paths, as runciter's volley kind does
-- [ ] protocol mode ignores --dry-run and runs anyway (D13 refuses only --worktree, --git, --json and a positional prompt); a dry run there exits 0 with no RunOutput unless it is refused or answered, so it wants a ruling: refuse it with exit 2, or make it a preflight that reports as a RunOutput
+- [x] resolve_config reads a prompt or criteria starting with '@' as a file path (expand_at_file), so a RunInput whose task.criteria or agent.prompt opens with '@' would fail or read the wrong file; protocol mode should hand them over as <run_dir>/prompt.md and criteria.md @-paths, as runciter's volley kind does
+- [x] protocol mode ignores --dry-run and runs anyway (D13 refuses only --worktree, --git, --json and a positional prompt); a dry run there exits 0 with no RunOutput unless it is refused or answered, so it wants a ruling: refuse it with exit 2, or make it a preflight that reports as a RunOutput
 
 ## Harvest  *(run `/plumbbob:harvest` at each step boundary, after green)*
 
@@ -64,6 +64,9 @@ Harvest results this boundary:
 
 - 2026-11-09, at range 1 of 3's stop: 1 parked idea, classified.
 - **blocker**: park 1 · effort_ladder and critic_effort aren't written to config.json (workspace.ts) or read back by load_resume_state (iteration.ts), so a resumed run loses its ladder unless VOLLEY_EFFORT_LADDER is set; step 2's resume work needs both, and its seam lacks workspace.ts → D2 promises a resume reads the rung back, and a resumed laddered run silently drops the ladder it's counting on
+- 2026-11-09, at range 3 of 3's stop: 2 parked ideas, classified.
+- **tangent**: park 2 · resolve_config reads a prompt or criteria starting with '@' as a file path (expand_at_file), so a RunInput whose task.criteria or agent.prompt opens with '@' would fail or read the wrong file; protocol mode should hand them over as <run_dir>/prompt.md and criteria.md @-paths, as runciter's volley kind does → real but rare, and this move's done doesn't need it; worth a volley issue before runciter's `volley` kind retires
+- **tangent**: park 3 · protocol mode ignores --dry-run and runs anyway (D13 refuses only --worktree, --git, --json and a positional prompt); a dry run there exits 0 with no RunOutput unless it is refused or answered, so it wants a ruling: refuse it with exit 2, or make it a preflight that reports as a RunOutput → no host sends `--dry-run` in protocol mode, so the ruling can wait for one that does
 
 ## Log
 
@@ -344,3 +347,81 @@ folder, so it rides the branch into the PR.)*
 
 - 2026-11-09 — step 9 checkpointed · 7bd7c075e — feat(protocol): the runciter.run/1 schemas and the input mapping (5m)
 - 2026-11-09 — step 10 checkpointed · f2dbc0a79 — feat(cli): `volley run --protocol runciter.run/1` (1 drift, 11m)
+- 2026-11-09 — step 11 checkpointed · 4a4bdea78 — docs(protocol): the protocol mode and its conformance fixture (6m)
+- 2026-11-09 — range 3 of 3's stop recorded — run `volley run --protocol runciter.run/1` from runciter's `process` kind on the sandbox repo, with a Claude seat, and confirm the task lands; this is a thing only the human can do, in another repo
+
+  **Summary**: volley now speaks runciter's run protocol itself: `volley run --protocol runciter.run/1` reads one `RunInput` on stdin, runs the task as runciter's `volley` kind would have set it up, and writes exactly one `RunOutput` on stdout, with runciter's progress and usage lines on stderr and the protocol's own exit codes. The schemas are volley's own copy of runciter's §5.4, the README has a "Run volley from runciter" section, and `test/fixtures/runciter_run_input.json` is the conformance input. The whole path is tested on the mock engine and, through the real CLI, on the stand-in `claude`, a builder that dies included.
+
+  1. Step 10 landed a hair off: three small edits outside its seam
+  2. `volley run` didn't exist, so `run` is now another name for `volley`
+  3. Each iteration's usage line carries its cost, and only the last one carries tokens
+  4. The run's mapping follows runciter's `volley` kind, plus two rules the plan didn't spell out
+  5. Two things for you: the M1 line, and the README naming runciter without a link
+
+  **Readout**:
+
+  ```text
+  steps        3 of 3 landed
+               - 9 7bd7c07 · 10 f2dbc0a · 11 4a4bdea
+  check        green: 1 of 1 checks, 3 landings
+  done-when    met
+  decisions    honored
+               - D10 (own-schema-copy), D11 (protocol-exit-table)
+               - D12 (data-carries-summary)
+               - D13 (protocol-refuses-workspace-flags)
+               - D24 (protocol-prompt-from-context)
+               - D25 (protocol-check-from-verify)
+               - D26 (protocol-state-in-run-dir), D27 (protocol-flag-only)
+               - D28 (protocol-errors-as-output)
+  constraints  9 of 9 honored
+  seam         strayed: 3 paths outside step 10's seam
+               - src/protocol/index.ts
+               - src/protocol/runciter_run.ts
+               - test/integration/cli.test.ts
+  diff         +1697 -9 across 12 files
+               - README.md +108 -0
+               - src/cli.ts +50 -2
+               - src/exit_codes.ts +9 -0
+               - src/protocol/index.ts +20 -1
+               - src/protocol/runciter_run.ts +385 -1
+               - src/protocol/serve.ts +328 -0
+               - src/render/renderer.ts +59 -5
+               - and 5 more
+  spent        22 min · green first run at every landing · 1 drift warning
+  ```
+
+  **Verdict**: ◐ A hair off (seam strayed)
+
+  **Harvested**: **2** of 3 parked ideas open
+
+  | Park | Why it matters | Lean |
+  | --- | --- | --- |
+  | **P2**: [Leading `@` in criteria](#park-list) | a `RunInput` whose criteria or agent prompt opens with `@` fails as a missing file, which runciter's kind never did | tangent: real but rare, and this move's done doesn't need it; worth a volley issue before runciter's `volley` kind retires |
+  | **P3**: [Dry run in protocol mode](#park-list) | a protocol-mode `--dry-run` runs the task anyway rather than refusing or answering with a `RunOutput` | tangent: no host sends `--dry-run` in protocol mode, so the ruling can wait for one that does |
+
+  **Recommendation**: Build the checkout first, since the `volley` on your PATH links to this repo's stale `dist/`, then give runciter's sandbox config an agent with `runner: process` and `command: [volley, run, --protocol, runciter.run/1]` on a Claude seat, run a task through it, and say `looks good` if it lands with its summary and `critic-feedback.md` in the drawer. The tests cover the protocol from both sides, but only that run shows runciter's `process` kind and volley agreeing, and P2 and P3 can wait as tangents; make P2 a blocker if you want it fixed before you retire the kind:
+
+  ```sh
+  pnpm build
+  volley run --help | grep -- --protocol
+  ```
+
+  **1.** Step 10 landed a hair off: three small edits outside its seam
+
+  The CLI needed `RUN_PROTOCOL` and the serve functions exported from `src/protocol/`, which are step 9's files, and `test/integration/cli.test.ts` pins the exact `--help` option order, so the new `--protocol` option needed its line there. Each is one or two lines, and none changes behaviour. The checkpoint recorded them, and the commit body names them.
+
+  **2.** `volley run` didn't exist, so `run` is now another name for `volley`
+
+  The plan names the command `volley run --protocol runciter.run/1` throughout, but volley had no `run` subcommand, and cac rejected `run` as an unused argument. The default command now has `run` as an alias, and it declares positional words only so that protocol mode can refuse a positional prompt with exit 2 and a `StdioFailure` line, as D13 asks. Without `--protocol`, a stray word still fails the way it did before: `volley: Unused args: ...`, exit 3. The README's Usage section says `volley run` is `volley`.
+
+  **3.** Each iteration's usage line carries its cost, and only the last one carries tokens
+
+  `runciter.usage` goes out as each iteration ends, read off the renderer when the next iteration's first phase starts, with the run's spend so far. The renderer sees each phase's cost but not the token totals during the run, so the per-iteration lines carry only `cost_usd`, and one more line after the run carries the tokens too. runciter reads every field as optional. Progress goes out at each phase's start and end (`iteration 2: check failing: test`), with `done` and `total` counting iterations. Getting tokens on every line would need `src/phases.ts` to report them, which no step's seam covered.
+
+  **4.** The run's mapping follows runciter's `volley` kind, plus two rules the plan didn't spell out
+
+  The prompt, criteria, check, state and run id map as runciter's kind built them, and the argv's `--check`, `--state-dir` and `--run-id` win. Two calls the plan left open: runciter's budget wins over an argv `--max-cost-usd`, which stands when runciter gives no budget; and `result_to_output` takes the critic's feedback, the copied artifacts and the error as a second argument, since `summary.json` carries none of them. A failed run's `detail` is the error's message, as the kind's was. The feedback copy into `<run_dir>/artifacts/` opens both files with `O_NOFOLLOW`, carrying over the kind's guard against a `feedback.md` linked to a credentials file.
+
+  **5.** Two things for you: the M1 line, and the README naming runciter without a link
+
+  As step 11's done-when asks, here is the change proposed for `keyframes.md`: M1 (cli)'s paths gain `src/protocol/`, beside `src/cli.ts`. The `intent` slot and `keyframes check` pass without it, so it waits on you. The README's new section names runciter without a link, because `github.com/robmclarty/runciter` is private and the README is published.
