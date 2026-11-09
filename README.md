@@ -101,6 +101,33 @@ workspace filesystem, the critic's feedback, and a failed check's output. Swap t
 the loop optimizes for: `--critic reviewer` (default), `optimizer`,
 `researcher`, or a path to your own system prompt.
 
+### The effort ladder
+
+`--effort-ladder low,medium,high` runs each build one rung further up than the
+last: build 1 at `low`, build 2 at `medium`, and every build from the third on
+at `high`, the top rung repeating to `--max-iterations`. A build climbs only
+because the one before it didn't end the run: its check failed, or the critic
+sent it back. So an easy task converges on a cheap first build, and a hard one
+spends more only after a cheap attempt failed. A rung sets the call's effort,
+never its model, so the seat stays the same seat on every rung; on `claude_cli`
+it reaches Claude Code as `CLAUDE_CODE_EFFORT_LEVEL`. The rungs are `low`,
+`medium`, `high`, `xhigh`, and `max`. `none` is refused, since on `claude_cli`
+it sets nothing and leaves Claude Code at its own default, which can sit above
+`low`.
+
+The critic's effort is set apart, with `--critic-effort`, and defaults to `high`
+once a ladder is set: reading a diff costs far less than writing it, and the
+critic is what makes a cheap build safe. Without a ladder neither seat is sent
+an effort unless `--critic-effort` names one, so a run without either flag makes
+the calls it always has. Each build prints its rung as it opens
+(`[iter 2] rung medium (climbed: check_failed)`), and the run's summaries record
+them (see [Run artifacts](#run-artifacts)).
+
+**The ladder is flat on Ollama and LM Studio.** Their transports drop effort, so
+every rung runs the same there: volley warns when a ladder is set on such a
+builder, marks each iteration `effort_ignored`, and the summary reads
+`ladder_flat: true`. No rung means anything on a local model yet.
+
 ### The flow
 
 Under the hood the loop is one [fascicle](https://www.npmjs.com/package/fascicle)
@@ -204,10 +231,12 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--builder-max-tool-calls` | `1` | Tool calls a tool-loop builder may make per turn, not counting reads (`read_file`, `search_files`, `list_files`); past it, fascicle runs the calls before the first one over, drops the rest, and tells the model which it dropped. Raise it for a model and runtime that return parallel calls well. Or `VOLLEY_BUILDER_MAX_TOOL_CALLS`. Ignored for `claude_cli`. |
 | `--builder-max-output-tokens` | `16384` (ollama, lmstudio), the provider's (openrouter) | Output tokens a tool-loop builder may generate per turn, reasoning included (`num_predict` on Ollama). A turn cut off at it before it calls a tool costs that step, not the session. Or `VOLLEY_BUILDER_MAX_OUTPUT_TOKENS`. Ignored for `claude_cli`. |
 | `--builder-trim-history` | off | Experimental. Above this estimated request size, in tokens, a tool-loop builder's turns send older tool results as one-line stubs (see [Local builder](#local-builder)). Or `VOLLEY_BUILDER_TRIM_HISTORY`. Ignored for `claude_cli`. |
+| `--effort-ladder` | off | Comma-separated builder efforts from `low`, `medium`, `high`, `xhigh`, and `max`: each build runs one rung further up than the last, and the top rung repeats (see [The effort ladder](#the-effort-ladder)). Or `VOLLEY_EFFORT_LADDER`, or `effort_ladder` in a config file. Flat on `ollama` and `lmstudio`, which ignore effort. |
 | `--allow-unsandboxed-builder` | off | Permit a builder other than `claude_cli` to run without a sandbox (see [Local builder](#local-builder)). |
 | `--critic-model` | `opus` | Model for the critic. |
 | `--critic-provider` | `claude_cli` | `claude_cli`, `ollama`, `lmstudio`, or `openrouter` (see [Local critic](#local-critic) and [OpenRouter](#openrouter)). |
 | `--critic-url` | the provider's env var | The critic's model server base URL, for `ollama`, `lmstudio`, or `openrouter` only. |
+| `--critic-effort` | `high` with `--effort-ladder`, else none | The critic's effort on every call, from the same five levels as a rung. Or `VOLLEY_CRITIC_EFFORT`, or `critic_effort` in a config file. Unset with no ladder, the critic is sent no effort, as before. |
 | `--builder-permission-mode` | `acceptEdits` | Or `bypassPermissions` for fully trusted workspaces. |
 | `--critic` | `reviewer` | `reviewer`, `optimizer`, `researcher`, or a prompt file path. |
 | `--max-iterations` | `10` | Hard iteration cap. |
@@ -281,7 +310,11 @@ workspace. A run an older volley started keeps its state in the workspace's
 inside it. A run directory with a symbolic link in it is refused, since volley
 never writes one. The resumed run's first builder gets what the last completed
 iteration left it, as it would have without the stop: the critic's feedback,
-the check's output if it failed, and the step-limit note.
+the check's output if it failed, and the step-limit note. Its rung follows on
+from the builds the last iteration recorded, so build 3 still runs at the third
+rung. The ladder itself isn't recorded with the run yet: resume a laddered run
+with `VOLLEY_EFFORT_LADDER` set to the same ladder, and `VOLLEY_CRITIC_EFFORT`
+if you set one, or the resumed builds are sent no effort.
 
 **A resume on the host runs only a config this machine signed.** A resume runs
 what the run's `config.json` says, its check command and its seats included.
@@ -1000,6 +1033,15 @@ the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
 - **Pruning.** Nothing prunes old runs. A root volley creates is yours alone
   (0700), since trajectories hold prompts and tool output. A reused `--run-id`
   rotates the earlier run aside to `<run id>.bak.<timestamp>/`.
+- **The effort ladder.** Each `iterations/NNN/summary.json` records `builds`
+  (the builder sessions so far), `rung` (the effort that build ran at, or null
+  with no ladder), `climbed` (`check_failed`, `critic_rejected`, or null when
+  it didn't climb), and `effort_ignored` (its provider dropped the effort), and
+  a seat's record says `effort_ignored` too when its effort was dropped. The
+  run's `summary.json` carries `comparison.rungs`, each iteration's rung in
+  order, and `comparison.ladder_flat`, true when every build ran at one effort,
+  an ignored effort counting as the provider's own
+  ([The effort ladder](#the-effort-ladder)).
 - **Older runs.** An older volley kept the same files in the workspace's
   `.volley/`. `volley resume` still finds such a run there, and resumes it in
   place once you pass `--trust-config`, since an older volley signed nothing
