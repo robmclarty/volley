@@ -28,8 +28,12 @@ import type { ChangeSet, CheckResult, LoopState, ResolvedConfig, Verdict } from 
 import { git_checkpoint, state_root_within } from './workspace.js';
 import { build_root } from './worktree.js';
 
-/** A round starting, emitted as the build opens it. */
-export type RoundStartEvent = { volley: 'round_start'; round: number };
+/** A round's build starting. `after_test` marks the build of the round the
+ * tester opened, which its `test_start` announced first. */
+export type RoundStartEvent = { volley: 'round_start'; round: number; after_test?: true };
+
+/** A round opening with the tester's test, before its build (move 1's D17). */
+export type TestStartEvent = { volley: 'test_start'; round: number };
 
 /** The check starting, with the command line it runs. */
 export type CheckStartEvent = { volley: 'check_start'; round: number; command: string };
@@ -59,7 +63,12 @@ export type VerdictEvent = {
  * `volley`, since `ctx.emit` overwrites `kind` with `'emit'`. A CLI run's
  * trajectory keeps them for a viewer, and under acp they become the round
  * lines, the verdict thought, and the rest of what the editor shows. */
-export type PhaseEvent = RoundStartEvent | CheckStartEvent | CheckEndEvent | VerdictEvent;
+export type PhaseEvent =
+  | RoundStartEvent
+  | TestStartEvent
+  | CheckStartEvent
+  | CheckEndEvent
+  | VerdictEvent;
 
 /** The step id the check's card is recorded under: the check step's own, in
  * `./flow.ts`, so each round's check counts as a fresh run of it and opens a
@@ -272,7 +281,7 @@ export async function test_phase(
 ): Promise<LoopState> {
   const { config, renderer } = deps;
   const next = next_iteration(s);
-  emit(ctx, { volley: 'round_start', round: next.iteration });
+  emit(ctx, { volley: 'test_start', round: next.iteration });
   renderer.phase_start(next.iteration, 'tester');
   const root = build_root(config.workspace, config.worktree);
   const before = snapshot_changes(change_options(deps, root));
@@ -342,7 +351,7 @@ export async function build_phase(
   const { config, renderer } = deps;
   const opened = tester_opened(s);
   const next = climb(config, s, opened ? s : next_iteration(s));
-  if (!opened) emit(ctx, { volley: 'round_start', round: next.iteration });
+  emit(ctx, { volley: 'round_start', round: next.iteration, ...(opened ? { after_test: true as const } : {}) });
   renderer.phase_start(next.iteration, 'builder');
   if (next.rung !== null) renderer.rung(next.iteration, next.rung, next.climbed);
   const built = await run_builder(

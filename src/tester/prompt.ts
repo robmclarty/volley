@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config_error } from '../types.js';
 import type { CriticProvider } from '../types.js';
+import type { ToolSet } from '../workspace_tools.js';
 
 /** Walk up from this module to the package root (works from src/ under tsx
  * and from dist/ in the published package, which ships src/tester/presets). */
@@ -30,13 +31,26 @@ export function tester_presets_dir(): string {
 }
 
 /** The tools a tester on `provider` holds, as its system prompt names them:
- * the Claude CLI's own, under the tester's permission list, or volley's. */
-function tools_paragraph(provider: CriticProvider): string {
+ * the Claude CLI's own, under the tester's permission list, fascicle's under
+ * `volley acp`, whose writes ask the person in the editor first, or
+ * volley's. */
+function tools_paragraph(provider: CriticProvider, tool_set: ToolSet): string {
   if (provider === 'claude_cli') {
     return [
       'Read the workspace with Read, Grep and Glob. Write and Edit work only on the',
       'paths your prompt lists as writable, and are refused anywhere else. You',
       'cannot run commands.',
+    ].join('\n');
+  }
+  if (tool_set === 'acp') {
+    return [
+      'You have five tools, every path relative to the workspace root:',
+      '- read_file, list_files and search read the workspace.',
+      '- write_file(path, content) and edit_file(path, old_text, new_text) write',
+      '  only the paths your prompt lists as writable; anywhere else they refuse,',
+      '  naming why. The person in the editor may be asked before each write, and',
+      '  a write they decline is not made.',
+      'You cannot run commands; no other tools are available to you.',
     ].join('\n');
   }
   return [
@@ -50,10 +64,10 @@ function tools_paragraph(provider: CriticProvider): string {
   ].join('\n');
 }
 
-/** The tester's system prompt for a seat on `provider`. */
-export function resolve_tester_prompt(provider: CriticProvider): string {
+/** The tester's system prompt for a seat on `provider` holding `tool_set`. */
+export function resolve_tester_prompt(provider: CriticProvider, tool_set: ToolSet = 'volley'): string {
   const base = readFileSync(join(tester_presets_dir(), 'tester.md'), 'utf8');
-  return `${base.trimEnd()}\n\n${tools_paragraph(provider)}`;
+  return `${base.trimEnd()}\n\n${tools_paragraph(provider, tool_set)}`;
 }
 
 export type TesterPromptInput = {

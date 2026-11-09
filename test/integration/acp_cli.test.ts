@@ -227,6 +227,25 @@ describe('acp_base_config', () => {
     );
   });
 
+  it('serves a local tester, whose --check auto each prompt resolves against its own workspace', () => {
+    expect(acp_base_config({ ...seats, tester: 'on' }, env).tester).toBe('on');
+    // A check of none can never go red, wherever a session opens.
+    expect(() => acp_base_config({ ...seats, tester: 'on', check: 'none' }, env)).toThrow(
+      '--tester on needs a check for its test to fail',
+    );
+  });
+
+  it('refuses a claude_cli tester at startup, by flag or by VOLLEY_TESTER', () => {
+    const claude_critic = { ...seats, critic_provider: 'claude_cli', critic_model: 'sonnet' } as const;
+    expect(() => acp_base_config({ ...claude_critic, tester: 'on' }, env)).toThrow(
+      'volley acp refuses a claude_cli tester',
+    );
+    expect(() => acp_base_config(claude_critic, { ...env, VOLLEY_TESTER: 'on' })).toThrow(
+      'volley acp refuses a claude_cli tester',
+    );
+    expect(acp_base_config(claude_critic, env).critic_provider).toBe('claude_cli');
+  });
+
   it.skipIf(process.getuid?.() === 0)('refuses at startup a state root it cannot write', () => {
     const locked = mkdtempSync(join(tmpdir(), 'volley-acp-locked-'));
     chmodSync(locked, 0o500);

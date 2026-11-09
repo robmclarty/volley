@@ -265,6 +265,19 @@ describe('progress_updates: rounds, verdicts, and the rest', () => {
     ]);
   });
 
+  it("gives the tester's test its own round line, then the build's, in the round the tester opened", () => {
+    const state = mapper();
+    expect(progress_updates(emit({ volley: 'test_start', round: 1 }), state)).toEqual([
+      message("**Round 1: the tester's test**\n\n"),
+    ]);
+    expect(progress_updates(emit({ volley: 'round_start', round: 1, after_test: true }), state)).toEqual([
+      message('\n\n**Round 1: the build**\n\n'),
+    ]);
+    expect(progress_updates(emit({ volley: 'round_start', round: 2 }), state)).toEqual([
+      message('\n\n**Round 2**\n\n'),
+    ]);
+  });
+
   it('marks a verdict the critic reached without its tools, and leaves out an empty list', () => {
     const update = progress_updates(
       emit({
@@ -388,6 +401,20 @@ describe('the summary that ends the turn', () => {
     ]);
   });
 
+  it("says a run stopped before any build when the check passed on the tester's test", () => {
+    const early = run_summary({ status: 'tester_passed_early', final_verdict: null });
+    expect(summary_message(summary_event(early))).toEqual([
+      message(
+        "\n\n**Stopped** before any build: the check passed on the tester's test, so the test is vacuous " +
+          'or the work is already done. Last verdict: none.',
+      ),
+    ]);
+    const failed = phase_error('tester', 1, new Error('model not found'));
+    expect(summary_message(failure_event(failed, 1))).toEqual([
+      message("\n\n**Run failed** in round 1, during the tester's test: model not found"),
+    ]);
+  });
+
   it('says where a run that threw failed: the round, the phase, and the error underneath', () => {
     const phase = phase_error('critic', 2, new Error('schema mismatch'));
     expect(summary_message(failure_event(phase, 2))).toEqual([
@@ -413,6 +440,12 @@ describe('follow_rounds', () => {
     rounds.sink.record(emit({ volley: 'round_start', round: 2 }));
     expect(rounds.round()).toBe(2);
     expect(seen).toHaveLength(3);
+  });
+
+  it("counts the round the tester's test opens, before its build starts", () => {
+    const rounds = follow_rounds({ record: () => {}, start_span: () => 's', end_span: () => {} });
+    rounds.sink.record(emit({ volley: 'test_start', round: 1 }));
+    expect(rounds.round()).toBe(1);
   });
 });
 

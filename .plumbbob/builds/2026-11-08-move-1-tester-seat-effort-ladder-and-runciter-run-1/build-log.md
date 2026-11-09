@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 7 — feat(critic): the critic reads the tester's test
+**Current step:** 8 — feat(acp): the tester under `volley acp`, and its docs
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -29,7 +29,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 4. docs(readme): the effort ladder
 - ☑ 5. feat(tester): the tester seat's config, prompt and tools
 - ☑ 6. feat(flow): the test phase before the first build, red check required
-- ☐ 7. feat(critic): the critic reads the tester's test
+- ☑ 7. feat(critic): the critic reads the tester's test
 - ☐ 8. feat(acp): the tester under `volley acp`, and its docs
 - ☐ 9. feat(protocol): the runciter.run/1 schemas and the input mapping
 - ☐ 10. feat(cli): `volley run --protocol runciter.run/1`
@@ -194,3 +194,4 @@ folder, so it rides the branch into the PR.)*
 - 2026-11-09 — step 12 checkpointed · ad455eef6 — fix(resume): keep the effort ladder and critic effort across a resume (3m)
 - 2026-11-09 — step 5 checkpointed · 077903295 — feat(tester): the tester seat's config, prompt and tools (1 drift, 14m)
 - 2026-11-09 — step 6 checkpointed · d06383a7f — feat(flow): the test phase before the first build, red check required (1 drift, 11m)
+- 2026-11-09 — step 7 checkpointed · 4b8287fe8 — feat(critic): the critic reads the tester's test (1 drift, 3m)

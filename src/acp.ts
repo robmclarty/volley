@@ -6,6 +6,8 @@
  *   serve_acp
  *   └─ per session/new: acp_turn        one step, whose id no model call shares
  *      └─ per prompt: run_volley        on session.cwd, its state under the state root
+ *         ├─ tester                     with --tester on: that set's reads, and its writes held
+ *         │                             to the test and fixture paths, asking as the builder's do
  *         ├─ builder                    fascicle's workspace tools + finish, asking through session.approve
  *         ├─ critic                     that set's three reads
  *         └─ trajectory                 the turn's own logger, so the builder's text,
@@ -39,6 +41,7 @@ import {
   turn_task,
 } from './acp_progress.js';
 import { acp_seat_tools } from './acp_tools.js';
+import { DEFAULT_GATE_PATTERNS } from './changes.js';
 import { resolve_config, unguarded_builder } from './config.js';
 import { run_volley } from './orchestrator.js';
 import type { OrchestratorDeps } from './orchestrator.js';
@@ -86,6 +89,13 @@ const REFUSED_FLAGS: ReadonlyArray<readonly [keyof AcpFlags, string, string]> = 
  * sent yet. */
 const STAND_IN_TASK = 'volley acp: startup check';
 
+/** What the startup check resolves `--check auto` to: auto finds a check in
+ * the workspace a session opens, and the startup check has none, so a tester,
+ * which needs a check, would be refused there for want of one. Each prompt's
+ * run resolves the real check, and refuses the tester then if it finds
+ * none. */
+const STAND_IN_CHECK = 'true';
+
 /** Unset, or set to nothing but whitespace. Any other value goes on to
  * `resolve_config`, which says what's wrong with it. */
 function is_blank(value: unknown): boolean {
@@ -124,10 +134,20 @@ export function acp_base_config(raw: AcpFlags, env: Env = process.env): AcpFlags
     ...raw,
     max_iterations: raw.max_iterations ?? ACP_MAX_ITERATIONS,
   };
-  resolve_config(
-    { ...base, workspace: tmpdir(), prompt: STAND_IN_TASK, criteria: STAND_IN_TASK },
+  const check = base.check === undefined || base.check === 'auto' ? STAND_IN_CHECK : base.check;
+  const resolved = resolve_config(
+    { ...base, check, workspace: tmpdir(), prompt: STAND_IN_TASK, criteria: STAND_IN_TASK },
     { env, uncontained_builder: 'ask' },
   );
+  // The tester takes the critic's provider, so --tester on with a claude_cli
+  // critic, by flag or by VOLLEY_TESTER, is a Claude seat that writes (D19).
+  if (resolved.tester && resolved.critic_provider === 'claude_cli') {
+    throw config_error(
+      'volley acp refuses a claude_cli tester: the tester takes the critic\'s provider, and the ' +
+        "Claude CLI's writes would never reach the editor's prompts. Pick another --critic-provider, " +
+        'or leave --tester off',
+    );
+  }
   return base;
 }
 
@@ -192,7 +212,7 @@ async function run_turn(deps: TurnDeps, turn: AcpTurn, ctx: RunContext): Promise
   }
 }
 
-/** The flow for one session: both seats' tools and the check's gate are
+/** The flow for one session: every seat's tools and the check's gate are
  * built once, from the session, and each prompt runs volley on the session's
  * `cwd` with them. */
 function session_flow(
@@ -200,8 +220,17 @@ function session_flow(
   env: Env,
 ): (session: AcpSession) => Step<AcpTurn, RunResult | null> {
   return (session) => {
-    const { builder, critic, check } = acp_seat_tools(session, { env });
-    const deps: TurnDeps = { base, env, workspace: session.cwd, seats: { builder, critic }, check };
+    const { builder, critic, tester, check } = acp_seat_tools(session, {
+      env,
+      gate_paths: base.gate_paths ?? DEFAULT_GATE_PATTERNS,
+    });
+    const deps: TurnDeps = {
+      base,
+      env,
+      workspace: session.cwd,
+      seats: { builder, critic, tester },
+      check,
+    };
     return step('acp_turn', (turn: AcpTurn, ctx) => run_turn(deps, turn, ctx), {
       description: "one volley run on the session's workspace, per prompt",
     });

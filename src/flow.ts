@@ -102,9 +102,10 @@ export type BuilderSeat = Pick<BuilderDeps, 'engine' | 'tools' | 'tool_set' | 'o
 export type CriticSeat = Pick<CriticDeps, 'engine' | 'tools' | 'tool_set'>;
 
 /** The tester seat: its engine and, when injected, the tools that replace
- * volley's tester tools. Absent, it rides the critic's engine, whose provider
- * and URL it takes. */
-export type TesterSeat = Pick<TesterDeps, 'engine' | 'tools'>;
+ * volley's tester tools, the name of their set, and the handler that answers
+ * their approval requests. Absent, it rides the critic's engine, whose
+ * provider and URL it takes. */
+export type TesterSeat = Pick<TesterDeps, 'engine' | 'tools' | 'tool_set' | 'on_tool_approval'>;
 
 /** What the flow is built from: the step bodies' dependencies, plus each
  * seat's model wiring and the builder's `bash` executor. The two seats share

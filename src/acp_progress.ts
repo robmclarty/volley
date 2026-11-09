@@ -9,7 +9,9 @@
  * Out: `progress_updates` wraps fascicle's `to_session_updates`, so every
  * event still reaches it, and adds what volley's own events say:
  *
- *   round_start          a **Round N** line in the reply
+ *   test_start           a **Round 1: the tester's test** line, with --tester on
+ *   round_start          a **Round N** line in the reply, **Round 1: the build**
+ *                        after the tester's
  *   the check's chunks   the card fascicle opens, given the look of a command:
  *                        titled with the command line, closed with its output
  *   verdict              a thought: the verdict, the feedback, the unmet criteria
@@ -180,7 +182,8 @@ export function follow_rounds(sink: TrajectoryLogger): {
     sink: {
       ...sink,
       record: (event) => {
-        if (event.kind === 'emit' && event['volley'] === 'round_start') {
+        const volley = event['volley'];
+        if (event.kind === 'emit' && (volley === 'round_start' || volley === 'test_start')) {
           const started = event['round'];
           if (typeof started === 'number') round = started;
         }
@@ -266,9 +269,13 @@ function thought(text: string): SessionUpdate {
   return { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } };
 }
 
-/** A round's opening line, apart from the reply before it. */
-function round_line(round: number): string {
-  return `${round === 1 ? '' : '\n\n'}**Round ${String(round)}**\n\n`;
+/** A round's opening line, apart from the reply before it. The round the
+ * tester opened has two: its test's, which comes first, then its build's. */
+function round_line(round: number, part: 'test' | 'build' | null = null): string {
+  const first = round === 1 && part !== 'build';
+  const title =
+    part === 'test' ? ": the tester's test" : part === 'build' ? ': the build' : '';
+  return `${first ? '' : '\n\n'}**Round ${String(round)}${title}**\n\n`;
 }
 
 /** The critic's verdict as a thought: the verdict, the feedback, and what it
@@ -289,6 +296,8 @@ const ENDINGS: Partial<Record<RunStatus, (count: number) => string>> = {
   cost_cap_reached: (count) => `**Not converged**: the run reached its cost cap after ${rounds(count)}.`,
   gate_edit_blocked: (count) =>
     `**Stopped** after ${rounds(count)}: the builder edited the gate, and --fail-on-gate-edit ends the run.`,
+  tester_passed_early: () =>
+    "**Stopped** before any build: the check passed on the tester's test, so the test is vacuous or the work is already done.",
 };
 
 function finished_text(event: FinishedSummary): string {
@@ -331,8 +340,10 @@ function progress_event(event: TrajectoryEvent): ProgressEvent | null {
 
 function progress_of(event: ProgressEvent): SessionUpdate[] {
   switch (event.volley) {
+    case 'test_start':
+      return [message(round_line(event.round, 'test'))];
     case 'round_start':
-      return [message(round_line(event.round))];
+      return [message(round_line(event.round, event.after_test === true ? 'build' : null))];
     case 'verdict':
       return [thought(verdict_text(event))];
     case 'summary':

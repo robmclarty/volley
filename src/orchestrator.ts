@@ -28,7 +28,7 @@ import { detect_containment } from './containment.js';
 import { create_seat_engines, create_volley_engine, dispose_seat_engines } from './engine.js';
 import type { SeatEngines } from './engine.js';
 import { build_critique_flow, build_flow } from './flow.js';
-import type { BuilderSeat, CriticSeat } from './flow.js';
+import type { BuilderSeat, CriticSeat, TesterSeat } from './flow.js';
 import type { CheckGate } from './phases.js';
 import { run_result_from_state } from './iteration.js';
 import { initial_state, status_of } from './loop_state.js';
@@ -65,6 +65,8 @@ export type OrchestratorDeps = {
   seats?: {
     builder?: Omit<BuilderSeat, 'engine'>;
     critic?: Omit<CriticSeat, 'engine'>;
+    /** The tester's, which rides the critic's engine. */
+    tester?: Omit<TesterSeat, 'engine'>;
   };
   /** A second sink for the run's trajectory, beside the run's
    * `trajectory.jsonl`. With one, the flow runs through `run.stream`, so the
@@ -196,6 +198,7 @@ async function run_loop(
   const seats = {
     builder: { ...deps.seats?.builder, engine: engines.builder },
     critic: { ...deps.seats?.critic, engine: engines.critic },
+    tester: { ...deps.seats?.tester, engine: engines.critic },
   };
   const flow = build_flow(
     {

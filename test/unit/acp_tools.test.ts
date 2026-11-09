@@ -185,6 +185,68 @@ describe('acp_seat_tools: the critic', () => {
   });
 });
 
+describe('acp_seat_tools: the tester', () => {
+  const GATE = ['**/*.test.*', '**/test/**', '**/package.json'];
+
+  it('is the three reads and the two writes, with no command, asking through the session', () => {
+    const session = acp_session(temp_dir());
+    const { tester } = acp_seat_tools(session, { gate_paths: GATE });
+    expect(tester.tool_set).toBe('acp');
+    expect(tester.tools.map((tool) => tool.name)).toEqual([
+      'read_file',
+      'list_files',
+      'search',
+      'write_file',
+      'edit_file',
+    ]);
+    expect(tester.on_tool_approval).toBe(session.approve);
+  });
+
+  it("asks before a test write as the builder's writes do, and lands it once allowed", async () => {
+    const cwd = temp_dir();
+    for (const [mode, edit] of [
+      ['manual', true],
+      ['accept_edits', false],
+    ] as const) {
+      const tools = by_name(acp_seat_tools(acp_session(cwd, [], mode), { gate_paths: GATE }).tester.tools);
+      expect(await asks(tools.write_file, { path: 'test/ledger.test.js', content: 'x' })).toBe(edit);
+    }
+    const tools = by_name(acp_seat_tools(acp_session(cwd), { gate_paths: GATE }).tester.tools);
+    await call(tools.write_file, { path: 'test/ledger.test.js', content: 'it fails\n' });
+    await call(tools.edit_file, { path: 'test/ledger.test.js', old_text: 'fails', new_text: 'still fails' });
+    expect(await call(tools.read_file, { path: 'test/ledger.test.js' })).toContain('still fails');
+  });
+
+  it('refuses a write outside the test paths, or to package.json, before anyone is asked, naming the path', async () => {
+    const cwd = temp_dir();
+    put(cwd, 'package.json', '{}\n');
+    const tools = by_name(acp_seat_tools(acp_session(cwd), { gate_paths: GATE }).tester.tools);
+    for (const [path, why] of [
+      ['src/ledger.js', 'it matches none of the test and fixture gate patterns'],
+      ['package.json', 'package.json decides which scripts and tests run'],
+    ] as const) {
+      expect(await asks(tools.write_file, { path, content: 'x' })).toBe(false);
+      await expect(call(tools.write_file, { path, content: 'x' })).rejects.toThrow(
+        `the tester can't write ${path}: ${why}`,
+      );
+    }
+    expect(await asks(tools.edit_file, { path: 'package.json', old_text: '{}', new_text: '{"a":1}' })).toBe(false);
+    await expect(
+      call(tools.edit_file, { path: 'package.json', old_text: '{}', new_text: '{"a":1}' }),
+    ).rejects.toThrow("the tester can't write package.json");
+    await expect(call(tools.write_file, { path: '../outside.test.js', content: 'x' })).rejects.toThrow(
+      /escapes the workspace/,
+    );
+  });
+
+  it('writes nothing with no gate paths given', async () => {
+    const tools = by_name(acp_seat_tools(acp_session(temp_dir())).tester.tools);
+    await expect(call(tools.write_file, { path: 'a.test.js', content: 'x' })).rejects.toThrow(
+      'no gate pattern names a test or fixture path',
+    );
+  });
+});
+
 describe('acp_seat_tools: what both seats can see', () => {
   it("skips every one of volley's IGNORED_DIRS, which fascicle's default would list", async () => {
     const cwd = temp_dir();

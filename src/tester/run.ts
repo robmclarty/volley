@@ -20,6 +20,7 @@ import type {
   Step,
   StreamChunk,
   Tool,
+  ToolApprovalHandler,
 } from 'fascicle';
 import {
   settings_args,
@@ -33,6 +34,7 @@ import { prewarm_ollama_model } from '../prewarm.js';
 import { phase_error } from '../types.js';
 import type { LoopState, ResolvedConfig } from '../types.js';
 import { read_only_tools, workspace_inventory } from '../workspace_tools.js';
+import type { ToolSet } from '../workspace_tools.js';
 import { build_root } from '../worktree.js';
 import { compose_tester_prompt, resolve_tester_prompt } from './prompt.js';
 import { tester_tools, writable_gate_patterns } from './tools.js';
@@ -58,16 +60,29 @@ export type TesterDeps = {
   /** Tools in place of `tester_tools`, as the critic takes them. A
    * `claude_cli` tester uses the CLI's own and never takes these. */
   tools?: ReadonlyArray<Tool>;
+  /** Which set `tools` is, so the system prompt names what the tester holds;
+   * absent, volley's own. */
+  tool_set?: ToolSet;
+  /** Answers each call to a tool that asks first, as under `volley acp`,
+   * where the tester's writes ask as the builder's do. Absent, such a call
+   * fails closed. */
+  on_tool_approval?: ToolApprovalHandler;
 };
 
 /** The tester's tool wiring for its provider. */
 function tester_tool_options(
   config: ResolvedConfig,
-  tools?: ReadonlyArray<Tool>,
+  deps: Pick<TesterDeps, 'tools' | 'on_tool_approval'>,
 ): Pick<
   GenerateOptions,
-  'tools' | 'provider_options' | 'max_steps' | 'tool_error_policy' | 'max_tool_calls_per_step'
+  | 'tools'
+  | 'provider_options'
+  | 'max_steps'
+  | 'tool_error_policy'
+  | 'max_tool_calls_per_step'
+  | 'on_tool_approval'
 > {
+  const { tools } = deps;
   if (config.critic_provider === 'claude_cli') {
     return {
       provider_options: {
@@ -83,6 +98,7 @@ function tester_tool_options(
       tools === undefined
         ? tester_tools(build_root(config.workspace, config.worktree), config.gate_paths)
         : [...tools],
+    ...(deps.on_tool_approval !== undefined ? { on_tool_approval: deps.on_tool_approval } : {}),
     max_steps: TESTER_MAX_STEPS,
     // A refused write is the tester's to read and route around, not the run's
     // end.
@@ -104,10 +120,10 @@ export function make_tester_step(deps: TesterDeps): TesterStep {
     description: 'model call writing a failing test under the test and fixture gate paths',
     provider: config.critic_provider,
     model: tester_model(config),
-    system: resolve_tester_prompt(config.critic_provider),
+    system: resolve_tester_prompt(config.critic_provider, deps.tool_set),
     on_chunk: deps.on_chunk,
     ...(config.critic_effort !== null ? { effort: config.critic_effort } : {}),
-    ...tester_tool_options(config, deps.tools),
+    ...tester_tool_options(config, deps),
   });
 }
 

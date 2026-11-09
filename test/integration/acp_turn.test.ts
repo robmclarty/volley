@@ -230,4 +230,76 @@ describe('a whole volley turn through acp_agent and the SDK client', () => {
       cleanup();
     }
   });
+
+  it("runs the tester first, in a round of its own, its writes asking as the builder's do", async () => {
+    const TEST_WRITE = { path: 'test/hello.test.txt', content: 'hello.txt says hello\n' };
+    const STRAY = { path: 'src/sneaky.txt', content: 'not a test\n' };
+    // The tester rides the critic's server: its two writes, its reply, then
+    // the critic's verdict, which answers every call after.
+    const critic_server = await stub_openai([
+      { tool_call: { id: 'call_test', name: 'write_file', input: TEST_WRITE } },
+      { tool_call: { id: 'call_stray', name: 'write_file', input: STRAY } },
+      { text: 'Wrote test/hello.test.txt.' },
+      { text: APPROVED },
+    ]);
+    const builder_server = await stub_openai([
+      { tool_call: { id: 'call_write', name: 'write_file', input: WRITE } },
+      { tool_call: { id: 'call_finish', name: 'finish', input: FINISH } },
+    ]);
+    const { workspace, cleanup } = temp_workspace();
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const in_workspace = (name: string) => join(workspace, name);
+    try {
+      const env = { PATH: process.env.PATH ?? '/usr/bin:/bin', OPENROUTER_API_KEY: KEY, XDG_STATE_HOME: state_home };
+      const base = acp_base_config(
+        {
+          builder_provider: 'openrouter',
+          builder_model: 'vendor/builder-model',
+          builder_url: builder_server.url,
+          critic_provider: 'openrouter',
+          critic_model: 'vendor/critic-model',
+          critic_url: critic_server.url,
+          check: 'test -f test/hello.test.txt && cat hello.txt',
+          tester: 'on',
+        },
+        env,
+      );
+      const app = await acp_agent(acp_serve_config(base, { version: '1.2.3', env }));
+      const permissions = answer_in_order(['allow_once', 'allow_once', 'allow_once', 'allow_once']);
+      const session = await open_session(app, workspace, { on_permission: permissions.on_permission });
+
+      await session.prompt('write hello.txt');
+      const turn = await read_turn(session);
+      expect(turn.stop_reason).toBe('end_turn');
+
+      const said = turn.updates.flatMap((update) =>
+        update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text'
+          ? [update.content.text]
+          : [],
+      );
+      expect(said[0]).toBe("**Round 1: the tester's test**\n\n");
+      expect(said).toContain('\n\n**Round 1: the build**\n\n');
+      expect(said.at(-1)).toBe('\n\n**Converged** in 1 round. Last verdict: approved.');
+      // The tester's own reply stays out of the thread, as the critic's does.
+      expect(said.join('')).not.toContain('Wrote test/hello.test.txt.');
+
+      // Its test write asked first, with its diff, ahead of the red check, the
+      // build's write, and the green check; the stray write asked no one.
+      expect(permissions.requests).toHaveLength(4);
+      expect(permissions.requests[0]?.toolCall).toMatchObject({
+        title: 'Write test/hello.test.txt',
+        rawInput: TEST_WRITE,
+      });
+      expect(permissions.requests[2]?.toolCall).toMatchObject({ rawInput: WRITE });
+      expect(readFileSync(in_workspace('test/hello.test.txt'), 'utf8')).toBe(TEST_WRITE.content);
+      expect(existsSync(in_workspace('src/sneaky.txt'))).toBe(false);
+      expect(critic_server.seen[2]?.messages.at(-1)).toMatchObject({
+        role: 'tool',
+        tool_call_id: 'call_stray',
+        content: expect.stringContaining("the tester can't write src/sneaky.txt"),
+      });
+    } finally {
+      cleanup();
+    }
+  });
 });

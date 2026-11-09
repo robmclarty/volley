@@ -128,6 +128,53 @@ every rung runs the same there: volley warns when a ladder is set on such a
 builder, marks each iteration `effort_ignored`, and the summary reads
 `ladder_flat: true`. No rung means anything on a local model yet.
 
+### The tester seat
+
+`--tester on` adds a third seat that runs once, before the first build: a
+tester that turns the acceptance criteria into a failing test. A critic can be
+argued with about prose criteria, and a test can't. The tester reads the
+workspace, writes tests and fixtures where the check will pick them up, and
+then the check runs, and must fail on what it wrote. A red check goes on to the
+build, and the builder's prompt names the tester's files and shows the check's
+failure. A check that passes ends the run there, with no build paid for, as
+`tester_passed_early` (exit 2): a test that passes before any work is either
+vacuous or proof the work is already done. Later iterations start at the build,
+with the test already in place. It's off by default.
+
+- **Its seat.** The tester takes the critic's provider, URL, and effort, and the
+  critic's model unless `--tester-model` names one. Its spend is
+  `tester_cost_usd`, apart from the builder's and the critic's, and the cost cap
+  is checked after it: a tester that crosses the cap ends the run before the
+  check and the build.
+- **What it may write.** Only paths a gate pattern matches (`--gate-paths`, or
+  the defaults under [What the builder changed](#what-the-builder-changed)),
+  and never `package.json`, a `*.config.*` file, or anything under `.github/`,
+  since a tester that could rewrite the check's configuration could make its
+  own result red or green. A write anywhere else is refused, naming the path.
+  It has no shell. On `claude_cli` it runs in Claude Code's default permission
+  mode, allowed `Read` anywhere in the build root and one `Edit` rule per test
+  and fixture pattern, with `Bash` and edits to those three kinds of file
+  denied.
+- **It needs a check.** `--tester on` with `--check none`, or with a `--check
+  auto` that finds no checkride, is refused before anything runs, since a test
+  can't go red without a check.
+- **Its test is its own.** Each file the tester wrote is hashed after it runs.
+  A build that leaves one at that hash isn't reported as a gate edit there, and
+  a build that changes it is, as any gate edit is. Under `--git`, a
+  `volley iter 1: test` commit lands before the build's.
+- **The critic reads it too.** Its prompt lists the tester's files and asks
+  whether they test the criteria, and it names any gaps as `test_findings`. A
+  vacuous test doesn't decide the verdict by itself: the critic checks by hand
+  what the test misses.
+
+**It's contained as a builder is.** The check runs what the tester writes, so a
+tester on any provider but `claude_cli` runs only inside the
+[sandbox](#local-builder), unless `--allow-unsandboxed-builder` opts out. A
+`claude_cli` builder stays on the host, so with one, a local tester needs the
+opt-out. A `claude_cli` tester runs under its own permission list, on the host.
+Under [`volley acp`](#run-volley-from-zed) the tester's writes ask as the
+builder's do, in a round of their own, and a `claude_cli` tester is refused.
+
 ### The flow
 
 Under the hood the loop is one [fascicle](https://www.npmjs.com/package/fascicle)
@@ -250,6 +297,8 @@ volley acp --builder-provider <name> --builder-model <model> \
 | `--critic-effort` | `high` with `--effort-ladder`, else none | The critic's effort on every call, from the same five levels as a rung. Or `VOLLEY_CRITIC_EFFORT`, or `critic_effort` in a config file. Unset with no ladder, the critic is sent no effort, as before. |
 | `--builder-permission-mode` | `acceptEdits` | Or `bypassPermissions` for fully trusted workspaces. |
 | `--critic` | `reviewer` | `reviewer`, `optimizer`, `researcher`, or a prompt file path. |
+| `--tester` | `off` | `on` runs a tester before the first build, which writes a failing test from the criteria; needs a check (see [The tester seat](#the-tester-seat)). Or `VOLLEY_TESTER`, or `tester` in a config file. |
+| `--tester-model` | the critic's | The tester's model, with `--tester on`; refused with it off. Or `VOLLEY_TESTER_MODEL`, or `tester_model` in a config file. |
 | `--max-iterations` | `10` | Hard iteration cap. |
 | `--max-cost-usd` | none | Hard USD ceiling. Set it. |
 | `--git` | off | Commit after each phase (workspace must be a git repo). |
@@ -841,8 +890,8 @@ for you ([below](#zed-setup)).
 `--builder-provider`, `--builder-model`, `--critic-provider`, and
 `--critic-model`. A missing one is refused with every missing flag named. The
 rest are optional: `--builder-url`, `--critic-url`, `--builder-max-steps`,
-`--builder-max-tool-calls`, `--builder-max-output-tokens`, `--allow-unsandboxed-builder`, `--critic`, `--check`, `--max-iterations`,
-`--max-cost-usd`, and `--state-dir`.
+`--builder-max-tool-calls`, `--builder-max-output-tokens`, `--allow-unsandboxed-builder`, `--critic`, `--check`, `--tester`,
+`--tester-model`, `--max-iterations`, `--max-cost-usd`, and `--state-dir`.
 
 It refuses these before serving, each with exit 5:
 
@@ -852,9 +901,15 @@ It refuses these before serving, each with exit 5:
 | `--git` | It commits to the open repo after every phase, which no permission prompt covers. |
 | `--json` | Stdout carries the protocol alone. |
 | a `claude_cli` builder | The Claude CLI runs its own tools under its own permission model, so its edits would never reach the editor's prompts. |
+| a `claude_cli` tester | The tester takes the critic's provider, and a Claude CLI tester's writes would never reach the editor's prompts. `VOLLEY_TESTER=on` counts. |
 
 A `claude_cli` critic is allowed: it only reads, and it runs on the host, where
-its login works. The whole config resolves once at startup, so a bad flag or an
+its login works. A tester on any other provider runs in a round of its own
+before the build, headed **Round 1: the tester's test**, and each of its
+writes asks with its diff, as the builder's do; a write it may not make is
+refused before you're asked about it. Its `--check auto` resolves against the
+folder each session opens, so a prompt in a folder with no check fails with
+the reason rather than the startup. The whole config resolves once at startup, so a bad flag or an
 unset `OPENROUTER_API_KEY` exits 5 there, where Zed's agent log shows it, rather
 than failing every prompt.
 

@@ -18,7 +18,7 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { Tool } from 'fascicle';
 import { matches_any } from '../changes.js';
-import { read_only_tools, write_tools } from '../workspace_tools.js';
+import { contain, read_only_tools, write_tools } from '../workspace_tools.js';
 
 /** Why the tester may not write `rel` (a `/`-separated workspace path) though
  * a gate pattern matches it, or null when it may. */
@@ -88,6 +88,37 @@ function tester_write_refusal(
   return null;
 }
 
+/** The error a tester's write to `path` (named `path`, contained at `abs`)
+ * is refused with, or null when it may write there. */
+function refusal_message(
+  workspace: string,
+  gate_paths: ReadonlyArray<string>,
+  abs: string,
+  path: string,
+): string | null {
+  const refusal = tester_write_refusal(workspace, gate_paths, abs);
+  return refusal === null
+    ? null
+    : `the tester can't write ${path}: ${refusal}. It writes tests and fixtures only.`;
+}
+
+/** Why the tester may not write `path` in `workspace`, as the message its
+ * writers refuse with, or null when it may: for a tool set the tester takes
+ * from elsewhere, as under `volley acp`, whose writers volley wraps. */
+export function tester_refusal(
+  workspace: string,
+  gate_paths: ReadonlyArray<string>,
+  path: string,
+): string | null {
+  let abs: string;
+  try {
+    abs = contain(workspace, path);
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  return refusal_message(workspace, gate_paths, abs, path);
+}
+
 /** The tester's tool set: the read trio, then `write_file` and `edit_file`
  * confined to the test and fixture gate paths. A refused write throws, naming
  * the path and why; fascicle feeds that back to the model. */
@@ -95,12 +126,8 @@ export function tester_tools(workspace: string, gate_paths: ReadonlyArray<string
   return [
     ...read_only_tools(workspace),
     ...write_tools(workspace, (abs, path) => {
-      const refusal = tester_write_refusal(workspace, gate_paths, abs);
-      if (refusal !== null) {
-        throw new Error(
-          `the tester can't write ${path}: ${refusal}. It writes tests and fixtures only.`,
-        );
-      }
+      const refusal = refusal_message(workspace, gate_paths, abs, path);
+      if (refusal !== null) throw new Error(refusal);
     }),
   ];
 }

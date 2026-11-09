@@ -69,11 +69,12 @@ autonomy.
   the harness writes `feedback.md` and `verdict` for it.
   - held-by: file:test/unit/claude_cli_permissions.test.ts#"disallows every write and Bash",
     file:test/unit/critic_tools.test.ts#"exposes exactly the three read-only tools"
-- **C2 (contained-builder)**: A builder other than `claude_cli` runs only inside the sandbox,
-  unless the operator opts out with `--allow-unsandboxed-builder`. The all-Claude path never
-  needs Docker.
-  - because: a local builder runs a real shell.
+- **C2 (contained-builder)**: A builder other than `claude_cli`, and a tester on any provider
+  but `claude_cli`, runs only inside the sandbox, unless the operator opts out with
+  `--allow-unsandboxed-builder`. The all-Claude path never needs Docker.
+  - because: a local builder runs a real shell, and the check runs what a tester writes.
   - held-by: file:test/unit/config.test.ts#"refuses a local builder with no opt-out",
+    file:test/unit/config.test.ts#"refuses a local tester uncontained and not opted out",
     file:test/unit/preflight.test.ts#"skips the containment checks even when the probes would fail"
 - **C3 (no-keys-in-children)**: No process volley starts can read a seat's key,
   `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`.

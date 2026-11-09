@@ -580,6 +580,8 @@ async function main(argv: string[]): Promise<number> {
   const acp_command = cli.command('acp', 'Serve volley to an editor as an ACP agent over stdio');
   with_seat_options(acp_command, true)
     .option('--critic <critic>', 'reviewer | optimizer | researcher | path to prompt file')
+    .option('--tester <on|off>', "Before the first build, a tester on the critic's seat writes a failing test, each write asking as the builder's do; needs a check, and refuses a claude_cli critic (default: off)")
+    .option('--tester-model <model>', "The tester's model, with --tester on (default: the critic's)")
     .option('--check <check>', `auto | none | shell command (default: ${DEFAULT_CHECK})`)
     .option('--max-iterations <n>', `Iteration cap per prompt (default: ${String(ACP_MAX_ITERATIONS)})`)
     .option('--max-cost-usd <usd>', 'Hard USD ceiling per prompt, enforced in the loop guard')
