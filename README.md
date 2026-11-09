@@ -310,11 +310,10 @@ workspace. A run an older volley started keeps its state in the workspace's
 inside it. A run directory with a symbolic link in it is refused, since volley
 never writes one. The resumed run's first builder gets what the last completed
 iteration left it, as it would have without the stop: the critic's feedback,
-the check's output if it failed, and the step-limit note. Its rung follows on
-from the builds the last iteration recorded, so build 3 still runs at the third
-rung. The ladder itself isn't recorded with the run yet: resume a laddered run
-with `VOLLEY_EFFORT_LADDER` set to the same ladder, and `VOLLEY_CRITIC_EFFORT`
-if you set one, or the resumed builds are sent no effort.
+the check's output if it failed, and the step-limit note. The run's effort
+ladder and its critic's effort are recorded in its `config.json`, and its rung
+follows on from the builds the last iteration recorded, so build 3 still runs
+at the third rung with no variable set.
 
 **A resume on the host runs only a config this machine signed.** A resume runs
 what the run's `config.json` says, its check command and its seats included.

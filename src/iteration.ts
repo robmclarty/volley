@@ -525,9 +525,19 @@ export function load_resume_state(
     ...(typeof recorded['builder_trim_history'] === 'number'
       ? { builder_trim_history: recorded['builder_trim_history'] }
       : {}),
+    // Null (no ladder) when the run set none, as any run before it was
+    // recorded did. A recorded ladder wins over `VOLLEY_EFFORT_LADDER`, as a
+    // config file's does, and resolving it checks each rung again.
+    ...(Array.isArray(recorded['effort_ladder'])
+      ? { effort_ladder: recorded['effort_ladder'] as EffortRung[] }
+      : {}),
     critic_model: String(recorded['critic_model']),
     critic_provider: (recorded['critic_provider'] ?? 'claude_cli') as CriticProvider,
     ...(typeof recorded['critic_url'] === 'string' ? { critic_url: recorded['critic_url'] } : {}),
+    // Recorded resolved, so a ladder's default `high` comes back as itself.
+    ...(typeof recorded['critic_effort'] === 'string'
+      ? { critic_effort: recorded['critic_effort'] as EffortRung }
+      : {}),
     builder_permission_mode: recorded['builder_permission_mode'] as BuilderPermissionMode,
     critic:
       recorded['critic_preset'] === 'custom'

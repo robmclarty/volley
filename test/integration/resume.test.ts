@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aborted_error } from 'fascicle';
 import { CHECK_REJECTED, rejected_check } from '../../src/check/command.js';
+import { resolve_config } from '../../src/config.js';
 import { archive_iteration, find_run_state, load_resume_state } from '../../src/iteration.js';
 import { initial_state } from '../../src/loop_state.js';
 import { run_volley } from '../../src/orchestrator.js';
@@ -85,15 +86,17 @@ describe('resume', () => {
     }
   });
 
-  it('reads the builds and rung back, so a resumed run climbs from where it stopped', async () => {
+  it('reads the builds, the rung and the ladder back, so a resumed run climbs from where it stopped', async () => {
     const { workspace, cleanup } = temp_workspace();
     try {
+      // `xhigh`, not the ladder's default `high`, so a critic effort the
+      // resume dropped and re-defaulted can't pass for one it read back.
       const config = test_config({
         workspace,
         run_id: 'ladder-run',
         max_iterations: 5,
         effort_ladder: ['low', 'medium', 'high'],
-        critic_effort: 'high',
+        critic_effort: 'xhigh',
       });
       // Run 1: two builds rejected, the third dies on SIGINT.
       const engine_1 = mock_engine((call, index) => {
@@ -112,18 +115,35 @@ describe('resume', () => {
       const resume = load_resume_state(workspace, 'ladder-run');
       expect(resume.iterations_completed).toBe(2);
       expect(resume.state).toMatchObject({ builds: 2, rung: 'medium', climbed: 'critic_rejected' });
+      expect(resume.raw_config).toMatchObject({
+        effort_ladder: ['low', 'medium', 'high'],
+        critic_effort: 'xhigh',
+      });
 
+      // The resumed run's config comes from config.json alone, as `volley
+      // resume` builds it, with neither VOLLEY_EFFORT_LADDER nor
+      // VOLLEY_CRITIC_EFFORT set. The state stays where the run found it
+      // (`.volley/`), as `find_run_state` hands it to the CLI.
+      const resumed = resolve_config(resume.raw_config, {
+        run_id: resume.run_id,
+        started_at: resume.started_at,
+        state_dir: null,
+        env: {},
+      });
       const engine_2 = mock_engine((call) =>
         call.role === 'builder' ? { content: 'fixed', cost_usd: 0.1 } : approve_reply(),
       );
       const result = await run_volley(
-        config,
+        resumed,
         { renderer: silent_renderer(), engine: engine_2, install_signal_handlers: false },
         resume.state,
       );
       expect(result.status).toBe('success');
       // Build 3 again, at the third rung, not back at the first.
       expect(engine_2.calls.find((c) => c.role === 'builder')?.opts.effort).toBe('high');
+      const critic_calls = engine_2.calls.filter((c) => c.role === 'critic');
+      expect(critic_calls.length).toBeGreaterThan(0);
+      expect(critic_calls.map((c) => c.opts.effort)).toEqual(critic_calls.map(() => 'xhigh'));
       const third = JSON.parse(
         readFileSync(join(workspace, '.volley', 'iterations', '003', 'summary.json'), 'utf8'),
       ) as Record<string, unknown>;
@@ -205,6 +225,39 @@ describe('resume', () => {
       archive_iteration(config, { ...initial_state(), iteration: 1, check: rejected_check('checkride') });
       const resume = load_resume_state(workspace, 'rejected-run');
       expect(resume.state.check).toMatchObject({ ran: true, runner: 'checkride', ok: false, log: CHECK_REJECTED });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('resumes a config recorded before the ladder with no ladder and no critic effort', () => {
+    const { workspace, cleanup } = temp_workspace();
+    try {
+      const config = test_config({
+        workspace,
+        run_id: 'pre-ladder-run',
+        effort_ladder: ['low', 'high'],
+        critic_effort: 'high',
+      });
+      initialize_run_state(config);
+      write_resolved_config(config);
+      const config_path = state_path(config, 'config.json');
+      const recorded = JSON.parse(readFileSync(config_path, 'utf8')) as Record<string, unknown>;
+      expect(recorded).toMatchObject({ effort_ladder: ['low', 'high'], critic_effort: 'high' });
+
+      delete recorded['effort_ladder'];
+      delete recorded['critic_effort'];
+      writeFileSync(config_path, `${JSON.stringify(recorded, null, 2)}\n`);
+      const legacy = load_resume_state(workspace, 'pre-ladder-run', null, { trust_config: true });
+      expect(legacy.raw_config).not.toHaveProperty('effort_ladder');
+      expect(legacy.raw_config).not.toHaveProperty('critic_effort');
+      const restored = resolve_config(legacy.raw_config, {
+        run_id: legacy.run_id,
+        state_dir: null,
+        env: {},
+      });
+      expect(restored.effort_ladder).toBeNull();
+      expect(restored.critic_effort).toBeNull();
     } finally {
       cleanup();
     }

@@ -61,6 +61,7 @@ stdin RunInput ── volley run --protocol runciter.run/1 ──┬─ stdout R
 - <a id="d26"></a>**D26 (protocol-state-in-run-dir)**: Unless the argv sets them, protocol mode keeps its state under `<run_dir>/volley` with `run_id` as the run id, and copies the critic's last `feedback.md` to `<run_dir>/artifacts/critic-feedback.md`, named in `RunOutput.artifacts`, *because* runciter owns the workspace, and its diff and verify would see a `.volley/` there (resolves [Q18 (protocol-state-dir)](#q18)).
 - <a id="d27"></a>**D27 (protocol-flag-only)**: Only `--protocol runciter.run/1` switches volley into protocol mode, and `RUNCITER_PROTOCOL` in the environment is ignored, *because* runciter sets the variable for every process under a run, the check's own `volley run` tests included (resolves [Q19 (protocol-flag-only)](#q19)).
 - <a id="d28"></a>**D28 (protocol-errors-as-output)**: A builder, check or critic error in protocol mode exits 0 with a failed `RunOutput` whose `fail_reason` is `builder_error`, `check_error` or `critic_error`; exit 1 is only for a failure that leaves no `RunOutput` to write, and exit 2 for a config error or bad input, *because* a `RunOutput` keeps the summary and `data` in the drawer, as today's kind does for volley's exits 3, 4 and 6 (resolves [Q20 (protocol-error-exit)](#q20)).
+- <a id="d29"></a>**D29 (resume-keeps-ladder)**: A run's `config.json` records `effort_ladder` and `critic_effort`, and `load_resume_state` reads both back, so a resumed laddered run keeps its ladder and its critic's effort with no env var set, and the rung follows on from the archived `builds` ([D2 (climb-on-failure)](#d2)), *because* D2 promises a resume picks up the rung, and a resume that silently drops the ladder sends no effort at all (harvested from range 1's P1).
 
 ## Constraints
 
@@ -87,7 +88,7 @@ The repo's `keyframes.md` holds these; they are repeated here by their slugs so 
 3. [x] feat(summary): record each iteration's rung and why it climbed, **done when:** `iterations/<n>/summary.json` carries `rung`, `climbed` (`check_failed` | `critic_rejected` | null) and `effort_ignored`; `RunSummary.comparison` carries `rungs: [...]` and `ladder_flat: boolean`, true when every build ran at one effort or reported effort ignored; the renderer prints one line per iteration (`rung medium (climbed: check_failed)`); unit tests read a fixture archive.
    - seam: `src/iteration.ts`, `src/summary.ts`, `src/render/format.ts`, `src/render/renderer.ts`, `src/types.ts`, `test/unit/summary.test.ts`
    - model: sonnet (mechanical, fully specified)
-4. [ ] docs(readme): the effort ladder, **done when:** README's Usage table gains `--effort-ladder` and `--critic-effort`, How it works gains a paragraph on climbing and a line saying the ladder is flat on Ollama and LM Studio ([D23 (ladder-flat-on-local)](#d23)), Run artifacts names the new summary fields, and `pnpm check --only links` is green.
+4. [x] docs(readme): the effort ladder, **done when:** README's Usage table gains `--effort-ladder` and `--critic-effort`, How it works gains a paragraph on climbing and a line saying the ladder is flat on Ollama and LM Studio ([D23 (ladder-flat-on-local)](#d23)), Run artifacts names the new summary fields, and `pnpm check --only links` is green.
    - seam: `README.md`
    - model: sonnet (prose from the decisions)
 5. [ ] feat(tester): the tester seat's config, prompt and tools, **done when:** `--tester on|off` (default `off`, config `tester`, `VOLLEY_TESTER`) resolves, and `--tester on` with no check is a config error naming `--check` ([D18 (tester-needs-check)](#d18)); a tester on any provider but `claude_cli`, uncontained and not opted out with `--allow-unsandboxed-builder`, is a config error ([D14 (tester-contained)](#d14)); the seat's provider, model and URL default to the critic's; `tester_tools(workspace, gate_paths)` exposes the read-only tools plus `write_file` and `edit_file` confined to the test and fixture gate paths ([D20 (tester-tests-and-fixtures)](#d20)), and a unit test sees a write outside them, and one to `package.json`, refused with the path named; a `claude_cli` tester gets its own permission list ([D19 (tester-claude-permissions)](#d19)), unit-tested beside C1's; the prompt composes from `src/tester/presets/tester.md`, the criteria and the workspace inventory; `--dry-run` probes the tester seat when it is on; the step summary proposes C2's wording in `keyframes.md` naming the tester, for the human to add.
@@ -112,7 +113,13 @@ The repo's `keyframes.md` holds these; they are repeated here by their slugs so 
     - seam: `README.md`, `test/fixtures/runciter_run_input.json`
     - model: sonnet (prose from the decisions)
 
+12. [ ] fix(resume): keep the effort ladder and critic effort across a resume, **done when:** `write_resolved_config` records `effort_ladder` and `critic_effort` in `config.json`, `load_resume_state` reads both back into the raw config (absent in an older config, which resumes with none) ([D29 (resume-keeps-ladder)](#d29)); a resume integration test interrupts a laddered run after two builds and sees build 3 run at the third rung, and the critic at its effort, with neither `VOLLEY_EFFORT_LADDER` nor `VOLLEY_CRITIC_EFFORT` set; the README's Resume section loses the line saying the ladder isn't recorded with the run; `pnpm check` green.
+    - seam: `src/workspace.ts`, `src/iteration.ts`, `test/integration/resume.test.ts`, `README.md`
+    - model: sonnet (two fields through an existing round-trip)
+
 ## Build order
+
+12, 5, 6, 7, 8, 9, 10, 11
 
 ## Build ranges
 
@@ -120,7 +127,7 @@ Drive it as three runs: the ladder first, since it is the smallest and proves fa
 
 1. `/plumbbob:build 1-4`, **stop:** run the ladder once on a real task with Claude seats and read the rung lines; decide whether a default ladder (`low,medium,high`) should be on for every run, or stay opt-in
    - model: opus
-2. `/plumbbob:build 5-8`, **stop:** run the tester on two real tasks, one on checkride and one on a shell command, and decide its default: on wherever a check exists, or off
+2. `/plumbbob:build 12,5-8`, **stop:** run the tester on two real tasks, one on checkride and one on a shell command, and decide its default: on wherever a check exists, or off
    - model: opus
 3. `/plumbbob:build 9-11`, **stop:** run `volley run --protocol runciter.run/1` from runciter's `process` kind on the sandbox repo, with a Claude seat, and confirm the task lands; this is a thing only the human can do, in another repo
    - model: opus
