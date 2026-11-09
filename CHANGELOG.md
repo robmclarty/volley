@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.12.0 — 2026-11-09
+
+### Added
+- **`--effort-ladder low,medium,high` runs each build one effort rung further up, off by default.** Or `VOLLEY_EFFORT_LADDER`, or `effort_ladder` in a config file. Rungs come from `low`, `medium`, `high`, `xhigh`, and `max`, and the top rung repeats. A build climbs only after one that didn't end the run, and it records why: `check_failed`, else `critic_rejected`. Each build prints its rung (`[iter 2] rung medium (climbed: check_failed)`), and each iteration's `summary.json` records `rung`, `climbed` and `effort_ignored`. On `claude_cli` the effort reaches Claude Code as `CLAUDE_CODE_EFFORT_LEVEL`. On `ollama` and `lmstudio`, which ignore effort, the ladder is flat and config warns. A resumed run keeps its ladder and picks up at the rung it had reached.
+- **`--critic-effort` sets the critic's effort on its own.** Or `VOLLEY_CRITIC_EFFORT`, or `critic_effort` in a config file. It takes the same five levels and defaults to `high` once a ladder is set. With neither set, the critic is sent no effort, as before.
+- **`--tester on` writes a failing test from the criteria before the first build, off by default.** Or `VOLLEY_TESTER`, or `tester` in a config file. The tester runs on the critic's seat at the critic's effort; `--tester-model` (or `VOLLEY_TESTER_MODEL`) overrides the model. It writes only tests and fixtures under the gate paths, never `package.json`, a `*.config.*` file or `.github/`, and has no shell. The check must then fail. If it passes, the run ends as `tester_passed_early` (exit 2) with no builder spend. The tester needs a check, and a tester on any provider but `claude_cli` needs the same containment a builder does. Its spend (`tester_cost_usd`) and writes (`tester_changes`) are recorded apart, so its test isn't counted as a builder gate edit, and the critic reviews the tester's test, reporting any problems in an optional `test_findings`.
+- **The tester runs under `volley acp` too.** Its writes go through Zed's approval prompts with their diff, as the builder's do, and a path it may not write is refused before you're asked. A `claude_cli` tester is refused at startup. Round 1 shows the tester's test and the build as two headings.
+- **`volley run --protocol runciter.run/1` lets runciter's `process` kind run volley with no adapter.** volley reads one `RunInput` on stdin, writes exactly one `RunOutput` on stdout, puts `runciter.progress` and `runciter.usage` lines on stderr, and exits 0, 1 or 2 by the protocol's own table. It maps the input as runciter's `volley` kind did: the agent's prompt plus `context.md`, the task's criteria, the check from the stage's `verify`, state under the run directory, and the critic's last feedback as a `critic-feedback.md` artifact. It refuses `--worktree`, `--git`, `--json` and a positional prompt. The README's new "Run volley from runciter" section has an agent-file example and the exit table. `volley run` is now another name for `volley`.
+
+### Changed
+- **Each iteration of a run's trajectory has two more spans.** The flow gained `test` and `work` branches, which pass straight through when the tester is off, so the builder's and the critic's calls, the output, and the exit codes are unchanged; the diagram draws the new branches.
+
+### Internal
+- `keyframes.md` lists `src/protocol/` under M1 (cli), and its C2 constraint now covers the tester. The build's record is in `.plumbbob/builds/2026-11-08-move-1-tester-seat-effort-ladder-and-runciter-run-1/`.
+
 ## v0.11.1 — 2026-11-04
 
 ### Internal
