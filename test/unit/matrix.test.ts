@@ -61,6 +61,7 @@ function stub_summary(fields: {
       builder_cost_usd: cost,
       critic_cost_usd: 0,
       tester_cost_usd: 0,
+      tester_passed_early: false,
       final_verdict: converged ? 'approved' : null,
       check_trajectory: fields.check_trajectory ?? [],
       gate_edits: fields.gate_edits ?? [],

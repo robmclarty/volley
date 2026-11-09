@@ -79,7 +79,32 @@ export type CriticPromptInput = {
    * null when the build root is not a git repository — then the section is
    * omitted rather than claiming the builder changed nothing. */
   changes: ChangeSet | null;
+  /** The files a tester wrote before the first build (move 1's step 7), or
+   * none: absent or empty, the prompt is what it was before there was a
+   * tester. */
+  tester_paths?: ReadonlyArray<string>;
 };
+
+/** The tester's test, for the critic to judge as well as the work: whether it
+ * tests the criteria at all, since a check is only as good as what it runs.
+ * Null when no tester wrote one. */
+function format_tester_section(paths: ReadonlyArray<string> | undefined): string | null {
+  if (paths === undefined || paths.length === 0) return null;
+  return [
+    "THE TESTER'S TEST",
+    '-----------------',
+    'Before the first build, a tester wrote these tests from the acceptance',
+    'criteria, and the check failed on them then:',
+    '',
+    ...paths.map((path) => `  ${path}`),
+    '',
+    'Read them, and judge whether they test the criteria: a test a wrong',
+    'implementation would pass, or one that leaves out a criterion a test could',
+    'check, does not. Name each problem in test_findings, one per entry, and leave',
+    'it empty when the test is sound. Judge the work against the criteria either',
+    'way, not against the test alone.',
+  ].join('\n');
+}
 
 /** One-letter status column, so a hundred-path list stays readable. */
 const STATUS_MARKS: Record<ChangeStatus, string> = {
@@ -182,6 +207,7 @@ function format_check_section(check: CheckResult): string {
 
 export function compose_critic_prompt(input: CriticPromptInput): string {
   const changes = format_changes_section(input.changes);
+  const tester = format_tester_section(input.tester_paths);
   return [
     'ACCEPTANCE CRITERIA',
     '-------------------',
@@ -191,6 +217,7 @@ export function compose_critic_prompt(input: CriticPromptInput): string {
     '',
     format_check_section(input.check),
     ...(changes === null ? [] : ['', changes]),
+    ...(tester === null ? [] : ['', tester]),
     '',
     'Review the workspace against the acceptance criteria and return your',
     'structured verdict.',

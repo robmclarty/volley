@@ -1058,10 +1058,12 @@ the workspace: `<root>/<run id>/`, where the root is `--state-dir` (or
   wrote, measured as `changes` is). Every iteration carries `tester_hashes`,
   each file the tester wrote by its content hash after it ran: a build that
   leaves one at that hash isn't counted as a gate edit there, and one that
-  changes it is. A run that passes its check before any build has a null
-  `builder` and `check`, and ends `tester_passed_early`. The run's
-  `summary.json` and its `comparison` carry `tester_cost_usd` beside the other
-  two seats' costs.
+  changes it is. The critic reads the tester's test too, and its record
+  carries `test_findings` when it found the test wanting. A run that passes
+  its check before any build has a null `builder` and `check`, ends
+  `tester_passed_early`, and says so in `comparison.tester_passed_early`. The
+  run's `summary.json` and its `comparison` carry `tester_cost_usd` beside the
+  other two seats' costs.
 - **Older runs.** An older volley kept the same files in the workspace's
   `.volley/`. `volley resume` still finds such a run there, and resumes it in
   place once you pass `--trust-config`, since an older volley signed nothing

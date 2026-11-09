@@ -13,7 +13,7 @@ step boundaries. The antidote to "my plan got lost in the noise."
 
 # Build log: move 1: tester seat, effort ladder, and runciter.run/1
 
-**Current step:** 6 — feat(flow): the test phase before the first build, red check required
+**Current step:** 7 — feat(critic): the critic reads the tester's test
 **Heavy check:** checkride (set a "check" key in .plumbbob/settings.json to override)
 
 ## Steps
@@ -28,7 +28,7 @@ check green + checkpoint taken, via `/plumbbob:verify` or `/plumbbob:build`.)*
 - ☑ 3. feat(summary): record each iteration's rung and why it climbed
 - ☑ 4. docs(readme): the effort ladder
 - ☑ 5. feat(tester): the tester seat's config, prompt and tools
-- ☐ 6. feat(flow): the test phase before the first build, red check required
+- ☑ 6. feat(flow): the test phase before the first build, red check required
 - ☐ 7. feat(critic): the critic reads the tester's test
 - ☐ 8. feat(acp): the tester under `volley acp`, and its docs
 - ☐ 9. feat(protocol): the runciter.run/1 schemas and the input mapping
@@ -193,3 +193,4 @@ folder, so it rides the branch into the PR.)*
 
 - 2026-11-09 — step 12 checkpointed · ad455eef6 — fix(resume): keep the effort ladder and critic effort across a resume (3m)
 - 2026-11-09 — step 5 checkpointed · 077903295 — feat(tester): the tester seat's config, prompt and tools (1 drift, 14m)
+- 2026-11-09 — step 6 checkpointed · d06383a7f — feat(flow): the test phase before the first build, red check required (1 drift, 11m)

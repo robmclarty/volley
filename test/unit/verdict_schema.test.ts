@@ -60,10 +60,25 @@ describe('verdict_schema', () => {
     expect(parsed.data).toEqual({ verdict: 'approved', feedback: '', unmet_criteria: [] });
   });
 
+  it("takes test_findings about the tester's test, or none at all", () => {
+    const base = { verdict: 'approved', feedback: 'ok', unmet_criteria: [] };
+    expect(verdict_schema.parse({ ...base, test_findings: ['misses the empty ledger'] })).toMatchObject({
+      test_findings: ['misses the empty ledger'],
+    });
+    expect(verdict_schema.parse({ ...base, test_findings: null }).test_findings).toBeNull();
+    expect(verdict_schema.parse(base)).not.toHaveProperty('test_findings');
+    expect(verdict_schema.safeParse({ ...base, test_findings: [3] }).success).toBe(false);
+  });
+
   it('shows the model each field as its type or null, still required and described', () => {
     // What fascicle compiles: the schema's input side, at its default target.
     const json = verdict_schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+    // test_findings alone is optional: only a run with a tester has a test to judge.
     expect(json['required']).toEqual(['verdict', 'feedback', 'unmet_criteria']);
+    expect((json['properties'] as Record<string, Record<string, unknown>>)['test_findings']).toEqual({
+      description: expect.stringContaining("Problems with the tester's test"),
+      anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }],
+    });
     const properties = json['properties'] as Record<string, Record<string, unknown>>;
     expect(properties['feedback']).toEqual({
       description: expect.stringContaining('Free-form markdown for the builder.'),

@@ -56,6 +56,16 @@ export const verdict_schema = z.object({
     .describe(
       'The specific acceptance criteria judged unmet, verbatim. Empty when approved.',
     ),
+  // Optional, unlike the rest: only a run with a tester has a test to judge.
+  test_findings: z
+    .array(z.string())
+    .nullable()
+    .optional()
+    .describe(
+      "Problems with the tester's test, one per entry: a criterion it leaves out, or an " +
+        'assertion a wrong implementation would pass. Empty or omitted when no tester ' +
+        'ran or its test is sound.',
+    ),
 });
 
 export type VerdictOutput = z.infer<typeof verdict_schema>;
@@ -180,6 +190,13 @@ type LadderMark = {
   degrade_cause?: DegradeCause;
 };
 
+/** The critic's findings about the tester's test, for its record, when it
+ * named any. */
+function test_findings_of(verdict: VerdictOutput): { test_findings?: string[] } {
+  const findings = verdict.test_findings ?? [];
+  return findings.length > 0 ? { test_findings: findings } : {};
+}
+
 /** Fold a successful critic `generate` result into loop state, stamping the
  * ladder bookkeeping onto the critic record. Shared by the tool-bearing path and
  * the tool-less fallback so both shape the record identically (the fallback just
@@ -205,6 +222,7 @@ function finalize_critic(
               : {}),
             ...(mark.critic_degraded === true ? { critic_degraded: true } : {}),
             ...(mark.degrade_cause !== undefined ? { degrade_cause: mark.degrade_cause } : {}),
+            ...test_findings_of(result.content),
           },
     verdict: result.content.verdict,
     feedback: result.content.feedback,
@@ -490,6 +508,7 @@ export async function run_critic(
       iteration: state.iteration,
       check,
       changes: state.changes,
+      tester_paths: Object.keys(state.tester_hashes).toSorted(),
     });
     // The phase's duration spans every rung that ran, not just the call that
     // answered: a retried or degraded verdict took that long to get, and no one

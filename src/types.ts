@@ -298,6 +298,9 @@ export type ChangeSet = {
 
 /** Per-phase record for iteration summaries. */
 export type PhaseRecord = {
+  /** What the critic found wrong with the tester's test, when it found
+   * anything. Critic-only. Additive. */
+  test_findings?: string[];
   provider: string;
   model: string;
   session_id: string | null;

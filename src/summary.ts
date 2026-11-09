@@ -86,6 +86,10 @@ export type ComparisonSummary = {
   critic_cost_usd: number;
   /** The tester's spend; 0 with the tester off. Additive. */
   tester_cost_usd: number;
+  /** The check passed on the tester's test before any build, so the run ended
+   * with nothing built: its test was vacuous, or the work was done already.
+   * Additive. */
+  tester_passed_early: boolean;
   final_verdict: Verdict | null;
   check_trajectory: CheckTrajectoryPoint[];
   local_salvage: SalvageStats;
@@ -249,6 +253,7 @@ export function build_run_summary(config: ResolvedConfig, result: RunResult): Ru
       builder_cost_usd: result.builder_cost_usd,
       critic_cost_usd: result.critic_cost_usd,
       tester_cost_usd: result.tester_cost_usd,
+      tester_passed_early: result.status === 'tester_passed_early',
       final_verdict: result.final_verdict,
       check_trajectory: check_trajectory(archives),
       gate_edits: all_gate_edits(archives),

@@ -92,6 +92,9 @@ function phase_summary(record: PhaseRecord | null): Record<string, unknown> | nu
       : {}),
     ...(record.critic_degraded === true ? { critic_degraded: true } : {}),
     ...(record.degrade_cause !== undefined ? { degrade_cause: record.degrade_cause } : {}),
+    // The critic's findings about the tester's test. Emitted only when it named
+    // any. Additive.
+    ...(record.test_findings !== undefined ? { test_findings: record.test_findings } : {}),
     // The seat asked for an effort its provider drops. Emitted only when it
     // did. Additive.
     ...(record.effort_ignored === true ? { effort_ignored: true } : {}),

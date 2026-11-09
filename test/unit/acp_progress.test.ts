@@ -325,6 +325,7 @@ function run_summary(
       builder_cost_usd: 0,
       critic_cost_usd: 0,
       tester_cost_usd: 0,
+      tester_passed_early: false,
       final_verdict: 'approved',
       check_trajectory: [],
       local_salvage: { tool_calls: 0, salvaged_tool_calls: 0, rate: 0 },

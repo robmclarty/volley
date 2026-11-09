@@ -79,13 +79,18 @@ describe('the tester seat', () => {
     try {
       const engine = mock_engine((call) => {
         if (is_tester(call)) return writes_test(workspace);
-        return call.role === 'builder' ? writes_work(workspace) : approve_reply();
+        if (call.role === 'builder') return writes_work(workspace);
+        const reply = approve_reply();
+        return { ...reply, content: { ...(reply.content as object), test_findings: ['no empty-ledger case'] } };
       });
       const result = await run(tester_config(workspace), engine);
 
       expect(result.status).toBe('success');
       expect(exit_code_for_status(result.status)).toBe(0);
       expect(engine.calls.map(seat)).toEqual(['tester', 'builder', 'critic']);
+      // The critic reads the test as well as the work, and its findings are kept.
+      expect(prompt_text(engine.calls[2])).toContain("THE TESTER'S TEST");
+      expect(prompt_text(engine.calls[2])).toContain('  test/ledger.test.txt');
       expect(result.tester_cost_usd).toBeCloseTo(0.1);
       expect(result.builder_cost_usd).toBeCloseTo(0.25);
       expect(result.total_cost_usd).toBeCloseTo(0.4);
@@ -108,9 +113,10 @@ describe('the tester seat', () => {
       expect(Object.keys(first['tester_hashes'] as object)).toEqual(['test/ledger.test.txt']);
       // The tester's test is the tester's, not a builder gate edit.
       expect((first['changes'] as { gate_edits: string[] }).gate_edits).toEqual([]);
+      expect(first['critic']).toMatchObject({ test_findings: ['no empty-ledger case'] });
       expect(run_summary(workspace)).toMatchObject({
         tester_cost_usd: 0.1,
-        comparison: { tester_cost_usd: 0.1, gate_edits: [] },
+        comparison: { tester_cost_usd: 0.1, gate_edits: [], tester_passed_early: false },
       });
     } finally {
       cleanup();
@@ -157,6 +163,7 @@ describe('the tester seat', () => {
       expect(first['builder']).toBeNull();
       expect(first['check']).toBeNull();
       expect(first['builds']).toBe(0);
+      expect(run_summary(workspace)).toMatchObject({ comparison: { tester_passed_early: true } });
     } finally {
       cleanup();
     }

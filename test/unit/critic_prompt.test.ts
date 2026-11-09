@@ -236,6 +236,42 @@ describe('compose_critic_prompt', () => {
   });
 });
 
+describe("compose_critic_prompt — the tester's test", () => {
+  const check = skipped_check('none');
+
+  it('lists the tester\'s test and asks whether it tests the criteria', () => {
+    const prompt = compose_critic_prompt({
+      criteria: 'c',
+      iteration: 1,
+      check,
+      changes: null,
+      tester_paths: ['test/ledger.test.js', 'test/fixtures/books.txt'],
+    });
+    expect(prompt).toContain("THE TESTER'S TEST\n-----------------");
+    expect(prompt).toContain('  test/ledger.test.js\n  test/fixtures/books.txt');
+    expect(prompt).toContain('judge whether they test the criteria');
+    expect(prompt).toContain('Name each problem in test_findings');
+    // Still asks for the verdict last.
+    expect(prompt.trimEnd().endsWith('structured verdict.')).toBe(true);
+  });
+
+  it('is the prompt it always was with no tester', () => {
+    const before = compose_critic_prompt({ criteria: 'c', iteration: 1, check, changes: null });
+    expect(before).not.toContain("TESTER'S TEST");
+    expect(compose_critic_prompt({ criteria: 'c', iteration: 1, check, changes: null, tester_paths: [] })).toBe(
+      before,
+    );
+  });
+
+  it("tells the reviewer what to do with a vacuous test", () => {
+    const reviewer = readFileSync(join(presets_dir(), 'reviewer.md'), 'utf8');
+    expect(reviewer).toContain("When your prompt names a tester's test");
+    expect(reviewer).toContain('A vacuous test');
+    expect(reviewer).toContain('test_findings');
+    expect(reviewer).toContain('request changes for the missing work');
+  });
+});
+
 describe('compose_critic_prompt — builder changes', () => {
   const check = skipped_check('none');
   const compose = (changes: ChangeSet | null): string =>
